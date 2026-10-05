@@ -1,0 +1,20 @@
+{
+  "name": "heptadec",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm run test:integration",
+    "test:integration": "pnpm --filter @heptadec/api run test",
+    "compose:up": "docker compose up -d postgres",
+    "compose:down": "docker compose down",
+    "db:generate": "pnpm --filter @heptadec/db run generate",
+    "db:migrate": "pnpm --filter @heptadec/db run migrate"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: heptadec-postgres
+    environment:
+      POSTGRES_USER: heptadec
+      POSTGRES_PASSWORD: heptadec
+      POSTGRES_DB: heptadec_demo
+    ports:
+      # host 5433: this machine already runs something on 5432
+      - "5433:5432"
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - heptadec-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heptadec -d heptadec_demo"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  heptadec-pgdata:

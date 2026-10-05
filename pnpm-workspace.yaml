@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 12 blocks dependency build scripts by default.
+# esbuild: required by the tsx / drizzle-kit / vite toolchains.
+# better-sqlite3 + @prisma/client: pulled in by better-auth itself (its
+# built-in adapters). We use the Drizzle adapter, but the packages are
+# still installed, so their postinstalls must be allowed.
+allowBuilds:
+  esbuild: true
+  better-sqlite3: true
+  "@prisma/client": true
+  argon2: true

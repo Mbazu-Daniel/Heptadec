@@ -1,0 +1,1 @@
+export { aiRoutes } from "./routes";

@@ -12,7 +12,12 @@ export function resolveDbUrl(): string {
   return "file:" + (path.startsWith("/") ? path : join(ROOT, path));
 }
 
-export const db: LibSQLDatabase<typeof schema> = drizzle(
-  createClient({ url: resolveDbUrl() }),
-  { schema },
-);
+const client = createClient({ url: resolveDbUrl() });
+
+for (const pragma of ["PRAGMA journal_mode = WAL", "PRAGMA busy_timeout = 5000"]) {
+  void client.execute(pragma).catch((caught: unknown) => {
+    console.error(`[db] ${pragma} failed:`, caught);
+  });
+}
+
+export const db: LibSQLDatabase<typeof schema> = drizzle(client, { schema });

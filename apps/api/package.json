@@ -4,7 +4,24 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./auth-contracts": "./src/modules/auth/contracts.ts"
+    "./auth-contracts": "./src/modules/auth/contracts.ts",
+    "./data-source-contracts": "./src/modules/data-source/contracts.ts",
+    "./organization-contracts": "./src/modules/organization/contracts.ts",
+    "./member-contracts": "./src/modules/member/contracts.ts",
+    "./invitation-contracts": "./src/modules/invitation/contracts.ts",
+    "./schema-contracts": "./src/modules/schema/contracts.ts",
+    "./query-contracts": "./src/modules/query/contracts.ts",
+    "./saved-query-contracts": "./src/modules/saved-query/contracts.ts",
+    "./dashboard-contracts": "./src/modules/dashboard/contracts.ts",
+    "./scheduler-contracts": "./src/modules/scheduler/contracts.ts",
+    "./alert-contracts": "./src/modules/alert/contracts.ts",
+    "./notification-contracts": "./src/modules/notification/contracts.ts",
+    "./mcp-contracts": "./src/modules/mcp/contracts.ts",
+    "./ai-contracts": "./src/modules/ai/contracts.ts",
+    "./share-link-contracts": "./src/modules/share-link/contracts.ts",
+    "./audit-contracts": "./src/modules/audit/contracts.ts",
+    "./http-contracts": "./src/common/http/error-contracts.ts",
+    "./rbac": "./src/modules/rbac/permissions.ts"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -13,17 +30,31 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.67",
+    "@better-auth/api-key": "1.7.7",
+    "@clickhouse/client": "^1.23.1",
     "@heptadec/db": "workspace:*",
     "@hono/node-server": "^2.1.3",
+    "@libsql/client": "^0.18.0",
+    "@mastra/core": "^1.75.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "argon2": "^0.45.1",
     "better-auth": "^1.7.7",
-    "hono": "^4.13.12"
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.12",
+    "mysql2": "^3.24.5",
+    "nodemailer": "^10.0.16",
+    "pg": "^8.23.1",
+    "redis": "^6.3.0",
+    "resend": "^4.0.1",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.15.5",
     "drizzle-kit": "^0.31.11",
-    "drizzle-orm": "^0.45.3",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }

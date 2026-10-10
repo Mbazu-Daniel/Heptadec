@@ -19,6 +19,9 @@ export interface IMe {
     id: string;
     name: string;
     email: string;
+    image: string | null;
+    hasPassword: boolean;
     onboardingCompleted: boolean;
   };
+  displayName: string | null;
 }

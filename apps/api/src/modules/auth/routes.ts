@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "@heptadec/db";
 import { auth } from "../../common/config/better-auth";
 import {
@@ -13,8 +13,9 @@ import {
   type IProvidersResponse,
   type ProviderId,
 } from "./contracts";
+import { currentOrganizationId } from "../../common/session/current-organization";
 
-const { user } = schema;
+const { account, member, user } = schema;
 
 function enabledProviders(): IProvider[] {
   const enabled = Object.keys(auth.options.socialProviders ?? {}) as ProviderId[];
@@ -31,15 +32,42 @@ export function authRoutes(): Hono<IAuthVars> {
     return c.json(body);
   });
 
-  routes.get("/api/me", requireSession, (c) => {
+  routes.get("/api/me", requireSession, async (c) => {
     const session = c.get("session")!;
+    const organizationId = currentOrganizationId(session);
+
+    const [credential, named] = await Promise.all([
+      db
+        .select({ id: account.id })
+        .from(account)
+        .where(
+          and(eq(account.userId, session.user.id), eq(account.providerId, "credential")),
+        )
+        .limit(1),
+      organizationId === null
+        ? Promise.resolve([])
+        : db
+            .select({ displayName: member.displayName })
+            .from(member)
+            .where(
+              and(
+                eq(member.userId, session.user.id),
+                eq(member.organizationId, organizationId),
+              ),
+            )
+            .limit(1),
+    ]);
+
     const body: IMe = {
       user: {
         id: session.user.id,
         name: session.user.name,
         email: session.user.email,
+        image: session.user.image ?? null,
+        hasPassword: credential.length > 0,
         onboardingCompleted: session.user.onboardingCompleted ?? false,
       },
+      displayName: named[0]?.displayName ?? null,
     };
     return c.json(body);
   });

@@ -2,10 +2,18 @@ import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { lastLoginMethod } from "better-auth/plugins";
+import { lastLoginMethod, organization } from "better-auth/plugins";
+import { apiKey } from "@better-auth/api-key";
 import { db, schema } from "@heptadec/db";
 import { config, socialCredentials } from "./env";
+import { requestOrigins } from "./origins";
 import { PROVIDERS, type ProviderId } from "../../modules/auth/contracts";
+import { ac, roles } from "../../modules/rbac/permissions";
+import { sendInvitationEmail } from "../../modules/invitation/mailer";
+import {
+  auditActorOf,
+  recordAudit,
+} from "../../modules/audit/record";
 import { nameFromEmail } from "../helpers/name";
 import { hashPassword, verifyPassword } from "../helpers/password";
 
@@ -26,7 +34,7 @@ export const auth = betterAuth({
   appName: "Heptadec",
   baseURL: config.betterAuthUrl,
   secret: config.betterAuthSecret,
-  trustedOrigins: config.trustedOrigins,
+  trustedOrigins: async (request) => requestOrigins(request),
   database: drizzleAdapter(db, {
     provider: "sqlite",
     schema,
@@ -63,7 +71,70 @@ export const auth = betterAuth({
       }
     }),
   },
-  plugins: [lastLoginMethod()],
+  plugins: [
+    lastLoginMethod(),
+    organization({
+      ac,
+      roles,
+      sendInvitationEmail,
+      organizationHooks: {
+        afterCreateOrganization: async ({ organization, user }) => {
+          const actor = auditActorOf(user);
+          await recordAudit({
+            organizationId: organization.id,
+            actorId: actor.id,
+            actorLabel: actor.label,
+            event: "organization.created",
+            targetKind: "organization",
+            targetId: organization.id,
+            targetLabel: organization.name,
+          });
+        },
+        afterUpdateOrganization: async ({ organization, user }) => {
+          if (organization === null || organization === undefined) {
+            return;
+          }
+          const actor = auditActorOf(user);
+          await recordAudit({
+            organizationId: organization.id,
+            actorId: actor.id,
+            actorLabel: actor.label,
+            event: "organization.updated",
+            targetKind: "organization",
+            targetId: organization.id,
+            targetLabel: organization.name,
+          });
+        },
+        afterCreateInvitation: async ({ invitation, inviter }) => {
+          const actor = auditActorOf(inviter);
+          await recordAudit({
+            organizationId: invitation.organizationId,
+            actorId: actor.id,
+            actorLabel: actor.label,
+            event: "invitation.created",
+            targetKind: "invitation",
+            targetId: invitation.id,
+            targetLabel: invitation.email,
+            detail: invitation.role,
+          });
+        },
+      },
+      schema: {
+        member: {
+          additionalFields: {
+            displayName: { type: "string", required: false, input: true },
+          },
+        },
+      },
+    }),
+    apiKey({
+      references: "organization",
+      configId: "mcp",
+      defaultPrefix: "hdc_",
+      enableMetadata: true,
+      rateLimit: { enabled: false },
+    }),
+  ],
   advanced: {
     database: {
       generateId: () => randomUUID(),

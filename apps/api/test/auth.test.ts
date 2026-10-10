@@ -1,45 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { db, schema } from "@heptadec/db";
-import { buildApp } from "../src/app";
+import { PASSWORD, UUID, app, signUp, uniqueEmail } from "./helpers";
 
 const { user, account, session } = schema;
-const PASSWORD = "supersecret1";
-
-const app = buildApp();
-
-let seq = 0;
-const uniqueEmail = (): string =>
-  `ada.lovelace.${Date.now()}.${seq++}@example.com`;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-function sessionCookie(setCookie: string | null): string {
-  const match = /better-auth\.session_token=[^;]+/.exec(setCookie ?? "");
-  if (!match) {
-    throw new Error(`sign-up returned no session cookie: ${setCookie}`);
-  }
-  return match[0];
-}
-
-async function signUp(email: string) {
-  const res = await app.request("/api/auth/sign-up/email", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      origin: "http://localhost:8787",
-    },
-    body: JSON.stringify({ name: "SHOULD BE IGNORED", email, password: PASSWORD }),
-  });
-  if (res.status !== 200) {
-    throw new Error(`sign-up failed (${res.status}): ${await res.text()}`);
-  }
-  const body = (await res.json()) as { user: { id: string; email: string } };
-  return {
-    user: body.user,
-    cookie: sessionCookie(res.headers.get("set-cookie")),
-  };
-}
 
 it("stores the user, the hashed credential, and the session in the database", async () => {
   const email = uniqueEmail();
@@ -83,4 +47,42 @@ it("flips onboarding_completed in the database when onboarding finishes", async 
 
   const after = await db.select().from(user).where(eq(user.id, created.id));
   expect(after[0]!.onboardingCompleted).toBe(true);
+});
+
+it("reports the profile fields the settings page needs", async () => {
+  const { user: created, cookie } = await signUp(uniqueEmail());
+
+  const before = await app.request("/api/me", { headers: { cookie } });
+  expect((await before.json()) as unknown).toMatchObject({
+    user: {
+      id: created.id,
+      hasPassword: true,
+      image: null,
+    },
+  });
+
+  await db
+    .delete(account)
+    .where(and(eq(account.userId, created.id), eq(account.providerId, "credential")));
+
+  const after = await app.request("/api/me", { headers: { cookie } });
+  expect(((await after.json()) as { user: { hasPassword: boolean } }).user.hasPassword).toBe(false);
+});
+
+it("keeps the picture a member sets, and tells the profile page it is there", async () => {
+  const { user: created, cookie } = await signUp(uniqueEmail());
+  const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+
+  const saved = await app.request("/api/auth/update-user", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ image: picture }),
+  });
+  expect(saved.status).toBe(200);
+
+  const rows = await db.select().from(user).where(eq(user.id, created.id));
+  expect(rows[0]!.image).toBe(picture);
+
+  const me = await app.request("/api/me", { headers: { cookie } });
+  expect(((await me.json()) as { user: { image: string } }).user.image).toBe(picture);
 });

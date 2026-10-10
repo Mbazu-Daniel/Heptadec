@@ -8,6 +8,7 @@ export const ERROR_CODES = {
   payload_too_large: 413,
   too_many_requests: 429,
   internal_error: 500,
+  bad_gateway: 502,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_CODES;

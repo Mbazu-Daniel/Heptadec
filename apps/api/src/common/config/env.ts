@@ -8,14 +8,13 @@ function intFromEnv(name: string, fallback: number): number {
 export const config = {
   apiPort: intFromEnv("API_PORT", 8787),
   betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:8787",
-  trustedOrigins: (
-    process.env.BETTER_AUTH_TRUSTED_ORIGINS ??
-    "http://localhost:5173,http://localhost:8787"
-  )
+  extraOrigins: (process.env.HEPTADEC_EXTRA_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
   betterAuthSecret: process.env.BETTER_AUTH_SECRET ?? "",
+  webUrl: process.env.WEB_URL ?? "http://localhost:5173",
+  schedulerTickMs: intFromEnv("SCHEDULER_TICK_MS", 30_000),
 } as const;
 
 export function socialCredentials(id: string): {

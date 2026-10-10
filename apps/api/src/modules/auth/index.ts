@@ -1,2 +1,1 @@
-
 export { authRoutes } from "./routes";

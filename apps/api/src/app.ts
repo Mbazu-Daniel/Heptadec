@@ -6,13 +6,33 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { MAX_BODY_BYTES } from "./common/constants";
 import {
+  BadRequestException,
   InternalServerException,
   NotFoundException,
   PayloadTooLargeException,
   toErrorResponse,
 } from "./common/exceptions";
+import {
+  fromBetterAuth,
+  isBetterAuthError,
+} from "./common/exceptions/from-better-auth";
 import type { IAuthVars } from "./common/middleware/require-session";
+import { auditRoutes } from "./modules/audit";
 import { authRoutes } from "./modules/auth";
+import { dataSourceRoutes } from "./modules/data-source";
+import { queryRoutes } from "./modules/query";
+import { schemaRoutes } from "./modules/schema";
+import { savedQueryRoutes } from "./modules/saved-query";
+import { dashboardRoutes, dashboardAiRoutes } from "./modules/dashboard";
+import { shareLinkRoutes } from "./modules/share-link";
+import { schedulerRoutes } from "./modules/scheduler";
+import { alertRoutes } from "./modules/alert";
+import { notificationRoutes } from "./modules/notification";
+import { invitationRoutes } from "./modules/invitation";
+import { mcpRoutes } from "./modules/mcp";
+import { aiRoutes } from "./modules/ai";
+import { memberRoutes } from "./modules/member";
+import { organizationRoutes } from "./modules/organization";
 
 export function buildApp(): Hono<IAuthVars> {
   const app = new Hono<IAuthVars>();
@@ -30,6 +50,22 @@ export function buildApp(): Hono<IAuthVars> {
   app.use(compress());
 
   app.route("/", authRoutes());
+  app.route("/", auditRoutes());
+  app.route("/", dataSourceRoutes());
+  app.route("/", queryRoutes());
+  app.route("/", schemaRoutes());
+  app.route("/", savedQueryRoutes());
+  app.route("/", dashboardRoutes());
+  app.route("/", dashboardAiRoutes());
+  app.route("/", shareLinkRoutes());
+  app.route("/", schedulerRoutes());
+  app.route("/", alertRoutes());
+  app.route("/", notificationRoutes());
+  app.route("/", organizationRoutes());
+  app.route("/", memberRoutes());
+  app.route("/", invitationRoutes());
+  app.route("/", mcpRoutes());
+  app.route("/", aiRoutes());
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -38,8 +74,19 @@ export function buildApp(): Hono<IAuthVars> {
   });
 
   app.onError((error, c) => {
+    const mapped = isBetterAuthError(error) ? fromBetterAuth(error) : null;
+    if (mapped) {
+      const { status, body } = toErrorResponse(mapped);
+      return c.json(body, status);
+    }
     if (error instanceof HTTPException) {
       const { status, body } = toErrorResponse(error);
+      return c.json(body, status);
+    }
+    if (error instanceof SyntaxError) {
+      const { status, body } = toErrorResponse(
+        new BadRequestException("That request body is not valid JSON"),
+      );
       return c.json(body, status);
     }
     console.error("[api] unhandled error:", error);

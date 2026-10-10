@@ -1,4 +1,3 @@
-
 export function nameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "";
   const words = local

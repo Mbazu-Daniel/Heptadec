@@ -1,0 +1,195 @@
+import { Hono } from "hono";
+import { and, desc, eq } from "drizzle-orm";
+import { db, schema } from "@heptadec/db";
+import {
+  requireSession,
+  type IAuthVars,
+} from "../../common/middleware/require-session";
+import { readBody, readString } from "../../common/http/body";
+import {
+  activeOrganization,
+  oneRow,
+} from "../../common/session/current-organization";
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "../../common/exceptions";
+import { can } from "../rbac/authorize";
+import { recordAudit, auditActor } from "../audit";
+import {
+  isAlertOperator,
+  type AlertOperator,
+  type IAlertDelivery,
+  type IAlertDeliveryListResponse,
+  type IAlertRule,
+  type IAlertRuleListResponse,
+  type IAlertRuleResponse,
+} from "./contracts";
+
+const { alertDelivery, alertRule, savedQuery } = schema;
+
+const MAX_NAME = 120;
+
+const MAX_COLUMN = 128;
+
+const MAX_EMAIL = 254;
+
+const MAX_URL = 2_048;
+
+const LOG_LIMIT = 50;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function toAlertRule(row: typeof alertRule.$inferSelect): IAlertRule {
+  return {
+    id: row.id,
+    savedQueryId: row.savedQueryId,
+    name: row.name,
+    column: row.column,
+    operator: row.operator as AlertOperator,
+    threshold: row.threshold,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toAlertDelivery(row: typeof alertDelivery.$inferSelect): IAlertDelivery {
+  return {
+    id: row.id,
+    alertRuleId: row.alertRuleId,
+    channel: row.channel as IAlertDelivery["channel"],
+    status: row.status as IAlertDelivery["status"],
+    message: row.message,
+    error: row.error,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function alertRoutes(): Hono<IAuthVars> {
+  const routes = new Hono<IAuthVars>();
+
+  routes.get("/api/alert-rules", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    const rows = await db
+      .select()
+      .from(alertRule)
+      .where(organization.where(alertRule.organizationId))
+      .orderBy(desc(alertRule.createdAt));
+
+    const body: IAlertRuleListResponse = { alertRules: rows.map(toAlertRule) };
+    return c.json(body);
+  });
+
+  routes.post("/api/alert-rules", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(c.req.raw.headers, "schedule", "create"))) {
+      throw new ForbiddenException("Only owners and editors can add alert rules");
+    }
+
+    const body = readBody(await c.req.json(), "An alert rule is required");
+    const savedQueryId = readString(body, "savedQueryId", "Pick the query to watch", 64);
+    const query = await oneRow(savedQuery, savedQueryId, organization);
+    if (query === undefined) {
+      throw new NotFoundException("That saved query does not exist");
+    }
+
+    const name = readString(body, "name", "Give the alert a name", MAX_NAME);
+    const column = readString(body, "column", "Pick the column to watch", MAX_COLUMN);
+
+    const operatorValue = readString(body, "operator", "Pick an operator", 8);
+    if (!isAlertOperator(operatorValue)) {
+      throw new BadRequestException("Pick one of >, >=, <, <= or =");
+    }
+    const operator: AlertOperator = operatorValue;
+
+    const threshold = body.threshold;
+    if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+      throw new BadRequestException("The threshold must be a number");
+    }
+
+    const now = new Date();
+    const inserted = await db
+      .insert(alertRule)
+      .values({
+        organizationId: organization.organizationId,
+        savedQueryId,
+        name,
+        column,
+        operator,
+        threshold,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    const created = inserted[0];
+    if (created === undefined) {
+      throw new NotFoundException("That alert rule could not be created");
+    }
+    const actor = auditActor(c);
+    await recordAudit({
+      organizationId: organization.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      event: "alert_rule.created",
+      targetKind: "alert_rule",
+      targetId: created.id,
+      targetLabel: created.name,
+    });
+    const response: IAlertRuleResponse = { alertRule: toAlertRule(created) };
+    return c.json(response, 201);
+  });
+
+  routes.delete("/api/alert-rules/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(c.req.raw.headers, "schedule", "delete"))) {
+      throw new ForbiddenException("Only owners and editors can remove alert rules");
+    }
+
+    const found = await oneRow(alertRule, c.req.param("id"), organization);
+    if (found === undefined) {
+      throw new NotFoundException("That alert rule does not exist");
+    }
+    await db
+      .delete(alertDelivery)
+      .where(
+        and(
+          eq(alertDelivery.alertRuleId, found.id),
+          organization.where(alertDelivery.organizationId),
+        ),
+      );
+    await db.delete(alertRule).where(eq(alertRule.id, found.id));
+    const actor = auditActor(c);
+    await recordAudit({
+      organizationId: organization.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      event: "alert_rule.deleted",
+      targetKind: "alert_rule",
+      targetId: found.id,
+      targetLabel: found.name,
+    });
+    return c.json({ id: found.id });
+  });
+  routes.get("/api/alert-deliveries", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    const rows = await db
+      .select()
+      .from(alertDelivery)
+      .where(organization.where(alertDelivery.organizationId))
+      .orderBy(desc(alertDelivery.createdAt))
+      .limit(LOG_LIMIT);
+
+    const body: IAlertDeliveryListResponse = {
+      alertDeliveries: rows.map(toAlertDelivery),
+    };
+    return c.json(body);
+  });
+
+  return routes;
+}

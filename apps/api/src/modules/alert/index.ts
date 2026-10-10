@@ -1,0 +1,1 @@
+export { alertRoutes } from "./routes";

@@ -1,0 +1,124 @@
+# Test matrix for integration work (Phases 2/3/5).
+#
+# Holds every database the app can connect to. Host ports are offset so this
+# file can run next to docker-compose.yml without clashing.
+#
+#   pnpm compose:test:up     # pull + start everything
+#   pnpm seed:test            # wait for health, then seed sample data
+#   pnpm compose:test:down    # stop everything (keeps volumes; add -v to wipe)
+#
+# What the seed creates (all read-only friendly):
+#   postgres   db heptadec_test / table events(id, event_name, region)
+#   mysql      db heptadec_test / table events(id, event_name, region)
+#   redis      db 0 / keys event:<id> (hashes)
+#   clickhouse db heptadec_test / table events(id, event_name, region)
+#   libsql     namespace default / table events(id, event_name, region)
+#   quickwit   index events / a few NDJSON docs
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: heptadec-test-postgres
+    environment:
+      POSTGRES_USER: heptadec
+      POSTGRES_PASSWORD: heptadec
+      POSTGRES_DB: heptadec_test
+    ports:
+      - "5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heptadec -d heptadec_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  mysql-test:
+    image: mysql:8.0
+    container_name: heptadec-test-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: Delta1force
+      MYSQL_USER: heptadec
+      MYSQL_PASSWORD: Delta1force
+      MYSQL_DATABASE: heptadec_test
+    ports:
+      - "3308:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uheptadec", "-pDelta1force"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: heptadec-test-redis
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  mariadb-test:
+    image: mariadb:lts
+    container_name: heptadec-test-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: Delta1force
+      MARIADB_USER: heptadec
+      MARIADB_PASSWORD: Delta1force
+      MARIADB_DATABASE: heptadec_test
+    ports:
+      - "3309:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "-uheptadec", "-pDelta1force"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  clickhouse-test:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: heptadec-test-clickhouse
+    environment:
+      CLICKHOUSE_USER: heptadec
+      CLICKHOUSE_PASSWORD: Delta1force
+      CLICKHOUSE_DB: heptadec_test
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    tmpfs:
+      - /var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  libsql-test:
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    container_name: heptadec-test-libsql
+    command: ["sqld", "-d", "/var/lib/sqld/data.sqld", "--http-listen-addr", "0.0.0.0:8080"]
+    ports:
+      - "8081:8080"
+    tmpfs:
+      - /var/lib/sqld:mode=1777
+    # No container healthcheck: the image ships no curl/wget/python.
+    # scripts/seed-test.sh polls :8081/health from the host instead.
+
+  quickwit-test:
+    image: quickwit/quickwit:0.8.0
+    container_name: heptadec-test-quickwit
+    command: ["run"]
+    ports:
+      - "7282:7280"
+    tmpfs:
+      - /quickwit/qwdata
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:7280/health/livez || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30

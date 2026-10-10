@@ -17,9 +17,13 @@ coverage/
 docs/
 *.md
 *.MD
+!README.md
 impl.html
 
-# Agent harness folders written by `npx impeccable install`.
+# SQLite WAL journal files (created when journal_mode=WAL, e.g. embedded test DBs)
+*.db-shm
+*.db-wal
+
 .claude/
 .grok/
 .hermes/

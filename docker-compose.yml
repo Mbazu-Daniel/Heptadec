@@ -3,20 +3,65 @@ services:
     image: postgres:16-alpine
     container_name: heptadec-postgres
     environment:
-      POSTGRES_USER: heptadec
-      POSTGRES_PASSWORD: heptadec
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Delta1force
       POSTGRES_DB: heptadec_demo
     ports:
-      # host 5433: this machine already runs something on 5432
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
       - heptadec-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U heptadec -d heptadec_demo"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d heptadec_demo"]
       interval: 2s
       timeout: 2s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    container_name: heptadec-redis
+    command: ["redis-server", "--requirepass", "Delta1force"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - heptadec-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Delta1force", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  mysql:
+    image: mysql:8.0
+    container_name: heptadec-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: Delta1force
+      MYSQL_USER: heptadec
+      MYSQL_PASSWORD: Delta1force
+      MYSQL_DATABASE: heptadec_demo
+    ports:
+      - "3306:3306"
+    volumes:
+      - heptadec-mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uheptadec", "-pDelta1force"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  quickwit:
+    image: quickwit/quickwit:0.8.0
+    container_name: heptadec-quickwit
+    command: ["run"]
+    ports:
+      - "7281:7280"
+    volumes:
+      - heptadec-quickwitdata:/quickwit/qwdata
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:7280/health/livez || exit 1"]
+      interval: 5s
+      timeout: 3s
       retries: 20
 
 volumes:
   heptadec-pgdata:
+  heptadec-redisdata:
+  heptadec-mysqldata:
+  heptadec-quickwitdata:

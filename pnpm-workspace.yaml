@@ -12,3 +12,8 @@ allowBuilds:
   better-sqlite3: true
   "@prisma/client": true
   argon2: true
+
+minimumReleaseAgeExclude:
+  - "@ai-sdk/openai-compatible@3.0.67"
+  - "@ai-sdk/provider-utils@5.0.58"
+  - "@ai-sdk/provider@4.0.26"

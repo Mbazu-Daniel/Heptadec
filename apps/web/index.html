@@ -4,8 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <script>
+      // Applies the stored theme and accent before the first paint. Without
+      // this, <html> has no data-theme and no inline --cyan at paint time, so
+      // every reload flashes the default theme and accent before React mounts.
+      (function () {
+        try {
+          var root = document.documentElement;
+          var stored = localStorage.getItem("heptadec-theme");
+          var dark =
+            stored === "dark" ||
+            (stored !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          root.dataset.theme = dark ? "dark" : "light";
+          var accent = localStorage.getItem("heptadec-accent");
+          if (accent !== null && /^#[0-9a-fA-F]{6}$/.test(accent)) {
+            root.style.setProperty("--cyan", accent);
+            root.style.setProperty("--accent-override", accent);
+          }
+        } catch (error) {
+          // Storage can be unavailable; the CSS defaults are the fallback.
+        }
+      })();
+    </script>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Albert+Sans:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist+Mono:wght@400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
       rel="stylesheet"
     />
     <title>Heptadec</title>

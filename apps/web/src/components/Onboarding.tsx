@@ -2,9 +2,15 @@ import { useState, type FormEvent } from "react";
 import { completeOnboarding } from "../api";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import { authClient } from "../auth";
-import { Button } from "./ui/button";
-import { FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
+import {
+  AUTH_ERROR_CLASSNAME,
+  AUTH_GHOST_BUTTON_CLASSNAME,
+  AUTH_INPUT_CLASSNAME,
+  AUTH_LABEL_CLASSNAME,
+  AUTH_PRIMARY_BUTTON_CLASSNAME,
+  AuthPage,
+} from "./AuthShell";
 
 interface IOnboardingProps {
   me: IMe;
@@ -14,7 +20,7 @@ interface IOnboardingProps {
 const STEPS = [
   {
     title: "Pick a name",
-    body: "We set this name from your email address. Change it if it is not correct.",
+    body: "We set this from your email address. Each organization can give you a different name later.",
   },
   {
     title: "Connect a source",
@@ -53,72 +59,77 @@ export function Onboarding({ me, onDone }: IOnboardingProps) {
         return;
       }
       setStep(step + 1);
+    } catch {
+      setError("That could not be saved. Try again in a moment.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="relative min-h-screen">
-      <div className="spot" />
+    <AuthPage
+      wide
+      eyebrow={`Step ${step + 1} of ${STEPS.length}`}
+      title={current.title}
+      lede={current.body}
+    >
+      <form className="flex flex-col gap-5" onSubmit={next}>
+        {step === 0 ? (
+          <div className="flex flex-col gap-2">
+            <label className={AUTH_LABEL_CLASSNAME} htmlFor="onboarding-name">
+              Name
+            </label>
+            <Input
+              id="onboarding-name"
+              className={AUTH_INPUT_CLASSNAME}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoComplete="name"
+            />
+          </div>
+        ) : null}
 
-      <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col justify-center px-6">
-        <div className="halo mx-auto w-full max-w-[560px] px-8 pt-10 pb-10">
-          <p className="text-[11px] uppercase tracking-[0.02em] text-muted-foreground">
-            Step {step + 1} of {STEPS.length}
-          </p>
+        {step === 1 ? (
+          <div className="flex flex-col gap-2">
+            <label className={AUTH_LABEL_CLASSNAME} htmlFor="onboarding-email">
+              Email
+            </label>
+            <Input
+              id="onboarding-email"
+              className={AUTH_INPUT_CLASSNAME}
+              value={me.user.email}
+              readOnly
+              disabled
+            />
+          </div>
+        ) : null}
 
-          <h1 className="grad mt-3 font-display text-2xl tracking-[-0.05em]">
-            {current.title}
-          </h1>
-          <p className="mt-2 text-muted-foreground">{current.body}</p>
+        {error ? (
+          <div role="alert" className={AUTH_ERROR_CLASSNAME}>
+            {error}
+          </div>
+        ) : null}
 
-          <form className="mt-8 flex flex-col gap-5" onSubmit={next}>
-            {step === 0 ? (
-              <FieldGroup>
-                  <FieldLabel>Display name</FieldLabel>
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    autoComplete="name"
-                  />
-                </FieldGroup>
-              ) : null}
-
-              {step === 1 ? (
-                <FieldGroup>
-                  <FieldLabel>Email</FieldLabel>
-                  <Input value={me.user.email} readOnly disabled />
-                </FieldGroup>
-              ) : null}
-
-            {error ? (
-              <div
-                role="alert"
-                className="rounded-md border border-red/30 bg-red/10 px-3 py-2 text-sm text-red"
-              >
-                {error}
-              </div>
-            ) : null}
-
-            <div className="flex items-center gap-4">
-              <Button type="submit" size="lg" disabled={busy}>
-                {busy ? "Working" : isLast ? "Finish" : "Continue"}
-              </Button>
-              {step > 0 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setStep(step - 1)}
-                >
-                  Back
-                </Button>
-              ) : null}
-            </div>
-          </form>
+        <div className="flex items-center gap-4">
+          <button
+            type="submit"
+            disabled={busy}
+            className={AUTH_PRIMARY_BUTTON_CLASSNAME}
+          >
+            {busy ? "Working…" : isLast ? "Finish" : "Continue"}
+          </button>
+          {step > 0 ? (
+            <button
+              type="button"
+              className={AUTH_GHOST_BUTTON_CLASSNAME}
+              onClick={() => setStep(step - 1)}
+            >
+              Back
+            </button>
+          ) : null}
         </div>
-      </div>
-    </div>
+      </form>
+    </AuthPage>
   );
 }

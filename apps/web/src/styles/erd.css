@@ -1,0 +1,379 @@
+/* The entity diagram. React Flow's own stylesheet is imported by the canvas;
+   everything here is the look the diagram is meant to have. */
+
+.erd {
+  --erd-card: #0b1119;
+  --erd-header: #0e1620;
+  --erd-pane: #05080c;
+  --erd-border: #1b2430;
+  --erd-dot: #22303f;
+  --erd-accent: var(--accent-override, #22d3ee);
+  --erd-text: #e9f2f6;
+  --erd-subtle: #93a3b0;
+  --erd-dim: #6b7a88;
+  --erd-edge: #3a4a5c;
+  --erd-labelbg: #0b1119;
+  --erd-row-hover: rgb(233 242 246 / 0.04);
+  --erd-control-hover: rgb(233 242 246 / 0.08);
+  --erd-minimap-node: #1b2430;
+  --erd-mask: rgb(5 8 12 / 0.7);
+  --erd-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+}
+
+html[data-theme="light"] .erd {
+  --erd-card: #ffffff;
+  --erd-header: #f2f5f7;
+  --erd-pane: #e8edf1;
+  --erd-border: #d5dde4;
+  --erd-dot: #b9c6d1;
+  --erd-accent: var(--accent-override, #0e7490);
+  --erd-text: #0c1520;
+  --erd-subtle: #5b6b78;
+  --erd-dim: #8296a3;
+  --erd-edge: #8fa2b0;
+  --erd-labelbg: #ffffff;
+  --erd-row-hover: rgb(12 21 32 / 0.05);
+  --erd-control-hover: rgb(12 21 32 / 0.07);
+  --erd-minimap-node: #c9d4dc;
+  --erd-mask: rgb(255 255 255 / 0.7);
+  --erd-shadow: 0 4px 16px rgb(12 21 32 / 0.12);
+}
+
+/* The canvas sits on a fine dot grid so the cards read as movable objects. */
+.erd .react-flow__renderer,
+.erd .react-flow__pane {
+  background-color: var(--erd-pane);
+}
+
+.erd .react-flow__attribution {
+  display: none;
+}
+
+.erd .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--erd-border);
+  border-radius: 999px;
+  background: var(--erd-pane);
+}
+
+.erd .react-flow__handle-left {
+  left: -5px;
+}
+
+.erd .react-flow__handle-right {
+  right: -5px;
+}
+
+.erd-card {
+  overflow: hidden;
+  border: 1px solid var(--erd-border);
+  border-radius: 10px;
+  background: var(--erd-card);
+  color: var(--erd-text);
+  box-shadow: var(--erd-shadow);
+}
+
+.erd-card[data-selected="true"] {
+  outline: 2px solid var(--erd-accent);
+  outline-offset: 2px;
+}
+
+.erd-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--erd-border);
+  background: var(--erd-header);
+}
+
+.erd-card__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.erd-card__count {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--erd-subtle);
+}
+
+.erd-card__tabs {
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  border-bottom: 1px solid var(--erd-border);
+}
+
+.erd-card__tab {
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--erd-subtle);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  background: none;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  background-color: transparent;
+}
+
+.erd-card__tab[data-active="true"] {
+  color: var(--erd-text);
+  border-bottom-color: var(--erd-accent);
+}
+
+.erd-card__column {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.erd-card__column:hover {
+  background: var(--erd-row-hover);
+}
+
+/* A selected card shows every column in the same fixed-height space the
+   layout reserved, scrolling inside it — the card never grows, moves, or
+   overlaps its neighbours. */
+.erd-card__columns {
+  overflow: hidden;
+}
+
+.erd-card__columns[data-scroll="true"] {
+  overflow-y: auto;
+}
+
+.erd-card__column-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.erd-card__column-name[data-primary="true"] {
+  font-weight: 600;
+}
+
+.erd-card__column-type {
+  flex: none;
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--erd-subtle);
+}
+
+.erd-card__more {
+  height: 26px;
+  padding: 6px 12px 0;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--erd-subtle);
+}
+
+.erd-card__dependency {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 5px 12px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--erd-subtle);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.erd-card__dependency:hover {
+  background: var(--erd-row-hover);
+  color: var(--erd-text);
+}
+
+.erd-card__dependency[data-active="true"] {
+  background: rgb(34 211 238 / 0.12);
+  color: var(--erd-accent);
+}
+
+/* A foreign-key line is a plain hairline; the label is what says what it joins. */
+.erd .react-flow__edge-path {
+  stroke: var(--erd-edge);
+  stroke-width: 1.5;
+}
+
+.erd .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--erd-accent);
+  stroke-width: 2;
+}
+
+.erd .react-flow__edge-text {
+  fill: var(--erd-subtle);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.erd .react-flow__edge-textbg {
+  fill: var(--erd-labelbg);
+}
+
+.erd-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--erd-border);
+  border-radius: 10px;
+  background: var(--erd-card);
+}
+
+.erd .react-flow__minimap {
+  border: 1px solid var(--erd-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* The pill sits bottom-left and the minimap bottom-right. That clears on a wide
+   window and collides on a narrow one, so the minimap is the one that goes:
+   the viewport controls are the only way to get around a wide schema. */
+@media (max-width: 1100px) {
+  .erd .react-flow__minimap {
+    display: none;
+  }
+}
+
+.erd-controls button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--erd-text);
+  cursor: pointer;
+}
+
+.erd-controls button:hover {
+  background: var(--erd-control-hover);
+}
+
+.erd-controls button[data-wide="true"] {
+  width: auto;
+  padding: 0 8px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--erd-subtle);
+}
+
+/* The canvas owns its box: the header, tabs, and footer above and below it
+   stay put while the diagram pans inside. */
+.erd-canvas .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.erd-minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  width: 160px;
+  height: 110px;
+  border: 1px solid var(--erd-border);
+  border-radius: 10px;
+  background: var(--erd-card);
+  overflow: hidden;
+}
+
+.erd-minimap .react-flow__minimap-mask {
+  fill: var(--erd-mask);
+  stroke: var(--erd-accent);
+}
+
+.erd-minimap .react-flow__minimap-node {
+  fill: var(--erd-minimap-node);
+  stroke: var(--erd-edge);
+}
+
+/* The left-hand structure tree. Children hang off a guide line so the nesting
+   is readable without an indent ruler per row. */
+.erd-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--erd-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.erd-tree__row:hover {
+  background: var(--erd-row-hover);
+}
+
+.erd-tree__row[data-selected="true"] {
+  background: rgb(34 211 238 / 0.12);
+  color: var(--erd-accent);
+}
+
+.erd-tree__row[data-dimmed="true"] {
+  color: var(--erd-dim);
+}
+
+.erd-tree__toggle {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  flex: none;
+  color: var(--erd-dim);
+}
+
+.erd-tree__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.erd-tree__type {
+  flex: none;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--erd-subtle);
+}
+
+.erd-tree__group {
+  padding: 6px 8px 2px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--erd-dim);
+}
+
+.erd-tree__children {
+  margin-left: 11px;
+  padding-left: 8px;
+  border-left: 1px solid var(--erd-border);
+}

@@ -1,10 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  IconBrandGithub,
+  IconBrandGoogle,
+  IconEye,
+  IconEyeOff,
+} from "@tabler/icons-react";
 import { listProviders } from "../api";
-import type { IProvider } from "@heptadec/api/auth-contracts";
+import type { IProvider, ProviderId } from "@heptadec/api/auth-contracts";
 import { authClient } from "../auth";
-import { Button } from "./ui/button";
-import { FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
+import {
+  AUTH_ERROR_CLASSNAME,
+  AUTH_INPUT_CLASSNAME,
+  AUTH_LABEL_CLASSNAME,
+  AUTH_LINK_BUTTON_CLASSNAME,
+  AUTH_PRIMARY_BUTTON_CLASSNAME,
+  AUTH_SOCIAL_BUTTON_CLASSNAME,
+  AuthSplitLayout,
+} from "./AuthShell";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -14,9 +27,19 @@ interface IAuthScreenProps {
   onAuthed: () => void;
 }
 
+const PROVIDER_BRANDS: Record<
+  ProviderId,
+  { name: string; icon: typeof IconBrandGoogle }
+> = {
+  google: { name: "Google", icon: IconBrandGoogle },
+  github: { name: "GitHub", icon: IconBrandGithub },
+};
+
 function LastUsed() {
   return (
-    <span className="tag h-5 border-white/28 text-[11px] text-fg">Last used</span>
+    <span className="inline-flex h-5 items-center rounded-full border border-(--mk-hairline) px-2 font-mono text-[11px] text-(--mk-fg-muted)">
+      Last used
+    </span>
   );
 }
 
@@ -27,14 +50,31 @@ export function AuthScreen({
 }: IAuthScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [providers, setProviders] = useState<IProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastMethod, setLastMethod] = useState<string | null>(null);
+  const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
-    void listProviders().then(setProviders);
+    let live = true;
+    void listProviders().then(
+      (found) => {
+        if (live) {
+          setProviders(found);
+        }
+      },
+      () => {
+        if (live) {
+          setUnreachable(true);
+        }
+      },
+    );
     setLastMethod(authClient.getLastUsedLoginMethod());
+    return () => {
+      live = false;
+    };
   }, []);
 
   async function submit(event: FormEvent): Promise<void> {
@@ -60,66 +100,150 @@ export function AuthScreen({
   async function signInWith(provider: IProvider): Promise<void> {
     setBusy(true);
     setError(null);
-    const { error: socialError } = await authClient.signIn.social({
-      provider: provider.id,
-      callbackURL: "/",
-    });
-    if (socialError) {
-      setError(socialError.message ?? "Sign in did not start.");
+    try {
+      const { error: socialError } = await authClient.signIn.social({
+        provider: provider.id,
+        callbackURL: "/",
+      });
+      if (socialError) {
+        setError(socialError.message ?? "Sign in did not start.");
+      }
+    } catch {
+      setError("That provider could not be reached. Try again in a moment.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
+  }
+
+  const enabledIds = new Set(providers.map((provider) => provider.id));
+  const socialIds: ProviderId[] = ["google", "github"];
+
+  function switchMode(): void {
+    onModeChange(mode === "sign-in" ? "sign-up" : "sign-in");
+    setError(null);
   }
 
   return (
-    <div className="halo mx-auto w-full max-w-[440px] px-8 pt-10 pb-10">
-      <form className="flex flex-col gap-5" onSubmit={submit}>
-        <div className="text-center">
-          <h1 className="grad font-display text-2xl tracking-[-0.05em]">
-            {mode === "sign-in" ? "Sign in" : "Create your account"}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {mode === "sign-in"
-              ? "Welcome back."
-              : "Your name comes from your email address."}
-          </p>
-        </div>
-
-        {providers.map((provider) => (
-          <div key={provider.id} className="flex flex-col items-start gap-2">
-            <Button
+    <AuthSplitLayout>
+      <h1 className="text-center font-display text-[28px] leading-[34px] font-medium tracking-[-0.02em] text-(--mk-fg-primary)">
+        {mode === "sign-in" ? "Sign in to Heptadec" : "Create your account"}
+      </h1>
+      <p className="mt-3 text-center text-sm text-(--mk-fg-muted)">
+        {mode === "sign-in" ? (
+          <>
+            New to Heptadec?{" "}
+            <button
               type="button"
-              variant="social"
-              disabled={busy}
-              onClick={() => void signInWith(provider)}
+              onClick={switchMode}
+              className={AUTH_LINK_BUTTON_CLASSNAME}
             >
-              {provider.label}
-            </Button>
-            {lastMethod === provider.id ? <LastUsed /> : null}
-          </div>
-        ))}
+              Sign up for an account
+            </button>
+          </>
+        ) : (
+          <>
+            Already have an account?{" "}
+            <button
+              type="button"
+              onClick={switchMode}
+              className={AUTH_LINK_BUTTON_CLASSNAME}
+            >
+              Sign in
+            </button>
+          </>
+        )}
+      </p>
 
-        <FieldGroup>
-          <FieldLabel>Email</FieldLabel>
+      <div className="mt-8">
+        <div className="grid grid-cols-2 gap-3">
+          {socialIds.map((id) => {
+            const brand = PROVIDER_BRANDS[id];
+            const Icon = brand.icon;
+            const enabled = enabledIds.has(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                disabled={busy || !enabled}
+                title={
+                  enabled
+                    ? undefined
+                    : unreachable
+                      ? "The API could not be reached"
+                      : `${brand.name} sign-in is not configured on this instance`
+                }
+                onClick={() => void signInWith({ id, label: brand.name })}
+                className={AUTH_SOCIAL_BUTTON_CLASSNAME}
+              >
+                <Icon size={18} stroke={1.8} aria-hidden="true" />
+                {brand.name}
+              </button>
+            );
+          })}
+        </div>
+        {socialIds.some((id) => lastMethod === id) ? (
+          <div className="mt-2">
+            <LastUsed />
+          </div>
+        ) : null}
+        <div className="my-6 flex items-center gap-4">
+          <span className="h-px flex-1 bg-(--mk-hairline)" />
+          <span className="font-mono text-[12px] text-(--mk-fg-muted)">
+            Or continue with
+          </span>
+          <span className="h-px flex-1 bg-(--mk-hairline)" />
+        </div>
+      </div>
+
+      <form className="flex flex-col gap-5" onSubmit={submit}>
+        <div className="flex flex-col gap-2">
+          <label className={AUTH_LABEL_CLASSNAME} htmlFor="auth-email">
+            Email
+          </label>
           <Input
+            id="auth-email"
             type="email"
+            className={AUTH_INPUT_CLASSNAME}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
+            placeholder="Enter your email address"
           />
-        </FieldGroup>
+        </div>
 
-        <FieldGroup>
-          <FieldLabel>Password</FieldLabel>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
-          />
-        </FieldGroup>
+        <div className="flex flex-col gap-2">
+          <label className={AUTH_LABEL_CLASSNAME} htmlFor="auth-password">
+            Password
+          </label>
+          <div className="relative">
+            <Input
+              id="auth-password"
+              type={showPassword ? "text" : "password"}
+              className={`${AUTH_INPUT_CLASSNAME} pr-12`}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete={
+                mode === "sign-up" ? "new-password" : "current-password"
+              }
+              placeholder="Enter a unique password"
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute top-1/2 right-4 -translate-y-1/2 text-(--mk-fg-muted) transition-colors duration-150 hover:text-(--mk-fg-primary)"
+            >
+              {showPassword ? (
+                <IconEyeOff size={18} stroke={1.8} aria-hidden="true" />
+              ) : (
+                <IconEye size={18} stroke={1.8} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </div>
 
         {lastMethod === "email" ? (
           <div className="-mt-2">
@@ -128,31 +252,25 @@ export function AuthScreen({
         ) : null}
 
         {error ? (
-          <div
-            role="alert"
-            className="rounded-md border border-red/30 bg-red/10 px-3 py-2 text-sm text-red"
-          >
+          <div role="alert" className={AUTH_ERROR_CLASSNAME}>
             {error}
           </div>
         ) : null}
 
-        <Button type="submit" size="lg" disabled={busy}>
-          {busy ? "Working" : mode === "sign-in" ? "Sign in" : "Sign up"}
-        </Button>
-
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            onModeChange(mode === "sign-in" ? "sign-up" : "sign-in");
-            setError(null);
-          }}
+        <button
+          type="submit"
+          disabled={busy}
+          className={AUTH_PRIMARY_BUTTON_CLASSNAME}
         >
-          {mode === "sign-in"
-            ? "Need an account? Sign up"
-            : "Have an account? Sign in"}
-        </Button>
+          {busy
+            ? mode === "sign-in"
+              ? "Signing in…"
+              : "Creating account…"
+            : mode === "sign-in"
+              ? "Sign in"
+              : "Sign up"}
+        </button>
       </form>
-    </div>
+    </AuthSplitLayout>
   );
 }

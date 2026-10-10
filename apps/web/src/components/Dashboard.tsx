@@ -1,69 +1,142 @@
+import { useState } from "react";
 import type { IMe } from "@heptadec/api/auth-contracts";
-import { Button } from "./ui/button";
+import type { IMembership } from "@heptadec/api/organization-contracts";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "./ui/sidebar";
+import { AppSidebar, type WorkspaceView } from "./app-sidebar";
+import { DataSources } from "./DataSources";
+import { AiProviders } from "./AiProviders";
+import { Breadcrumbs, type ICrumb } from "./workspace";
+import { McpTokens } from "./McpTokens";
+import { Dashboards } from "./dashboards/Dashboards";
+import { DashboardDetail } from "./dashboards/DashboardDetail";
+import { Schedules } from "./Schedules";
+import { Alerts } from "./Alerts";
+import { NotificationChannels } from "./NotificationChannels";
+import { OrganizationSettings } from "./OrganizationSettings";
+import { TeamPanel } from "./TeamPanel";
+import { AuditLog } from "./AuditLog";
 
 interface IDashboardProps {
   me: IMe;
+  memberships: IMembership[];
+  onSwitchOrganization: (organizationId: string) => void;
+  onCreateOrganization: () => void;
+  onOpenProfile: () => void;
+  onOrganizationChanged: () => void;
   onSignOut: () => Promise<void>;
 }
 
-const STATS = [
-  { label: "Sources", value: "0", tint: "text-muted-foreground" },
-  { label: "Queries", value: "0", tint: "text-green" },
-  { label: "Latency", value: "n/a", tint: "text-cyan" },
-  { label: "Scope", value: "Personal", tint: "text-muted-foreground" },
-];
+const VIEW_LABELS: Record<WorkspaceView, string> = {
+  sources: "Data sources",
+  dashboards: "Dashboards",
+  schedules: "Schedules",
+  alerts: "Alerts",
+  notifications: "Notification channels",
+  ai: "AI providers",
+  mcp: "MCP",
+  team: "Teams",
+  audit: "Audit log",
+  organization: "Organization",
+};
 
-export function Dashboard({ me, onSignOut }: IDashboardProps) {
+export function Dashboard({
+  me,
+  memberships,
+  onSwitchOrganization,
+  onCreateOrganization,
+  onOpenProfile,
+  onOrganizationChanged,
+  onSignOut,
+}: IDashboardProps) {
+  const active = memberships.find((membership) => membership.active);
+  const [view, setView] = useState<WorkspaceView>("sources");
+  const [openDashboard, setOpenDashboard] = useState<string | null>(null);
+  const [trail, setTrail] = useState<ICrumb[]>([]);
+  const [resetToken, setResetToken] = useState(0);
+
+  function openDashboards(): void {
+    setOpenDashboard(null);
+    setView("dashboards");
+  }
+
+  function goToSection(next: WorkspaceView): void {
+    setOpenDashboard(null);
+    setTrail([]);
+    setView(next);
+    if (next === "sources") {
+      setResetToken((count) => count + 1);
+    }
+  }
+
   return (
-    <div className="relative min-h-screen">
-      <div className="spot" />
-
-      <header className="sticky top-0 z-10 border-b border-border bg-background/60 backdrop-blur-[12px]">
-        <div className="mx-auto flex h-[58px] max-w-[1280px] items-center gap-4 px-6">
-          <span className="grad font-display text-lg tracking-[-0.05em]">
-            Heptadec
-          </span>
-          <span className="tag ml-auto">{me.user.email}</span>
-          <Button variant="ghost" onClick={() => void onSignOut()}>
-            Sign out
-          </Button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-[1280px] px-6 py-24">
-        <div className="halo pt-10">
-          <h1 className="grad font-serif text-[58px] leading-none tracking-[-0.01em]">
-            Signed in.
-          </h1>
-          <p className="mt-4 max-w-[640px] text-lg text-muted-foreground">
-            Welcome, {me.user.name || me.user.email}. Your workspace is empty.
-          </p>
-        </div>
-
-        <section className="mt-20 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((stat) => (
-            <div key={stat.label} className="card px-6 py-5">
-              <p className="text-[11px] uppercase tracking-[0.02em] text-muted-foreground">
-                {stat.label}
-              </p>
-              <p className={`mt-2 text-[38px] leading-none ${stat.tint}`}>
-                {stat.value}
-              </p>
-            </div>
-          ))}
-        </section>
-
-        <section className="card mt-6 px-8 py-10">
-          <h2 className="font-display text-xl tracking-[-0.05em]">
-            Data sources
-          </h2>
-          <p className="mt-3 max-w-[640px] text-muted-foreground">
-            We removed the data sources during development. We will add them
-            again for organizations. Then each organization can use
-            Postgres, Redis, and Quickwit.
-          </p>
-        </section>
-      </main>
-    </div>
+    <SidebarProvider>
+      <AppSidebar
+        view={view}
+        onViewChange={(next) => {
+          setOpenDashboard(null);
+          setView(next);
+        }}
+        memberships={memberships}
+        onSwitchOrganization={onSwitchOrganization}
+        onCreateOrganization={onCreateOrganization}
+        userName={me.displayName ?? (me.user.name === "" ? me.user.email : me.user.name)}
+        userImage={me.user.image}
+        onOpenProfile={onOpenProfile}
+        onSignOut={onSignOut}
+      />
+      <SidebarInset>
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+          <SidebarTrigger />
+          <Breadcrumbs
+            crumbs={[
+              { label: VIEW_LABELS[view], onSelect: () => goToSection(view) },
+              ...trail,
+            ]}
+          />
+        </header>
+        {view === "sources" ? (
+          <DataSources resetToken={resetToken} onTrail={setTrail} />
+        ) : view === "dashboards" ? (
+          openDashboard === null ? (
+            <Dashboards onOpen={setOpenDashboard} onTrail={setTrail} />
+          ) : (
+            <DashboardDetail dashboardId={openDashboard} onBack={openDashboards} />
+          )
+        ) : view === "schedules" ? (
+          <Schedules />
+        ) : view === "alerts" ? (
+          <Alerts />
+        ) : view === "notifications" ? (
+          <NotificationChannels isOwner={active?.role === "owner"} />
+        ) : view === "mcp" ? (
+          <McpTokens isOwner={active?.role === "owner"} />
+        ) : view === "ai" ? (
+          <AiProviders isOwner={active?.role === "owner"} />
+        ) : view === "team" ? (
+          active ? (
+            <TeamPanel
+              key={active.organization.id}
+              organizationId={active.organization.id}
+              role={active.role}
+            />
+          ) : null
+        ) : view === "audit" ? (
+          active ? (
+            <AuditLog
+              key={active.organization.id}
+              isOwner={active.role === "owner"}
+            />
+          ) : null
+        ) : view === "organization" ? (
+          active ? (
+            <OrganizationSettings
+              key={active.organization.id}
+              membership={active}
+              onChanged={onOrganizationChanged}
+            />
+          ) : null
+        ) : null}
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

@@ -1,0 +1,21 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 12 blocks dependency build scripts by default.
+# esbuild: required by the tsx / drizzle-kit / vite toolchains.
+# better-sqlite3 + @prisma/client: pulled in by better-auth itself (its
+# built-in adapters). We use the Drizzle adapter, but the packages are
+# still installed, so their postinstalls must be allowed.
+allowBuilds:
+  esbuild: true
+  better-sqlite3: true
+  "@prisma/client": true
+  # workerd: the local Workers runtime behind `wrangler dev`.
+  workerd: true
+  duckdb: true
+
+minimumReleaseAgeExclude:
+  - "@ai-sdk/openai-compatible@3.0.67"
+  - "@ai-sdk/provider-utils@5.0.58"
+  - "@ai-sdk/provider@4.0.26"

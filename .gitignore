@@ -1,0 +1,46 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+.DS_Store
+.wrangler/
+.dev.vars
+.fallow/
+docs/
+*.md
+*.MD
+!README.md
+impl.html
+
+# SQLite WAL journal files (created when journal_mode=WAL, e.g. embedded test DBs)
+*.db-shm
+*.db-wal
+
+.claude/
+.grok/
+.hermes/
+.kiro/
+.opencode/
+.pi/
+.qoder/
+.rovodev/
+.vibe/
+.agents/
+skills-lock.json
+
+# The real Cloudflare config holds a D1 database id and bucket name that belong
+# to whoever created them, so it is never committed. Copy the example and fill
+# it in for your own account.
+apps/api/wrangler.jsonc
+
+# This machine moves the test stack onto ports another project is using. It is
+# a local override of docker-compose.test.yml, not project config.
+docker-compose.test.override.yml

@@ -1,0 +1,59 @@
+
+@layer components {
+  .animate-scan {
+    animation: sweep 3.6s var(--ease) infinite;
+  }
+
+  .animate-land {
+    animation: land 3.6s var(--ease) infinite;
+  }
+
+  @keyframes sweep {
+    0% {
+      transform: translateY(-56px);
+      opacity: 0;
+    }
+    16% {
+      opacity: 1;
+    }
+    84% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(260px);
+      opacity: 0;
+    }
+  }
+
+
+  @keyframes land {
+    0%,
+    12% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    26%,
+    88% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan,
+  .animate-land {
+    animation: none;
+  }
+
+  .animate-land {
+    opacity: 1;
+  }
+
+  .animate-scan {
+    display: none;
+  }
+}

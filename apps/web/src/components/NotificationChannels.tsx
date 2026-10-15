@@ -172,7 +172,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
   return (
     <div className={VIEW_CLASSNAME}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {channels === null ? "" : `${channels.length} connected`}
         </span>
       </div>
@@ -187,7 +187,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
               </Alert>
             ) : null}
 
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Pick where alerts go
             </h2>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -206,7 +206,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
               ))}
             </div>
 
-            <h2 className="mt-8 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <h2 className="mt-8 text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Fill the next fields.
             </h2>
 
@@ -267,11 +267,11 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
             </div>
 
             <div className="mt-10 flex items-center justify-between">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Connected
               </h2>
               {channels !== null && channels.length > 0 ? (
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-[11px] text-muted-foreground">
                   {channels.length}
                 </span>
               ) : null}
@@ -394,9 +394,9 @@ function ChannelField({
     <FieldGroup>
       <FieldLabel htmlFor={id}>
         {label}{" "}
-        {optional ? <span className="text-[10px]">— optional</span> : null}
+        {optional ? <span className="text-[11px]">— optional</span> : null}
         {secret && editing ? (
-          <span className="text-[10px]">— saved, leave blank to keep</span>
+          <span className="text-[11px]">— saved, leave blank to keep</span>
         ) : null}
       </FieldLabel>
       {secret ? (

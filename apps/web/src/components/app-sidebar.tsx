@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { IMembership } from "@heptadec/api/organization-contracts";
 import {
-  IconBell,
   IconChartBar,
   IconClock,
   IconDatabase,
@@ -36,8 +35,7 @@ import { OrgSwitcher } from "./OrgSwitcher";
 export type WorkspaceView =
   | "sources"
   | "dashboards"
-  | "schedules"
-  | "alerts"
+  | "monitoring"
   | "notifications"
   | "ai"
   | "mcp"
@@ -127,7 +125,7 @@ function SidebarUserCard({
     <Avatar
       name={userName}
       image={userImage}
-      className="border-transparent bg-cyan font-bold text-black"
+      className="border-transparent bg-cyan font-bold text-on-accent"
     />
   );
 
@@ -210,7 +208,7 @@ function SidebarUserCard({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center gap-2.5 rounded-xl bg-foreground/5 p-2.5 text-left transition-colors hover:bg-foreground/10"
+        className="flex w-full items-center gap-2.5 rounded-xl bg-sidebar-accent p-2.5 text-left transition-colors hover:bg-foreground/10"
       >
         {avatar}
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
@@ -223,7 +221,7 @@ function SidebarUserCard({
 }
 
 const NAV_ITEM_CLASSNAME =
-  "h-10 rounded-lg text-[13px] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-fg data-[active=true]:bg-foreground/10 data-[active=true]:font-medium data-[active=true]:text-fg";
+  "h-10 rounded-lg text-[14px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-fg data-[active=true]:bg-foreground/10 data-[active=true]:font-medium data-[active=true]:text-fg";
 
 export function AppSidebar({
   view,
@@ -247,7 +245,7 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <SidebarGroupLabel className="px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Workspace
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -284,9 +282,9 @@ export function AppSidebar({
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={view === "schedules"}
-                  tooltip="Schedules"
-                  onClick={() => onViewChange("schedules")}
+                  isActive={view === "monitoring"}
+                  tooltip="Monitoring"
+                  onClick={() => onViewChange("monitoring")}
                   className={NAV_ITEM_CLASSNAME}
                 >
                   <IconClock
@@ -294,22 +292,7 @@ export function AppSidebar({
                     strokeWidth={1.5}
                     className="shrink-0"
                   />
-                  <span>Schedules</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "alerts"}
-                  tooltip="Alerts"
-                  onClick={() => onViewChange("alerts")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconBell
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>Alerts</span>
+                  <span>Monitoring</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

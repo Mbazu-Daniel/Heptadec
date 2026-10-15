@@ -9,8 +9,7 @@ import { Breadcrumbs, type ICrumb } from "./workspace";
 import { McpTokens } from "./McpTokens";
 import { Dashboards } from "./dashboards/Dashboards";
 import { DashboardDetail } from "./dashboards/DashboardDetail";
-import { Schedules } from "./Schedules";
-import { Alerts } from "./Alerts";
+import { Monitoring } from "./Monitoring";
 import { NotificationChannels } from "./NotificationChannels";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { TeamPanel } from "./TeamPanel";
@@ -29,8 +28,7 @@ interface IDashboardProps {
 const VIEW_LABELS: Record<WorkspaceView, string> = {
   sources: "Data sources",
   dashboards: "Dashboards",
-  schedules: "Schedules",
-  alerts: "Alerts",
+  monitoring: "Monitoring",
   notifications: "Notification channels",
   ai: "AI providers",
   mcp: "MCP",
@@ -102,10 +100,8 @@ export function Dashboard({
           ) : (
             <DashboardDetail dashboardId={openDashboard} onBack={openDashboards} />
           )
-        ) : view === "schedules" ? (
-          <Schedules />
-        ) : view === "alerts" ? (
-          <Alerts />
+        ) : view === "monitoring" ? (
+          <Monitoring onOpenSources={() => goToSection("sources")} />
         ) : view === "notifications" ? (
           <NotificationChannels isOwner={active?.role === "owner"} />
         ) : view === "mcp" ? (

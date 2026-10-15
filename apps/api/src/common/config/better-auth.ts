@@ -157,6 +157,10 @@ function buildAuth(db: HeptadecDatabase) {
       database: {
         generateId: () => crypto.randomUUID(),
       },
+      crossSubDomainCookies: {
+        enabled: true,
+        domain: "localhost",
+      },
     },
   });
 }

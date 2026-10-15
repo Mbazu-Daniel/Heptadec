@@ -141,6 +141,7 @@ async function request<T>(
 ): Promise<T> {
   const res = await fetch(path, {
     method,
+    credentials: "include",
     headers: { "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -288,6 +289,7 @@ async function streamRequest<T>(
 ): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
+    credentials: "include",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });

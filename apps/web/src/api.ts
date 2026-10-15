@@ -10,7 +10,8 @@ import type {
 } from "@heptadec/api/member-contracts";
 import type {
   IImagesConfigResponse,
-  IUploadImageResponse,
+  IPresignImageResponse,
+  ImageTarget,
 } from "@heptadec/api/images-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import type {
@@ -191,16 +192,31 @@ export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
   return request<IImagesConfigResponse>("/api/images/config");
 }
 
-export function uploadAvatar(dataUrl: string): Promise<IUploadImageResponse> {
-  return request<IUploadImageResponse>("/api/images/avatar", "POST", {
-    dataUrl,
+/**
+ * Ask the API to sign an upload, then send the bytes straight to the bucket.
+ *
+ * The bytes are the file's own: nothing here base64-encodes them, and the API
+ * never sees them. What comes back is the path to keep in the database and a URL
+ * to PUT the file to.
+ */
+export async function uploadImage(
+  target: ImageTarget,
+  picture: Blob,
+): Promise<string> {
+  const signed = await request<IPresignImageResponse>("/api/images/presign", "POST", {
+    target,
+    contentType: picture.type,
+    size: picture.size,
   });
-}
-
-export function uploadOrganizationLogo(
-  dataUrl: string,
-): Promise<IUploadImageResponse> {
-  return request<IUploadImageResponse>("/api/images/logo", "POST", { dataUrl });
+  const put = await fetch(signed.uploadUrl, {
+    method: "PUT",
+    headers: signed.headers,
+    body: picture,
+  });
+  if (!put.ok) {
+    throw new Error("That image could not be uploaded.");
+  }
+  return signed.path;
 }
 
 export async function saveMemberDisplayName(

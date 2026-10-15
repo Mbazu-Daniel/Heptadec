@@ -19,6 +19,15 @@ export interface IAuthVars {
     // Absent when a deployment binds no R2 bucket: image storage is optional
     // and the image routes report it as unconfigured rather than failing.
     images?: R2Bucket;
+    // Signing an upload is an S3 operation, so it needs the bucket's name and
+    // the account it lives in, plus an R2 access key. Absent means uploads are
+    // not offered; reads still work through the bucket binding above.
+    R2BucketName?: string;
+    R2AccountId?: string;
+    R2AccessKeyId?: string;
+    R2SecretAccessKey?: string;
+    /** Only for temporary credentials, which the SDK signs alongside the key. */
+    R2SessionToken?: string;
   };
 }
 

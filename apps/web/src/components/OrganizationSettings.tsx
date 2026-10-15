@@ -5,7 +5,7 @@ import { authClient } from "../auth";
 import {
   deleteOrganization,
   messageFor,
-  uploadOrganizationLogo,
+  uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
 import { Avatar } from "./ui/feedback";
@@ -59,7 +59,7 @@ export function OrganizationSettings({
         setError("Pick an image under 8 MB.");
         return;
       }
-      const { path } = await uploadOrganizationLogo(picture);
+      const path = await uploadImage("logo", picture);
       const result = await authClient.organization.update({
         data: { logo: path },
       });

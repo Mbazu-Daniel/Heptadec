@@ -4,7 +4,7 @@ import {
   fetchMemberProfile,
   messageFor,
   saveMemberDisplayName,
-  uploadAvatar,
+  uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
 import type { IMe } from "@heptadec/api/auth-contracts";
@@ -80,7 +80,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
         setError("Pick an image under 8 MB.");
         return;
       }
-      const { path } = await uploadAvatar(picture);
+      const path = await uploadImage("avatar", picture);
       const result = await authClient.updateUser({ image: path });
       if (result.error) {
         setError(result.error.message ?? "That image was not saved.");

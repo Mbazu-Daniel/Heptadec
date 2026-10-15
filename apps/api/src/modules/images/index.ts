@@ -2,5 +2,7 @@ export { imageRoutes } from "./routes";
 
 export type {
   IImagesConfigResponse,
-  IUploadImageResponse,
+  IPresignImageRequest,
+  IPresignImageResponse,
+  ImageTarget,
 } from "./contracts";

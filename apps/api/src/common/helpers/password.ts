@@ -1,4 +1,10 @@
-const ITERATIONS = 100_000;
+// Cloudflare's WebCrypto refuses PBKDF2 above 100000 iterations and throws
+// NotSupportedError, which would escape verifyPassword as a 500 on every
+// sign-in attempt for that account. Node has no such ceiling, so a work factor
+// that works in development can still lock an account out of the Worker it is
+// deployed to — this constant is the ceiling, not a preference.
+const MAX_ITERATIONS = 100_000;
+const ITERATIONS = MAX_ITERATIONS;
 const SALT_BYTES = 16;
 const HASH_BYTES = 32;
 const PREFIX = "$pbkdf2-sha256$";
@@ -42,7 +48,8 @@ async function derive(
 
 // The iteration count travels inside the hash, so lowering ITERATIONS only
 // changes what new accounts get. Hashes written earlier still verify against
-// the count they were made with.
+// the count they were made with, right up to MAX_ITERATIONS — past it the
+// runtime cannot derive them at all, which is what verifyPassword refuses.
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const derived = await derive(password, salt, ITERATIONS);
@@ -68,6 +75,15 @@ export async function verifyPassword(data: {
   }
   const iterations = Number.parseInt(iterationsText, 10);
   if (!Number.isSafeInteger(iterations) || iterations <= 0) {
+    return false;
+  }
+  if (iterations > MAX_ITERATIONS) {
+    // Not a wrong password: a hash this runtime cannot derive at all. Only a
+    // password reset brings the account back, so say which one it is rather
+    // than letting the account look merely mistyped.
+    console.error(
+      `[api] stored password hash asks for ${iterations} iterations, above the ${MAX_ITERATIONS} this runtime supports; the account needs a password reset`,
+    );
     return false;
   }
   const actual = await derive(data.password, fromBase64(saltText), iterations);

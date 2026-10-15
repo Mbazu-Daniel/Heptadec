@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../../common/config/better-auth";
+import { schema } from "@heptadec/db";
+import { authFor } from "../../common/config/better-auth";
 import {
   requireSession,
   type IAuthVars,
@@ -27,7 +27,7 @@ const { invitation, organization } = schema;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function invitationRow(invitationId: string) {
+async function invitationRow(db: IAuthVars["Bindings"]["db"], invitationId: string) {
   const rows = await db
     .select({
       id: invitation.id,
@@ -66,11 +66,11 @@ export function invitationRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/invitations", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "invitation", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "invitation", "create"))) {
       throw new ForbiddenException("Only an owner can see invitations");
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select({
         id: invitation.id,
         email: invitation.email,
@@ -94,7 +94,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
   });
 
   routes.get("/api/invitation/:id", async (c) => {
-    const row = await invitationRow(c.req.param("id"));
+    const row = await invitationRow(c.get("db"), c.req.param("id"));
     requireUsable(row);
     const body: IInvitationPreviewResponse = {
       id: row.id,
@@ -109,18 +109,18 @@ export function invitationRoutes(): Hono<IAuthVars> {
   });
 
   routes.post("/api/invitation/:id/accept", requireSession, async (c) => {
-    const row = await invitationRow(c.req.param("id"));
-    await auth.api.acceptInvitation({
+    const row = await invitationRow(c.get("db"), c.req.param("id"));
+    await authFor(c.get("db")).api.acceptInvitation({
       body: { invitationId: row.id },
       headers: c.req.raw.headers,
     });
-    await auth.api.setActiveOrganization({
+    await authFor(c.get("db")).api.setActiveOrganization({
       body: { organizationId: row.organizationId },
       headers: c.req.raw.headers,
     });
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(c.get("db"), {
       organizationId: row.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -153,11 +153,11 @@ export function invitationRoutes(): Hono<IAuthVars> {
     }
     const role: Role = roleValue;
 
-    if (!(await can(c.req.raw.headers, "invitation", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "invitation", "create"))) {
       throw new ForbiddenException("Only an owner can invite members");
     }
 
-    await auth.api.createInvitation({
+    await authFor(c.get("db")).api.createInvitation({
       body: { email, role, organizationId: organization.organizationId },
       headers: c.req.raw.headers,
     });
@@ -170,7 +170,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
   });
 
   routes.post("/api/invitation/:id/decline", requireSession, async (c) => {
-    await auth.api.rejectInvitation({
+    await authFor(c.get("db")).api.rejectInvitation({
       body: { invitationId: c.req.param("id") },
       headers: c.req.raw.headers,
     });
@@ -180,11 +180,11 @@ export function invitationRoutes(): Hono<IAuthVars> {
   routes.delete("/api/organization/invitations/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "invitation", "cancel"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "invitation", "cancel"))) {
       throw new ForbiddenException("Only an owner can cancel an invitation");
     }
     const invitationId = c.req.param("id");
-    const owned = await db
+    const owned = await organization.db
       .select({ id: invitation.id })
       .from(invitation)
       .where(
@@ -195,13 +195,13 @@ export function invitationRoutes(): Hono<IAuthVars> {
     if (owned.length === 0) {
       throw new NotFoundException("That invitation does not exist");
     }
-    await auth.api.cancelInvitation({
+    await authFor(c.get("db")).api.cancelInvitation({
       body: { invitationId },
       headers: c.req.raw.headers,
     });
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,

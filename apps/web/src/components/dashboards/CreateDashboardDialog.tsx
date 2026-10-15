@@ -34,6 +34,7 @@ const ENGINE_LABELS: Record<string, string> = {
   libsql: "LibSQL",
   redis: "Redis",
   quickwit: "Quickwit",
+  mongodb: "MongoDB",
 };
 
 export function CreateDashboardDialog({
@@ -87,7 +88,7 @@ export function CreateDashboardDialog({
   }, []);
 
   const selected = sources?.filter((source) => chosen.includes(source.id)) ?? [];
-  const analysable = selected.some((source) => source.kind === "postgres");
+  const analysable = selected.some((source) => source.tooling);
   const buildWithAi =
     withAi && analysable && (providerCount ?? 0) > 0 && !busy;
 
@@ -216,8 +217,8 @@ export function CreateDashboardDialog({
         )}
         {analysable === false && chosen.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            None of these can be analysed yet — only Postgres can. The dashboard
-            will be created with them connected.
+            None of these can be described in full yet, so nothing on the dashboard can be
+            built by AI. It will be created with them connected.
           </p>
         )}
 

@@ -8,6 +8,10 @@ import {
 } from "@tabler/icons-react";
 import type { IQueryResponse } from "@heptadec/api/query-contracts";
 import type { IExplainNode } from "@heptadec/api/query-contracts";
+import type {
+  IDataSource,
+  SqlDialect,
+} from "@heptadec/api/data-source-contracts";
 import {
   askQuestion,
   explainQuery,
@@ -16,6 +20,7 @@ import {
   runQuery,
 } from "../../api";
 import { exportCsv, exportJson } from "../../lib/export";
+import { castToText, quoteIdentifier } from "../../lib/sql";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -57,10 +62,6 @@ function needsValue(op: FilterOp): boolean {
   return op !== "is null" && op !== "is not null";
 }
 
-function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
 function quoteLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -69,6 +70,7 @@ function composeStatement(
   base: string,
   filter: IRefineFilter | null,
   sort: IRefineSort | null,
+  dialect: SqlDialect,
 ): string {
   if (filter === null && sort === null) {
     return base;
@@ -76,41 +78,45 @@ function composeStatement(
   const inner = base.replace(/;+\s*$/, "").trim();
   let statement = `SELECT * FROM (${inner}) AS heptadec_filtered`;
   if (filter !== null) {
-    const column = quoteIdent(filter.column);
+    const column = quoteIdentifier(dialect, filter.column);
     if (filter.op === "is null" || filter.op === "is not null") {
       statement += ` WHERE ${column} ${filter.op === "is null" ? "IS NULL" : "IS NOT NULL"}`;
     } else if (filter.op === "contains") {
-      statement += ` WHERE POSITION(${quoteLiteral(filter.value)} IN (${column}::text)) > 0`;
+      statement += ` WHERE ${castToText(dialect, column)} LIKE ${quoteLiteral(`%${filter.value}%`)}`;
     } else {
       statement += ` WHERE ${column} ${filter.op} ${quoteLiteral(filter.value)}`;
     }
   }
   if (sort !== null) {
-    statement += ` ORDER BY ${quoteIdent(sort.column)} ${sort.dir === "asc" ? "ASC" : "DESC"}`;
+    statement += ` ORDER BY ${quoteIdentifier(dialect, sort.column)} ${sort.dir === "asc" ? "ASC" : "DESC"}`;
   }
   return `${statement} LIMIT 100`;
 }
 
 export function QueryRunner({
-  sourceId,
+  source,
+  dialect,
   initialSql,
   focusTable,
   runRequest,
   onRan,
   onSqlChange,
 }: {
-  sourceId: string;
+  source: IDataSource;
+  /** Taken from the source rather than defaulted here: an engine with no
+   * dialect is not one this editor is for, and guessing "postgres" would
+   * build statements in a language the engine does not speak. */
+  dialect: SqlDialect;
   initialSql: string;
   focusTable: string | null;
   runRequest: { sql: string; nonce: number } | null;
   onRan: () => void;
   onSqlChange: (sql: string) => void;
 }) {
+  const sourceId = source.id;
   const [sql, setSql] = useState(initialSql);
   const [result, setResult] = useState<IQueryResponse | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [draftedBy, setDraftedBy] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<IExplainNode | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -121,6 +127,7 @@ export function QueryRunner({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
+  const [drafted, setDrafted] = useState(false);
   const latestRun = useRef(0);
 
   async function ask(): Promise<void> {
@@ -129,12 +136,10 @@ export function QueryRunner({
     }
     setAsking(true);
     setProblem(null);
-    setNotice(null);
-    setDraftedBy(null);
+    setDrafted(false);
     let draft = "";
     try {
-      const answer = await askQuestion(sourceId, question.trim(), undefined, {
-        onStatus: (message) => setNotice(message),
+      const answer = await askQuestion([sourceId], question.trim(), undefined, {
         onDelta: (text) => {
           draft += text;
           setSql(draft);
@@ -145,9 +150,7 @@ export function QueryRunner({
         return;
       }
       setSql(answer.sql);
-      setDraftedBy(
-        `${answer.providerName} (${answer.model}) in ${answer.durationMs}ms`,
-      );
+      setDrafted(true);
     } catch (caught) {
       setProblem(messageFor(caught, "That question could not be asked."));
     } finally {
@@ -156,17 +159,10 @@ export function QueryRunner({
   }
 
   function addToQuery(): void {
-    if (sql.trim() === "") {
-      return;
-    }
-    setNotice(
-      draftedBy === null
-        ? "Added to the query bar."
-        : `Drafted by ${draftedBy} and added to the query bar.`,
-    );
-    setDraftedBy(null);
+    setDrafted(false);
     void execute(sql, true);
   }
+
   useEffect(() => {
     if (runRequest === null) {
       return;
@@ -237,7 +233,7 @@ export function QueryRunner({
     }
   }
   function refine(sort: IRefineSort | null): void {
-    void execute(composeStatement(sql, activeFilter(), sort), false);
+    void execute(composeStatement(sql, activeFilter(), sort, dialect), false);
   }
 
   function toggleSort(column: string): void {
@@ -276,12 +272,12 @@ export function QueryRunner({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <label
             htmlFor="query-sql"
-            className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+            className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
           >
             SQL
           </label>
           {result !== null ? (
-            <span className="whitespace-nowrap font-mono text-[10px] text-muted-foreground">
+            <span className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
               {result.rowCount} row{result.rowCount === 1 ? "" : "s"} ·{" "}
               {result.durationMs} ms
               {result.truncated ? " · truncated" : ""}
@@ -292,7 +288,7 @@ export function QueryRunner({
               <Button
                 variant="ghost"
                 onClick={() => exportCsv(result, "heptadec-results")}
-                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-fg"
+                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-fg"
                 title="Download the current results as CSV"
               >
                 Export CSV
@@ -300,7 +296,7 @@ export function QueryRunner({
               <Button
                 variant="ghost"
                 onClick={() => exportJson(result, "heptadec-results")}
-                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-fg"
+                className="h-6 px-2 text-[11px] text-muted-foreground hover:text-fg"
                 title="Download the current results as JSON"
               >
                 Export JSON
@@ -311,20 +307,23 @@ export function QueryRunner({
             <Button
               onClick={() => void execute(sql, true)}
               disabled={running || sql.trim().length === 0}
-              className="h-8 gap-1.5 border-transparent bg-cyan px-4 text-xs font-semibold text-black hover:bg-cyan/85 hover:text-black"
+              className="h-8 gap-1.5 px-4 text-xs"
             >
               <IconPlayerPlay size={14} />
               {running ? "Running…" : "Run query"}
             </Button>
-            <Button
-              onClick={() => void explain()}
-              disabled={explaining || running || sql.trim().length === 0}
-              className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-fg"
-              title="Show the execution plan without running the statement"
-            >
-              <IconStack size={14} />
-              {explaining ? "Explaining…" : "Explain"}
-            </Button>
+            {source.canExplain ? (
+              <Button
+                variant="ghost"
+                onClick={() => void explain()}
+                disabled={explaining || running || sql.trim().length === 0}
+                className="h-8 gap-1.5 text-xs"
+                title="Show the execution plan without running the statement"
+              >
+                <IconStack size={14} />
+                {explaining ? "Explaining…" : "Explain"}
+              </Button>
+            ) : null}
           </span>
         </div>
         <form
@@ -368,7 +367,7 @@ export function QueryRunner({
           aria-label="SQL statement"
           className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
         />
-        <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
           ⌘/Ctrl + Enter runs it · clicking a table loads its full contents
         </p>
       </div>
@@ -445,11 +444,10 @@ export function QueryRunner({
         ) : null}
         <div className="min-h-0 flex-1 overflow-auto p-3">
         {problem !== null ? <Alert>{problem}</Alert> : null}
-        {notice !== null ? <Alert tone="success">{notice}</Alert> : null}
-        {draftedBy !== null ? (
+        {drafted ? (
           <div className="flex items-center gap-2">
             <Alert tone="success">
-              Drafted by {draftedBy}. It runs only when you add it.
+              A statement is ready. It runs only when you add it.
             </Alert>
             <Button
               onClick={addToQuery}
@@ -464,13 +462,13 @@ export function QueryRunner({
         {plan !== null ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Execution plan
               </span>
               <Button
                 variant="ghost"
                 onClick={() => setPlan(null)}
-                className="ml-auto h-6 px-2 text-[10px] text-muted-foreground hover:text-fg"
+                className="ml-auto h-6 px-2 text-[11px] text-muted-foreground hover:text-fg"
               >
                 Back to results
               </Button>
@@ -514,7 +512,7 @@ export function QueryRunner({
                       <span className="truncate text-xs font-semibold text-fg">
                         {column}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
                         {result.columnTypes[position]}
                       </span>
                       {sortColumn === column ? (
@@ -538,7 +536,7 @@ export function QueryRunner({
             <tbody>
               {result.rows.map((row, index) => (
                 <tr key={index} className={TABLE_ROW_CLASSNAME}>
-                  <td className="px-2 py-1.5 text-right align-middle font-mono text-[10px] tabular-nums text-muted-foreground">
+                  <td className="px-2 py-1.5 text-right align-middle font-mono text-[11px] tabular-nums text-muted-foreground">
                     {index + 1}
                   </td>
                   {result.columns.map((column) => (

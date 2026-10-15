@@ -53,7 +53,7 @@ export function Dashboards({
       <Toolbar>
         <Button
           onClick={() => setOpening(true)}
-          className="h-7 gap-1.5 border-transparent bg-cyan px-3 text-xs font-semibold text-black hover:bg-cyan/85 hover:text-black"
+          className="h-7 gap-1.5 px-3 text-xs"
         >
           New dashboard
         </Button>

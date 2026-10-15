@@ -6,7 +6,7 @@ import type { IAuthVars } from "../../common/middleware/require-session";
 import { requireSession } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
 import type { IOrganizationScope } from "../../common/session/current-organization";
-import { auth } from "../../common/config/better-auth";
+import { authFor } from "../../common/config/better-auth";
 import {
   BadRequestException,
   ForbiddenException,
@@ -67,7 +67,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/mcp-tokens", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(c.req.raw.headers, "apiKey", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "create"))) {
       throw new ForbiddenException("Only owners can create MCP tokens");
     }
 
@@ -79,7 +79,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
     const capabilities = readCapabilities(raw);
 
     const session = c.get("session");
-    const created = await auth.api.createApiKey({
+    const created = await authFor(organization.db).api.createApiKey({
       body: {
         configId: MCP_CONFIG_ID,
         name,
@@ -94,7 +94,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
     };
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -110,11 +110,11 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/mcp-tokens", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(c.req.raw.headers, "apiKey", "read"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "read"))) {
       throw new ForbiddenException("Only owners can see MCP tokens");
     }
 
-    const result = await auth.api.listApiKeys({
+    const result = await authFor(organization.db).api.listApiKeys({
       query: {
         organizationId: organization.organizationId,
         configId: MCP_CONFIG_ID,
@@ -129,11 +129,11 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.delete("/api/mcp-tokens/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(c.req.raw.headers, "apiKey", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "delete"))) {
       throw new ForbiddenException("Only owners can revoke MCP tokens");
     }
 
-    const result = await auth.api.updateApiKey({
+    const result = await authFor(organization.db).api.updateApiKey({
       body: {
         configId: MCP_CONFIG_ID,
         keyId: c.req.param("id"),
@@ -147,7 +147,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -162,7 +162,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
   });
 
   routes.all("/mcp", async (c) => {
-    const principal = await authenticateMcpKey(c.req.header("authorization"));
+    const principal = await authenticateMcpKey(c.get("db"), c.req.header("authorization"));
     rateLimit(principal.keyId);
 
     const server = new McpServer({ name: "heptadec", version: "0.0.0" });

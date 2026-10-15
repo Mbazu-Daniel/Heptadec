@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { invitation, member, user } = schema;
 
@@ -15,7 +15,7 @@ async function ownerWithOrganization(): Promise<{
   organizationId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const created = await auth.api.createOrganization({
+  const created = await authFor(db).api.createOrganization({
     body: { name: "Delta Works", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -25,7 +25,7 @@ async function ownerWithOrganization(): Promise<{
 it("stores an invitation that an owner sends through the api", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/organization/invitations", {
+  const res = await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "invitee@example.com", role: "viewer" }),
@@ -48,16 +48,16 @@ it("refuses an invitation from a member who is not the owner", async () => {
   const { organizationId } = await ownerWithOrganization();
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
 
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await app.request("/api/organization/invitations", {
+  const res = await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "sneaky@example.com", role: "editor" }),
@@ -74,7 +74,7 @@ it("refuses an invitation from a member who is not the owner", async () => {
 it("rejects an invitation to an address that is not an email", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/organization/invitations", {
+  const res = await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "not-an-address", role: "viewer" }),
@@ -90,7 +90,7 @@ it("rejects an invitation to an address that is not an email", async () => {
 it("reads an invitation back for someone who is not signed in", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -102,7 +102,7 @@ it("reads an invitation back for someone who is not signed in", async () => {
     .where(eq(invitation.email, invited));
   expect(rows[0]!.organizationId).toBe(organizationId);
 
-  const res = await app.request(`/api/invitation/${rows[0]!.id}`);
+  const res = await request(`/api/invitation/${rows[0]!.id}`);
   expect(res.status).toBe(200);
   const body = (await res.json()) as { email: string; role: string };
   expect(body.email).toBe(invited);
@@ -112,7 +112,7 @@ it("reads an invitation back for someone who is not signed in", async () => {
 it("creates the membership and flips the invitation when accepted", async () => {
   const invited = uniqueEmail();
   const { cookie, organizationId } = await ownerWithOrganization();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -122,7 +122,7 @@ it("creates the membership and flips the invitation when accepted", async () => 
   const guest = await signUp(invited);
   await verifyEmail(guest.user.id);
 
-  const res = await app.request(`/api/invitation/${row.id}/accept`, {
+  const res = await request(`/api/invitation/${row.id}/accept`, {
     method: "POST",
     headers: { cookie: guest.cookie },
   });
@@ -143,7 +143,7 @@ it("creates the membership and flips the invitation when accepted", async () => 
 it("refuses an acceptance from someone the invitation was not sent to", async () => {
   const { cookie } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -152,7 +152,7 @@ it("refuses an acceptance from someone the invitation was not sent to", async ()
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
   const stranger = await signUp(uniqueEmail());
 
-  const res = await app.request(`/api/invitation/${row.id}/accept`, {
+  const res = await request(`/api/invitation/${row.id}/accept`, {
     method: "POST",
     headers: { cookie: stranger.cookie },
   });
@@ -166,14 +166,14 @@ it("refuses an acceptance from someone the invitation was not sent to", async ()
 });
 
 it("will not preview an invitation that does not exist", async () => {
-  const res = await app.request("/api/invitation/00000000-0000-4000-8000-000000000000");
+  const res = await request("/api/invitation/00000000-0000-4000-8000-000000000000");
   expect(res.status).toBe(404);
 });
 
 it("refuses an expired invitation and leaves the membership untouched", async () => {
   const invited = uniqueEmail();
   const { cookie, organizationId } = await ownerWithOrganization();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -188,10 +188,10 @@ it("refuses an expired invitation and leaves the membership untouched", async ()
   const guest = await signUp(invited);
   await verifyEmail(guest.user.id);
 
-  const preview = await app.request(`/api/invitation/${row.id}`);
+  const preview = await request(`/api/invitation/${row.id}`);
   expect(preview.status).toBe(404);
 
-  const res = await app.request(`/api/invitation/${row.id}/accept`, {
+  const res = await request(`/api/invitation/${row.id}/accept`, {
     method: "POST",
     headers: { cookie: guest.cookie },
   });
@@ -210,7 +210,7 @@ it("refuses an expired invitation and leaves the membership untouched", async ()
 it("refuses to cancel another organization's invitation and leaves it pending", async () => {
   const invited = uniqueEmail();
   const mine = await ownerWithOrganization();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie: mine.cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -218,7 +218,7 @@ it("refuses to cancel another organization's invitation and leaves it pending", 
 
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
   const other = await ownerWithOrganization();
-  const res = await app.request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/organization/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie: other.cookie },
   });

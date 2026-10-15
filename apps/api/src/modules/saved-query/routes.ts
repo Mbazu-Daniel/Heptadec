@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -63,7 +63,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.get("/api/saved-queries", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(savedQuery)
       .where(organization.where(savedQuery.organizationId))
@@ -77,12 +77,12 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.get("/api/data-sources/:id/saved-queries", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const source = await oneRow(dataSource, c.req.param("id"), organization);
+    const source = await oneRow(organization.db, dataSource, c.req.param("id"), organization);
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(savedQuery)
       .where(
@@ -102,11 +102,11 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.post("/api/data-sources/:id/saved-queries", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "create"))) {
       throw new ForbiddenException("Only owners and editors can save queries");
     }
 
-    const source = await oneRow(dataSource, c.req.param("id"), organization);
+    const source = await oneRow(organization.db, dataSource, c.req.param("id"), organization);
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
@@ -118,7 +118,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     };
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(savedQuery)
       .values({
         organizationId: organization.organizationId,
@@ -135,7 +135,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That saved query could not be created");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -151,11 +151,11 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.post("/api/data-sources/:id/saved-queries/runs", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "create"))) {
       throw new ForbiddenException("Only owners and editors can save queries");
     }
 
-    const source = await oneRow(dataSource, c.req.param("id"), organization);
+    const source = await oneRow(organization.db, dataSource, c.req.param("id"), organization);
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
@@ -163,7 +163,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     const body = readBody(await c.req.json(), "A statement is required");
     const sql = readString(body, "sql", "Write the statement to record", MAX_SQL);
 
-    const existing = await db
+    const existing = await organization.db
       .select()
       .from(savedQuery)
       .where(
@@ -177,7 +177,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
 
     const found = existing[0];
     if (found !== undefined) {
-      const moved = await db
+      const moved = await organization.db
         .update(savedQuery)
         .set({ updatedAt: new Date() })
         .where(eq(savedQuery.id, found.id))
@@ -187,7 +187,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(savedQuery)
       .values({
         organizationId: organization.organizationId,
@@ -210,11 +210,11 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.patch("/api/saved-queries/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "update"))) {
       throw new ForbiddenException("Only owners and editors can edit queries");
     }
 
-    const existing = await oneRow(savedQuery, c.req.param("id"), organization);
+    const existing = await oneRow(organization.db, savedQuery, c.req.param("id"), organization);
     if (existing === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
@@ -233,7 +233,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    await db.insert(queryVersion).values({
+    await organization.db.insert(queryVersion).values({
       organizationId: existing.organizationId,
       savedQueryId: existing.id,
       name: existing.name,
@@ -241,7 +241,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       createdAt: now,
     });
 
-    const updated = await db
+    const updated = await organization.db
       .update(savedQuery)
       .set({ name: nextName, sql: nextSql, updatedAt: now })
       .where(eq(savedQuery.id, existing.id))
@@ -252,7 +252,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That saved query does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -268,15 +268,15 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.delete("/api/saved-queries/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "delete"))) {
       throw new ForbiddenException("Only owners and editors can delete queries");
     }
 
-    const existing = await oneRow(savedQuery, c.req.param("id"), organization);
+    const existing = await oneRow(organization.db, savedQuery, c.req.param("id"), organization);
     if (existing === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    await db
+    await organization.db
       .delete(widget)
       .where(
         and(
@@ -284,7 +284,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
           organization.where(widget.organizationId),
         ),
       );
-    await db
+    await organization.db
       .delete(scheduledJob)
       .where(
         and(
@@ -292,7 +292,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
           organization.where(scheduledJob.organizationId),
         ),
       );
-    const rules = await db
+    const rules = await organization.db
       .select({ id: alertRule.id })
       .from(alertRule)
       .where(
@@ -302,7 +302,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
         ),
       );
     for (const rule of rules) {
-      await db
+      await organization.db
         .delete(alertDelivery)
         .where(
           and(
@@ -311,7 +311,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
           ),
         );
     }
-    await db
+    await organization.db
       .delete(alertRule)
       .where(
         and(
@@ -319,9 +319,9 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
           organization.where(alertRule.organizationId),
         ),
       );
-    await db.delete(savedQuery).where(eq(savedQuery.id, existing.id));
+    await organization.db.delete(savedQuery).where(eq(savedQuery.id, existing.id));
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -335,12 +335,12 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.get("/api/saved-queries/:id/versions", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const existing = await oneRow(savedQuery, c.req.param("id"), organization);
+    const existing = await oneRow(organization.db, savedQuery, c.req.param("id"), organization);
     if (existing === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(queryVersion)
       .where(
@@ -359,11 +359,11 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
   routes.post("/api/saved-queries/:id/restore", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "update"))) {
       throw new ForbiddenException("Only owners and editors can restore queries");
     }
 
-    const existing = await oneRow(savedQuery, c.req.param("id"), organization);
+    const existing = await oneRow(organization.db, savedQuery, c.req.param("id"), organization);
     if (existing === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
@@ -371,7 +371,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     const body = readBody(await c.req.json(), "A version to restore is required");
     const versionId = readString(body, "versionId", "Choose a version", 200);
 
-    const versionRows = await db
+    const versionRows = await organization.db
       .select()
       .from(queryVersion)
       .where(
@@ -388,7 +388,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    await db.insert(queryVersion).values({
+    await organization.db.insert(queryVersion).values({
       organizationId: existing.organizationId,
       savedQueryId: existing.id,
       name: existing.name,
@@ -396,7 +396,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       createdAt: now,
     });
 
-    const updated = await db
+    const updated = await organization.db
       .update(savedQuery)
       .set({ name: version.name, sql: version.sql, updatedAt: now })
       .where(eq(savedQuery.id, existing.id))
@@ -407,7 +407,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That saved query does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,

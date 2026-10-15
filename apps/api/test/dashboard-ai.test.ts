@@ -1,26 +1,18 @@
 import { createServer, type Server } from "node:http";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { dashboardDataSource, savedQuery, widget } = schema;
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
 
 async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Generated Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -28,7 +20,7 @@ async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
 }
 
 async function createSource(cookie: string, name: string): Promise<string> {
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -51,7 +43,7 @@ async function saveQuery(
   sourceId: string,
   sql: string,
 ): Promise<string> {
-  const res = await app.request(`/api/data-sources/${sourceId}/saved-queries`, {
+  const res = await request(`/api/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Query", sql }),
@@ -65,7 +57,7 @@ async function createDashboard(
   name: string,
   dataSourceIds: string[],
 ): Promise<string> {
-  const res = await app.request("/api/dashboards", {
+  const res = await request("/api/dashboards", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, dataSourceIds }),
@@ -79,7 +71,7 @@ async function chartIt(
   dashboardId: string,
   savedQueryId: string,
 ): Promise<string> {
-  const res = await app.request(`/api/dashboards/${dashboardId}/widgets`, {
+  const res = await request(`/api/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -98,7 +90,7 @@ async function registerProvider(
   cookie: string,
   baseUrl: string,
 ): Promise<void> {
-  const res = await app.request("/api/ai/providers", {
+  const res = await request("/api/ai/providers", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -199,7 +191,7 @@ it("refuses a chart whose query belongs to a source the dashboard does not draw 
   const orphanQuery = await saveQuery(cookie, elsewhere, REGION_COUNTS);
   const dashboardId = await createDashboard(cookie, "Scoped", [connected]);
 
-  const res = await app.request(`/api/dashboards/${dashboardId}/widgets`, {
+  const res = await request(`/api/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -224,7 +216,7 @@ it("drops the source links along with the dashboard", async () => {
   const sourceId = await createSource(cookie, "Events");
   const dashboardId = await createDashboard(cookie, "Doomed", [sourceId]);
 
-  const removed = await app.request(`/api/dashboards/${dashboardId}`, {
+  const removed = await request(`/api/dashboards/${dashboardId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -267,7 +259,7 @@ it("plots the charts a provider drafts, and saves none of the ones that do not r
   try {
     await registerProvider(cookie, provider.baseUrl);
 
-    const res = await app.request("/api/dashboards/generate", {
+    const res = await request("/api/dashboards/generate", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ name: "Generated", dataSourceIds: [sourceId] }),
@@ -323,7 +315,7 @@ it("proposes changes without applying them, then applies what is approved", asyn
   try {
     await registerProvider(cookie, provider.baseUrl);
 
-    const asked = await app.request(`/api/dashboards/${dashboardId}/ask`, {
+    const asked = await request(`/api/dashboards/${dashboardId}/ask`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ question: "how many events are there" }),
@@ -343,7 +335,7 @@ it("proposes changes without applying them, then applies what is approved", asyn
       .where(eq(widget.dashboardId, dashboardId));
     expect(afterAsking).toHaveLength(1);
 
-    const applied = await app.request(`/api/dashboards/${dashboardId}/apply`, {
+    const applied = await request(`/api/dashboards/${dashboardId}/apply`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ actions: [body.proposal.actions[0]] }),

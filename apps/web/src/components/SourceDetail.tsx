@@ -6,11 +6,12 @@ import type {
 } from "@heptadec/api/data-source-contracts";
 import type { IResultGrid, IRedisQueryResponse } from "@heptadec/api/query-contracts";
 import {
-  deleteDataSource,
+  askQuestion,
   listSourceObjects,
   messageFor,
   previewSourceRows,
   runRedisCommand,
+  runSearch,
 } from "../api";
 import { Alert, EmptyState } from "./ui/feedback";
 import { Button } from "./ui/button";
@@ -26,7 +27,6 @@ import {
 interface ISourceDetailProps {
   source: IDataSource;
   onBack: () => void;
-  onRemoved: () => void;
 }
 
 export function CellValue({ value }: { value: unknown }) {
@@ -76,7 +76,15 @@ function ResultGrid({ grid, label }: { grid: IResultGrid; label: string }) {
   );
 }
 
-export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) {
+export function SourceDetail({ source, onBack }: ISourceDetailProps) {
+  // What a source can be asked and run as, read off the wire rather than
+  // worked out here from its engine: the server already knows, and a second
+  // answer in the client can only disagree with the first.
+  const language = source.queryLanguage;
+  const speaksSearch = language === "search";
+  const speaksCommand = language === "command";
+  const speaksSqlOrPipeline = language === "sql" || language === "pipeline";
+
   const [objects, setObjects] = useState<IPreviewObject[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<IPreviewResponse | null>(null);
@@ -89,9 +97,9 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
   const [commandResult, setCommandResult] = useState<IRedisQueryResponse | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [drafted, setDrafted] = useState(false);
+  const [question, setQuestion] = useState("");
 
   useEffect(() => {
     let live = true;
@@ -122,14 +130,18 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
       setPreview(null);
       return;
     }
+    const index = selected;
+    const query = appliedSearch;
     let live = true;
     setPreviewBusy(true);
     setPreviewError(null);
-    previewSourceRows(
-      source.id,
-      selected,
-      source.kind === "quickwit" ? appliedSearch : undefined,
-    )
+    // A search is a Run like any other: it goes through the same query seam as
+    // SQL and a command, rather than being smuggled in as a preview parameter
+    // because that was the only way the server would accept one.
+    const rows = speaksSearch
+      ? runSearch(source.id, { index, query })
+      : previewSourceRows(source.id, index);
+    rows
       .then((result) => {
         if (live) {
           setPreview(result);
@@ -148,9 +160,9 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
     return () => {
       live = false;
     };
-  }, [source.id, selected, appliedSearch, source.kind]);
+  }, [source.id, selected, appliedSearch, speaksSearch]);
 
-  function runSearch(event: FormEvent): void {
+  function applySearch(event: FormEvent): void {
     event.preventDefault();
     setAppliedSearch(search.trim().length === 0 ? "*" : search.trim());
   }
@@ -172,16 +184,33 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
     }
   }
 
-  async function remove(): Promise<void> {
-    setRemoving(true);
-    setRemoveError(null);
+  async function askSource(): Promise<void> {
+    if (question.trim().length === 0) {
+      return;
+    }
+    setAsking(true);
+    setCommandError(null);
+    setPreviewError(null);
+    setDrafted(false);
     try {
-      await deleteDataSource(source.id);
-      onRemoved();
+      const answer = await askQuestion([source.id], question.trim(), undefined, {});
+      if (answer.command !== null) {
+        setCommand(answer.command);
+        setDrafted(true);
+        return;
+      }
+      if (answer.search !== null) {
+        setSelected(answer.search.index);
+        setSearch(answer.search.query);
+        setAppliedSearch(answer.search.query);
+        setDrafted(true);
+        return;
+      }
+      setCommandError("That question could not be answered from this source.");
     } catch (caught) {
-      setRemoveError(messageFor(caught, "The source was not removed."));
+      setCommandError(messageFor(caught, "That question could not be asked."));
     } finally {
-      setRemoving(false);
+      setAsking(false);
     }
   }
 
@@ -193,7 +222,7 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
           onClick={onBack}
           className={SMALL_BUTTON_CLASSNAME}
         >
-          <span className="material-symbols-outlined text-[16px]">
+          <span className="material-symbols-outlined text-[17px]">
             arrow_back
           </span>
           Sources
@@ -202,14 +231,51 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
 
       {objectsError ? <Alert>{objectsError}</Alert> : null}
 
-      {source.kind === "redis" ? (
+      {!speaksSqlOrPipeline ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void askSource();
+          }}
+          className="flex flex-wrap items-center gap-2 border border-border px-4 py-2.5"
+        >
+          <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Ask AI
+          </span>
+          <Input
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder={
+              speaksSearch ? "Any errors in the logs?" : "How many keys are in the cache?"
+            }
+            aria-label="Ask this source a question"
+            className="max-w-sm text-xs"
+          />
+          <Button
+            type="submit"
+            disabled={asking || question.trim().length === 0}
+            className={SMALL_BUTTON_CLASSNAME}
+          >
+            {asking ? "Asking…" : "Ask"}
+          </Button>
+          {drafted ? (
+            <span className="text-[11px] text-green">
+              {speaksSearch
+                ? "A search is ready. It runs only when you search."
+                : "A command is ready. It runs only when you run it."}
+            </span>
+          ) : null}
+        </form>
+      ) : null}
+
+      {speaksCommand ? (
         <form onSubmit={runCommand} className="border border-border">
           <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Command
             </span>
             {commandResult !== null ? (
-              <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="font-mono text-[12px] text-muted-foreground">
                 {commandResult.rows.length} row
                 {commandResult.rows.length === 1 ? "" : "s"} ·{" "}
                 {commandResult.durationMs} ms
@@ -223,6 +289,12 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
             >
               {commandBusy ? "Running…" : "Run command"}
             </Button>
+            <span className="text-[11px] font-normal text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                preview
+              </span>
+            </span>
           </div>
           <div className="p-4">
             <textarea
@@ -234,10 +306,15 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
               aria-label="Redis command"
               className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
             />
-            <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+            <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
               Read commands only — GET, SCAN, HGETALL, TTL, TYPE. A write is
               refused before it is sent.
             </p>
+            {drafted ? (
+              <Alert tone="success" className="mt-3">
+                A command is ready. It runs only when you run it.
+              </Alert>
+            ) : null}
             {commandError ? (
               <Alert className="mt-3">{commandError}</Alert>
             ) : null}
@@ -253,10 +330,10 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <div className="border border-border">
           <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Objects
             </span>
-            <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+            <span className="ml-auto font-mono text-[12px] text-muted-foreground">
               {objects === null ? "—" : objects.length}
             </span>
           </div>
@@ -285,7 +362,7 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">
                       {object.name}
                     </span>
-                    <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                    <span className="font-mono text-[11px] uppercase text-muted-foreground">
                       {object.type}
                     </span>
                   </button>
@@ -301,22 +378,22 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
               {selected ?? "No object selected"}
             </span>
             {preview && preview.truncated ? (
-              <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+              <span className="ml-auto font-mono text-[12px] text-muted-foreground">
                 First {preview.rows.length} rows
               </span>
             ) : null}
           </div>
-          {source.kind === "quickwit" && selected !== null ? (
+          {speaksSearch && selected !== null ? (
             <form
-              onSubmit={runSearch}
-              className="flex gap-2 border-b border-border px-4 py-2.5"
+              onSubmit={applySearch}
+              className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5"
             >
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search query, e.g. * or status:200"
                 aria-label="Search query"
-                className="h-8 rounded-none font-mono text-xs"
+                className="h-8 rounded-none font-mono text-xs flex-1"
               />
               <Button
                 type="submit"
@@ -325,6 +402,12 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
               >
                 Search
               </Button>
+              <span className="text-[11px] font-normal text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  preview
+                </span>
+              </span>
             </form>
           ) : null}
           <div className="p-4">
@@ -347,45 +430,6 @@ export function SourceDetail({ source, onBack, onRemoved }: ISourceDetailProps) 
               <ResultGrid grid={preview} label="Preview rows" />
             )}
           </div>
-        </div>
-      </div>
-
-      <div className="border border-border px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Danger zone
-        </p>
-        {removeError ? <Alert className="mt-3">{removeError}</Alert> : null}
-        <div className="mt-3 flex items-center gap-2">
-          {confirming ? (
-            <>
-              <span className="text-xs text-muted-foreground">
-                Remove this source? Saved credentials go with it.
-              </span>
-              <Button
-                variant="ghost"
-                disabled={removing}
-                onClick={() => void remove()}
-                className={`${SMALL_BUTTON_CLASSNAME} text-red`}
-              >
-                {removing ? "Removing" : "Yes, remove"}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setConfirming(false)}
-                className={SMALL_BUTTON_CLASSNAME}
-              >
-                Keep
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="ghost"
-              onClick={() => setConfirming(true)}
-              className={`${SMALL_BUTTON_CLASSNAME} text-red`}
-            >
-              Remove source
-            </Button>
-          )}
         </div>
       </div>
     </div>

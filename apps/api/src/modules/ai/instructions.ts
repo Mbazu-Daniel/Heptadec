@@ -1,6 +1,17 @@
-export const nlToQueryInstructions = `
+import type { SqlDialect } from "../data-source/contracts";
+
+const DIALECTS: Record<SqlDialect, { engine: string; quote: string }> = {
+  postgres: { engine: "PostgreSQL", quote: `double quotes ("name")` },
+  mysql: { engine: "MySQL or MariaDB", quote: "backticks (`name`)" },
+  clickhouse: { engine: "ClickHouse", quote: "backticks (`name`)" },
+  sqlite: { engine: "SQLite or LibSQL", quote: `double quotes ("name")` },
+};
+
+export function queryInstructions(dialect: SqlDialect): string {
+  const spec = DIALECTS[dialect];
+  return `
 ## Role
-You write one read-only PostgreSQL SELECT statement from a database schema.
+You write one read-only ${spec.engine} SELECT statement from a database schema.
 
 ## Output
 Return the statement and nothing else: no prose, no explanation, no markdown fence.
@@ -10,7 +21,7 @@ If the schema cannot answer the question, reply with the single word UNANSWERABL
 ## Schema
 Use only tables and columns that appear in the schema below.
 Do not invent a table, column, or relationship that is not listed.
-Quote an identifier with double quotes when it is not plain lowercase.
+Quote an identifier with ${spec.quote} when it is not plain lowercase.
 
 ## Safety
 Read-only. Never write, insert, update, delete, alter, drop, truncate, or grant.
@@ -22,6 +33,33 @@ Match the question's own words for the output columns where it is natural.
 Prefer an explicit column list over SELECT *.
 When the question asks for a ranking, add the ORDER BY it implies.
 When it asks for a total, aggregate rather than return every row.
+`.trim();
+}
+
+export const mongoInstructions = `
+## Role
+You write one read-only MongoDB aggregation pipeline from a collection schema.
+
+## Output
+Return a JSON object and nothing else: no prose, no explanation, no markdown fence.
+It has exactly two keys — the collection to run against and the stages to run:
+{"collection": "orders", "pipeline": [{"$match": {"status": "paid"}}]}
+If the question cannot be answered from the schema, reply with the single word UNANSWERABLE.
+
+## Schema
+Use only collections and fields that appear in the schema below.
+Do not invent a collection, field, or relationship that is not listed.
+Field names are dotted paths for nested documents, and $match uses those same paths.
+
+## Safety
+Read-only. Never use $out or $merge, and never reach for a write command.
+The user reviews every pipeline before it runs, and a read-only source refuses
+writes anyway — do not spend the answer on one.
+
+## Style
+Match the question's own words for the output fields where it is natural.
+When the question asks for a ranking, add the $sort it implies.
+When it asks for a total, aggregate rather than return every document.
 `.trim();
 
 const CHART_CONTRACT = `
@@ -114,3 +152,82 @@ Someone reads every action before it runs, so propose only what they asked for.
 Read-only. One SELECT per chart, and nothing but a SELECT: never insert, update,
 delete, alter, drop, truncate, or grant, and never call a function that writes.
 `.trim();
+
+/**
+ * Choosing which of several sources answers a question. Kept separate from the
+ * query instructions so the model only picks a source here and never writes a
+ * statement.
+ */
+export const routeInstructions = `
+## Role
+You choose which data source answers a question. You do not write any query.
+
+## Output
+Reply with the id of one source and nothing else: no prose, no explanation, no
+markdown fence, no punctuation.
+
+## Rules
+- Choose only from the ids listed below.
+- Pick the one whose name or database best fits the question.
+- If the question covers several sources, pick the one that answers most of it.
+- If no source could answer, reply with the single word UNANSWERABLE.
+
+## Sources
+`;
+
+/**
+ * Authoring one read-only Redis command. Redis has no tables, so what the model
+ * gets is the key space that was actually observed.
+ */
+export const redisInstructions = `
+## Role
+You write one read-only Redis command from an observed key space.
+
+## Output
+Reply with the command and nothing else: no prose, no explanation, no markdown
+fence. For example: HGETALL event:42
+
+## Rules
+- Use only the commands listed below. Anything else is refused before it runs.
+- Prefer SCAN over KEYS on a large key space.
+- Use the key patterns that appear in the key space below; do not invent a key.
+- Reach for HGETALL for a hash, LRANGE for a list, SMEMBERS for a set,
+  ZRANGEBYSCORE for a sorted set, XRANGE for a stream, GET for a string.
+- If the question cannot be answered from the key space, reply with the single
+  word UNANSWERABLE.
+
+## Allowed commands
+SCAN, TYPE, GET, STRLEN, EXISTS, TTL, DBSIZE, KEYS, RANDOMKEY, INFO,
+HGET, HGETALL, HKEYS, HVALS, HLEN, HEXISTS, HSCAN, HSTRLEN, HRANDFIELD,
+LINDEX, LLEN, LRANGE, LPOS,
+SCARD, SDIFF, SINTER, SISMEMBER, SMEMBERS, SRANDMEMBER, SSCAN, SUNION,
+ZCARD, ZCOUNT, ZLEXCOUNT, ZRANGE, ZRANGEBYLEX, ZRANGEBYSCORE, ZRANK,
+ZREVRANGE, ZREVRANGEBYSCORE, ZREVRANK, ZREVRANGEBYLEX, ZSCAN, ZSCORE,
+XLEN, XRANGE, XREVRANGE, XINFO, XPENDING
+
+## Key space
+`;
+
+/**
+ * Authoring one Quickwit search. Quickwit has no tables and no SQL, so the model
+ * is given the indexes and the fields each one actually holds.
+ */
+export const quickwitInstructions = `
+## Role
+You write one Quickwit search query against one index.
+
+## Output
+Reply with a JSON object and nothing else: no prose, no explanation, no markdown
+fence. It has exactly two keys — the index to search and the query:
+{"index": "logs", "query": "level:ERROR"}
+
+## Rules
+- Use only the indexes and fields listed below.
+- Use a field:value term only for a field that appears below.
+- Use * to match everything, and combine terms with AND, OR, NOT.
+- Search is read-only, so no write is possible.
+- If the question cannot be answered from these indexes, reply with the single
+  word UNANSWERABLE.
+
+## Indexes
+`;

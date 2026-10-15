@@ -9,10 +9,6 @@ import {
   AuthPage,
 } from "./AuthShell";
 
-interface ICreateOrganizationProps {
-  onCreated: (slug: string) => void;
-}
-
 function slugFrom(name: string): string {
   return name
     .toLowerCase()
@@ -22,7 +18,15 @@ function slugFrom(name: string): string {
     .slice(0, 60);
 }
 
-export function CreateOrganization({ onCreated }: ICreateOrganizationProps) {
+interface IOrganizationFormProps {
+  submitLabel: string;
+  onCreated: (slug: string) => void;
+}
+
+export function OrganizationForm({
+  submitLabel,
+  onCreated,
+}: IOrganizationFormProps) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
@@ -53,62 +57,72 @@ export function CreateOrganization({ onCreated }: ICreateOrganizationProps) {
   }
 
   return (
+    <form className="flex flex-col gap-5" onSubmit={submit}>
+      <div className="flex flex-col gap-2">
+        <label className={AUTH_LABEL_CLASSNAME} htmlFor="org-name">
+          Organization name
+        </label>
+        <Input
+          id="org-name"
+          className={AUTH_INPUT_CLASSNAME}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          minLength={2}
+          maxLength={80}
+          placeholder="Acme Data"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label className={AUTH_LABEL_CLASSNAME} htmlFor="org-slug">
+          Address
+        </label>
+        <Input
+          id="org-slug"
+          className={AUTH_INPUT_CLASSNAME}
+          value={shownSlug}
+          onChange={(e) => {
+            setSlug(e.target.value);
+            setSlugEdited(true);
+          }}
+          required
+          pattern="[a-z0-9]+(-[a-z0-9]+)*"
+          maxLength={60}
+          placeholder="acme-data"
+        />
+      </div>
+
+      {error ? (
+        <div role="alert" className={AUTH_ERROR_CLASSNAME}>
+          {error}
+        </div>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={busy || shownSlug.length === 0}
+        className={AUTH_PRIMARY_BUTTON_CLASSNAME}
+      >
+        {busy ? "Creating…" : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+interface ICreateOrganizationProps {
+  onCreated: (slug: string) => void;
+}
+
+export function CreateOrganization({ onCreated }: ICreateOrganizationProps) {
+  return (
     <AuthPage
       wide
-      eyebrow="Step 1 of 2"
-      title="Create your organization"
+      eyebrow="New organization"
+      title="Create an organization"
       lede="Your team shares data sources, saved queries, and dashboards inside one organization."
     >
-      <form className="flex flex-col gap-5" onSubmit={submit}>
-        <div className="flex flex-col gap-2">
-          <label className={AUTH_LABEL_CLASSNAME} htmlFor="org-name">
-            Organization name
-          </label>
-          <Input
-            id="org-name"
-            className={AUTH_INPUT_CLASSNAME}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            minLength={2}
-            maxLength={80}
-            placeholder="Acme Data"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className={AUTH_LABEL_CLASSNAME} htmlFor="org-slug">
-            Address
-          </label>
-          <Input
-            id="org-slug"
-            className={AUTH_INPUT_CLASSNAME}
-            value={shownSlug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugEdited(true);
-            }}
-            required
-            pattern="[a-z0-9]+(-[a-z0-9]+)*"
-            maxLength={60}
-            placeholder="acme-data"
-          />
-        </div>
-
-        {error ? (
-          <div role="alert" className={AUTH_ERROR_CLASSNAME}>
-            {error}
-          </div>
-        ) : null}
-
-        <button
-          type="submit"
-          disabled={busy || shownSlug.length === 0}
-          className={AUTH_PRIMARY_BUTTON_CLASSNAME}
-        >
-          {busy ? "Creating…" : "Create organization"}
-        </button>
-      </form>
+      <OrganizationForm submitLabel="Create organization" onCreated={onCreated} />
     </AuthPage>
   );
 }

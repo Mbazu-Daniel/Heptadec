@@ -29,7 +29,7 @@ export function PublicDashboard({ token }: { token: string }) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-col gap-1">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           Shared dashboard
         </span>
         <h1 className="text-xl font-semibold tracking-[-0.02em] text-fg">
@@ -54,7 +54,7 @@ export function PublicDashboard({ token }: { token: string }) {
         </div>
       )}
 
-      <footer className="mt-auto pt-6 text-[10px] text-muted-foreground">
+      <footer className="mt-auto pt-6 text-[11px] text-muted-foreground">
         Frozen snapshot · served without querying the database
       </footer>
     </div>

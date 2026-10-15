@@ -1,13 +1,14 @@
 import { and, eq, type Column, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { Context } from "hono";
+import type { HeptadecDatabase } from "@heptadec/db";
 import type { AuthSession } from "../config/better-auth";
 import { ForbiddenException } from "../exceptions";
-import { db } from "@heptadec/db";
 import type { IAuthVars } from "../middleware/require-session";
 
 export interface IOrganizationScope {
   readonly organizationId: string;
+  readonly db: HeptadecDatabase;
   where: (organizationIdColumn: Column) => SQL;
 }
 
@@ -29,6 +30,7 @@ type IScopedTable = SQLiteTable & {
 };
 
 export async function oneRow<T extends IScopedTable>(
+  db: HeptadecDatabase,
   table: T,
   id: string,
   organization: IOrganizationScope,

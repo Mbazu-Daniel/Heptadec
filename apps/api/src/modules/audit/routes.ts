@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import { requireSession } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
@@ -44,6 +44,7 @@ export function auditRoutes(): Hono<IAuthVars> {
     const organization = activeOrganization(c);
 
     await requireOwner(
+      organization.db,
       c.req.raw.headers,
       "Only owners can see the audit log",
     );
@@ -60,7 +61,7 @@ export function auditRoutes(): Hono<IAuthVars> {
     const until = readDate(c.req.query("until"), "That end date is not valid");
     const q = c.req.query("q")?.trim() ?? "";
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(auditLog)
       .where(

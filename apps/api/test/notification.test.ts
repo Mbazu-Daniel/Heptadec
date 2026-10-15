@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { afterAll, expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
 import { decryptSecret } from "../src/modules/data-source/secret";
 import type { INotificationConfig } from "../src/modules/notification/contracts";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { notificationChannel } = schema;
 
@@ -18,7 +18,7 @@ afterAll(async () => {
 
 async function owner(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Notify Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -29,7 +29,7 @@ async function saveChannel(
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return app.request("/api/notification-channels", {
+  return request("/api/notification-channels", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -87,7 +87,7 @@ it("stores each kind's settings sealed, with the addresses beside them", async (
     expect(rows, label).toHaveLength(1);
     touched.push(rows[0]!.id);
     const { name: _name, recipients, kind, ...settings } = body;
-    expect(JSON.parse(decryptSecret(rows[0]!.config)), label).toEqual({
+    expect(JSON.parse(await decryptSecret(rows[0]!.config)), label).toEqual({
       ...settings,
       kind,
       ...(settings.channel === "" ? { channel: null } : {}),
@@ -97,7 +97,7 @@ it("stores each kind's settings sealed, with the addresses beside them", async (
   }
 
   const mail = await rowsOf(orgId, "Mailbox");
-  const email = JSON.parse(decryptSecret(mail[0]!.config)) as INotificationConfig;
+  const email = JSON.parse(await decryptSecret(mail[0]!.config)) as INotificationConfig;
   expect(email.kind === "email" && email.password).toBe("mail-secret");
   expect(JSON.parse(mail[0]!.recipients)).toEqual([
     "ops@example.com",
@@ -132,7 +132,7 @@ it("keeps a secret the form left blank, and never sends it back", async () => {
     fromAddress: "alerts@example.com",
   });
 
-  const edited = await app.request(`/api/notification-channels/${placed.id}`, {
+  const edited = await request(`/api/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -149,7 +149,7 @@ it("keeps a secret the form left blank, and never sends it back", async () => {
   expect(edited.status).toBe(200);
 
   const rows = await rowsOf(orgId, "Inbox");
-  const email = JSON.parse(decryptSecret(rows[0]!.config)) as INotificationConfig;
+  const email = JSON.parse(await decryptSecret(rows[0]!.config)) as INotificationConfig;
   expect(email.kind === "email" && email.password).toBe("first-secret");
   expect(JSON.parse(rows[0]!.recipients)).toEqual(["sre@example.com"]);
 });
@@ -217,7 +217,7 @@ it("clears a setting the client can see, but never one it cannot", async () => {
   };
   touched.push(placed.id);
 
-  const edited = await app.request(`/api/notification-channels/${placed.id}`, {
+  const edited = await request(`/api/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -230,7 +230,7 @@ it("clears a setting the client can see, but never one it cannot", async () => {
   expect(edited.status).toBe(200);
 
   const rows = await rowsOf(orgId, "Chat");
-  expect(JSON.parse(decryptSecret(rows[0]!.config))).toEqual({
+  expect(JSON.parse(await decryptSecret(rows[0]!.config))).toEqual({
     kind: "slack",
     webhookUrl: "https://hooks.slack.com/services/T1/B2/xyz",
     channel: null,
@@ -250,12 +250,12 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
   touched.push(placed.id);
 
   const stranger = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Stranger Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
 
-  const listed = await app.request("/api/notification-channels", {
+  const listed = await request("/api/notification-channels", {
     headers: { cookie: stranger.cookie },
   });
   expect(
@@ -263,13 +263,13 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
       .notificationChannels,
   ).toHaveLength(0);
 
-  const removed = await app.request(`/api/notification-channels/${placed.id}`, {
+  const removed = await request(`/api/notification-channels/${placed.id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
   expect(removed.status).toBe(404);
 
-  const renamed = await app.request(`/api/notification-channels/${placed.id}`, {
+  const renamed = await request(`/api/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie: stranger.cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Stolen", kind: "slack" }),
@@ -277,10 +277,10 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
   expect(renamed.status).toBe(404);
 
   const viewer = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.user.id, role: "viewer", organizationId: orgId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewer.cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: orgId }),

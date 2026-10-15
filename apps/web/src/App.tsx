@@ -222,6 +222,11 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
   const authed = <Navigate to={me ? destinationFor(me, orgs) : "/signin"} replace />;
   const anon = <Navigate to="/signin" replace />;
 
+  // Someone who already has an organization lands on the create form only when
+  // they asked for it — the sidebar's "+ New organization". Everyone else would
+  // otherwise be walked into creating a second one by arriving here twice.
+  const addingOrganization = new URLSearchParams(location.search).has("new");
+
   return (
     <Routes>
       <Route
@@ -241,7 +246,7 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
             isOnboarded(me) ? (
               <Navigate to={destinationFor(me, orgs)} replace />
             ) : (
-              <Onboarding me={me} onDone={() => void reload()} />
+              <Onboarding me={me} orgs={orgs} onDone={() => void reload()} />
             )
           ) : (
             anon
@@ -252,11 +257,15 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         path="/organization"
         element={
           me && isOnboarded(me) ? (
-            <CreateOrganization
-              onCreated={(slug) => {
-                void reload().then(() => navigate(`/${slug}`));
-              }}
-            />
+            hasOrganization(orgs) && !addingOrganization ? (
+              <Navigate to={destinationFor(me, orgs)} replace />
+            ) : (
+              <CreateOrganization
+                onCreated={(slug) => {
+                  void reload().then(() => navigate(`/${slug}`));
+                }}
+              />
+            )
           ) : (
             authed
           )
@@ -268,7 +277,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
           me && isOnboarded(me) && hasOrganization(orgs) ? (
             <MemberProfile
               me={me}
-              step={location.state === "onboarding" ? "Step 2 of 2" : null}
               onReload={() => void reload()}
               onBack={() => navigate(destinationFor(me, orgs))}
             />
@@ -298,7 +306,7 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
               me={me!}
               memberships={orgs?.organizations ?? []}
               onSwitchOrganization={onOpenOrganization}
-              onCreateOrganization={() => navigate("/organization")}
+              onCreateOrganization={() => navigate("/organization?new=1")}
               onOpenProfile={() => navigate("/profile")}
               onOrganizationChanged={reload}
               onSignOut={async () => {

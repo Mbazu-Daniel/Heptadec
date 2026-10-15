@@ -1,5 +1,6 @@
 export const AUDIT_EVENTS = [
   "data_source.created",
+  "data_source.updated",
   "data_source.deleted",
   "saved_query.created",
   "saved_query.updated",

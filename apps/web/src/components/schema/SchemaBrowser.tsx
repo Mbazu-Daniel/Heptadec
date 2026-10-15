@@ -1,13 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { IconChevronDown, IconLayoutGrid, IconTerminal } from "@tabler/icons-react";
+import { IconLayoutGrid, IconTerminal } from "@tabler/icons-react";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
 import { fetchSchema, messageFor } from "../../api";
+import { quoteIdentifier } from "../../lib/sql";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { SchemaTree } from "./SchemaTree";
 import { ErdCanvas } from "./ErdCanvas";
 import { QueryRunner } from "./QueryRunner";
+import { PipelineRunner } from "./PipelineRunner";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -30,17 +32,13 @@ type TabId = (typeof TABS)[number]["id"];
 
 export function SchemaBrowser({
   source,
-  sources,
   onTrail,
-  onOpenSource,
   onBack,
   onRemove,
   onBrowseRows,
 }: {
   source: IDataSource;
-  sources: IDataSource[];
   onTrail?: (crumbs: ICrumb[]) => void;
-  onOpenSource: (id: string) => void;
   onBack: () => void;
   onRemove: (source: IDataSource) => void;
   onBrowseRows: (source: IDataSource, back: () => void) => ReactNode;
@@ -56,6 +54,11 @@ export function SchemaBrowser({
   const [runRequest, setRunRequest] = useState<IRunRequest | null>(null);
   const [queriesToken, setQueriesToken] = useState(0);
   const [editorSql, setEditorSql] = useState("");
+  // A source reports the language it is asked in, and what follows from that is
+  // decided per language rather than per engine. "No SQL dialect" is not the
+  // same question: a Redis source has no dialect either, but it is asked for a
+  // command rather than a pipeline.
+  const pipelineSource = source.queryLanguage === "pipeline";
 
   useEffect(() => {
     let live = true;
@@ -86,11 +89,10 @@ export function SchemaBrowser({
 
   useEffect(() => {
     const current = TABS.find((entry) => entry.id === tab);
-    onTrail?.([
-      { label: source.name },
-      { label: current?.label ?? tab },
-    ]);
-  }, [onTrail, source.name, tab]);
+    // The source is left out: the sidebar already says which one is open, and
+    // the breadcrumb is for getting back out, not for repeating the context.
+    onTrail?.([{ label: current?.label ?? tab }]);
+  }, [onTrail, tab]);
 
   if (browsingRows) {
     return (
@@ -112,69 +114,46 @@ export function SchemaBrowser({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <Button variant="ghost" onClick={onBack} className="h-7 px-2 text-xs">
-          Back
-        </Button>
-        <label className="relative flex items-center">
-          <select
-            value={source.id}
-            onChange={(event) => onOpenSource(event.target.value)}
-            aria-label="Choose a data source"
-            className="h-7 appearance-none rounded-md border border-border bg-background pl-2 pr-6 font-mono text-xs text-foreground outline-none focus-visible:border-ring/50"
-          >
-            {sources.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-          <IconChevronDown
-            size={13}
-            className="pointer-events-none absolute right-1.5 text-muted-foreground"
-          />
-        </label>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-          {schema === null
-            ? "reading…"
-            : `${schema.tables.length} tables · ${schema.relationships.length} foreign keys`}
-        </span>
-        <Button
-          variant="ghost"
-          onClick={() => setBrowsingRows(true)}
-          className="h-7 px-2 text-xs"
-        >
-          Browse rows
-        </Button>
-        {confirmRemove ? (
-          <span className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground">
-              Remove this source?
-            </span>
-            <Button
-              variant="ghost"
-              disabled={removing}
-              onClick={() => void remove()}
-              className="h-7 px-2 text-xs text-red"
-            >
-              {removing ? "Removing" : "Confirm"}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setConfirmRemove(false)}
-              className="h-7 px-2 text-xs"
-            >
-              Keep
-            </Button>
-          </span>
-        ) : (
-          <Button
-            variant="ghost"
-            onClick={() => setConfirmRemove(true)}
-            className="h-7 px-2 text-xs text-red"
-          >
-            Remove
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {confirmRemove ? (
+            <>
+              <span className="text-xs text-muted-foreground">
+                Remove this source?
+              </span>
+              <Button
+                variant="ghost"
+                disabled={removing}
+                onClick={() => void remove()}
+                className="h-7 px-2 text-xs text-red"
+              >
+                {removing ? "Removing" : "Confirm"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmRemove(false)}
+                className="h-7 px-2 text-xs"
+              >
+                Keep
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => setBrowsingRows(true)}
+                className="h-7 px-3 text-xs"
+              >
+                Browse rows
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmRemove(true)}
+                className="h-7 px-3 text-xs text-red"
+              >
+                Remove
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <nav
@@ -199,7 +178,6 @@ export function SchemaBrowser({
         ))}
       </nav>
 
-      {}
       {problem !== null ? (
         <div className="flex flex-1 items-start p-4">
           <Alert>{problem}</Alert>
@@ -212,7 +190,7 @@ export function SchemaBrowser({
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             title="No tables"
-            body="That database reported no tables in its public schema."
+            body="That database reported no tables to read."
           />
         </div>
       ) : (
@@ -230,29 +208,47 @@ export function SchemaBrowser({
           {tab === "query" ? (
             <>
               <ResizablePanel defaultSize="50%" minSize="25%">
-                <QueryRunner
-                  key={source.id}
-                  sourceId={source.id}
-                  focusTable={selectedTable}
-                  runRequest={runRequest}
-                  onRan={() => setQueriesToken((count) => count + 1)}
-                  onSqlChange={setEditorSql}
-                  initialSql={
-                    schema.tables[0]
-                      ? `SELECT * FROM "${schema.tables[0].name}" LIMIT 100;`
-                      : ""
-                  }
-                />
+                {/* Only a SQL or a pipeline source reaches this browser, so no dialect
+                    here means a pipeline source and there is nothing to guess:
+                    the editor is told which dialect rather than left to assume
+                    Postgres. */}
+                {source.sqlDialect === null ? (
+                  <PipelineRunner
+                    key={source.id}
+                    source={source}
+                    tables={schema.tables}
+                    focusTable={selectedTable}
+                  />
+                ) : (
+                  <QueryRunner
+                    key={source.id}
+                    source={source}
+                    dialect={source.sqlDialect}
+                    focusTable={selectedTable}
+                    runRequest={runRequest}
+                    onRan={() => setQueriesToken((count) => count + 1)}
+                    onSqlChange={setEditorSql}
+                    initialSql={
+                      schema.tables[0]
+                        ? `SELECT * FROM ${quoteIdentifier(source.sqlDialect, schema.tables[0].name)} LIMIT 100;`
+                        : ""
+                    }
+                  />
+                )}
               </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize="28%" minSize="12%">
-                <SavedQueriesPanel
-                  sourceId={source.id}
-                  activeSql={editorSql}
-                  reloadToken={queriesToken}
-                  onLoad={(sql) => setRunRequest({ sql, nonce: Date.now() })}
-                />
-              </ResizablePanel>
+              {pipelineSource ? null : (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize="28%" minSize="12%">
+                    <SavedQueriesPanel
+                      sourceId={source.id}
+                      activeSql={editorSql}
+                      reloadToken={queriesToken}
+                      onLoad={(sql) => setRunRequest({ sql, nonce: Date.now() })}
+                    />
+                  </ResizablePanel>
+                </>
+              )}
             </>
           ) : (
             <ResizablePanel defaultSize="78%" minSize="25%">
@@ -268,9 +264,13 @@ export function SchemaBrowser({
       )}
 
       {loaded && schema !== null ? (
-        <div className="flex shrink-0 items-center gap-4 border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-4 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
           <span>Read-only</span>
-          <span>Structure read from the database catalogue</span>
+          <span>
+            {pipelineSource
+              ? "Structure inferred from sampled documents"
+              : "Structure read from the database catalogue"}
+          </span>
           <span className="ml-auto tabular-nums">
             Read {new Date(schema.introspectedAt).toLocaleTimeString()}
           </span>

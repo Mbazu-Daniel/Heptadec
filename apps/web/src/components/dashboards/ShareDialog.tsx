@@ -134,7 +134,7 @@ export function ShareDialog({
           <Button
             onClick={() => void share()}
             disabled={busy}
-            className="h-7 gap-1.5 border-transparent bg-cyan px-3 text-xs font-semibold text-black hover:bg-cyan/85 hover:text-black"
+            className="h-7 gap-1.5 px-3 text-xs"
           >
             <IconLink size={14} />
             {busy ? "Creating…" : "Create link"}
@@ -143,11 +143,11 @@ export function ShareDialog({
 
         {createdUrl !== null ? (
           <div className="grid gap-1.5 rounded-md border border-border bg-background p-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               This is the only time the link is shown
             </span>
             <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-fg">
+              <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">
                 {createdUrl}
               </code>
               <Button
@@ -181,7 +181,7 @@ export function ShareDialog({
                       ? "Never expires"
                       : `Expires ${new Date(link.expiresAt).toLocaleDateString()}`}
                   </span>
-                  <span className="block text-[10px] text-muted-foreground">
+                  <span className="block text-[11px] text-muted-foreground">
                     Created {new Date(link.createdAt).toLocaleString()}
                   </span>
                 </span>

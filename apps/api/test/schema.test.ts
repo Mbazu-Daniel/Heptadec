@@ -1,27 +1,19 @@
 import { expect, it } from "vitest";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import type { ISchemaResponse } from "../src/modules/schema/contracts";
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 async function ownerWithSource(kind = "postgres"): Promise<{
   cookie: string;
   id: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Schema Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(
@@ -48,7 +40,7 @@ async function schemaResponse(
   cookie: string,
   id: string,
 ): Promise<Response> {
-  return app.request(`/api/data-sources/${id}/schema`, {
+  return request(`/api/data-sources/${id}/schema`, {
     headers: { cookie },
   });
 }
@@ -168,12 +160,12 @@ it("lists the indexes somebody wrote and not the one Postgres made for the key",
 
 it("reads the schema the source names, not the one it used to assume", async () => {
   const { cookie } = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Schema Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -209,7 +201,7 @@ it("refuses a source that is not postgres and names the engine", async () => {
 it("404s for a data source in another organization", async () => {
   const { id } = await ownerWithSource();
   const stranger = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Other Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
@@ -221,12 +213,12 @@ it("404s for a data source in another organization", async () => {
 
 it("does not leak the connection password when the database is unreachable", async () => {
   const { cookie } = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Unreachable Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({

@@ -15,16 +15,16 @@ export const AUTH_INPUT_CLASSNAME =
 export const AUTH_LABEL_CLASSNAME = "text-sm text-(--mk-fg-muted)";
 
 export const AUTH_PRIMARY_BUTTON_CLASSNAME =
-  "flex h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-(--mk-hairline) bg-gradient-to-b from-(--mk-tint-f5) to-(--mk-tint-f10) text-sm font-semibold text-(--mk-cyan) backdrop-blur-[25px] transition-all duration-200 hover:bg-(--mk-cyan) hover:text-(--mk-on-accent) hover:shadow-[0_0_4px_color-mix(in_srgb,var(--mk-cyan)_6%,transparent),0_1px_14px_color-mix(in_srgb,var(--mk-cyan)_12%,transparent),0_3px_32px_color-mix(in_srgb,var(--mk-cyan)_18%,transparent)] disabled:pointer-events-none disabled:opacity-50";
+  "flex h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-transparent bg-(--mk-cyan) text-sm font-semibold text-(--mk-on-accent) transition-all duration-200 hover:opacity-90 hover:shadow-[0_1px_14px_color-mix(in_srgb,var(--mk-cyan)_12%,transparent),0_3px_32px_color-mix(in_srgb,var(--mk-cyan)_18%,transparent)] disabled:pointer-events-none disabled:opacity-50";
 
 export const AUTH_SOCIAL_BUTTON_CLASSNAME =
-  "flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-(--mk-hairline) bg-transparent px-4 text-sm font-semibold text-(--mk-fg-primary) transition-all duration-150 hover:border-(--mk-active) hover:bg-(--mk-tint-f5) disabled:pointer-events-none disabled:opacity-50";
+  "flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-(--mk-hairline) bg-(--mk-tint-f10) px-4 text-sm font-semibold text-(--mk-fg-primary) transition-all duration-150 hover:border-(--mk-active) disabled:pointer-events-none disabled:opacity-50";
 
 export const AUTH_GHOST_BUTTON_CLASSNAME =
   "text-sm font-semibold text-(--mk-fg-muted) transition-colors duration-150 hover:text-(--mk-fg-primary)";
 
 export const AUTH_LINK_BUTTON_CLASSNAME =
-  "text-sm font-semibold text-(--mk-cyan) transition-colors duration-150 hover:text-white";
+  "text-sm font-semibold text-(--mk-cyan) underline-offset-4 transition-colors duration-150 hover:underline";
 
 export const AUTH_ERROR_CLASSNAME =
   "rounded-[12px] border border-(--mk-error)/30 bg-(--mk-error-container)/20 px-3 py-2 text-sm text-(--mk-error)";
@@ -38,11 +38,11 @@ function AuthHeader() {
       <div className="mx-auto flex h-[58px] max-w-[1280px] items-center justify-between px-6">
         <a href="/" className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-(--mk-cyan) shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
-          <span className="font-display text-[20px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)">
+          <span className="font-display text-[21px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)">
             Heptadec
           </span>
         </a>
-        <span className="font-mono text-[11px] uppercase tracking-widest text-(--mk-fg-muted)">
+        <span className="font-mono text-[12px] uppercase tracking-widest text-(--mk-fg-muted)">
           Open source
         </span>
       </div>
@@ -69,7 +69,7 @@ function AuthCard({
     >
       <div className="absolute top-0 left-1/2 h-[100px] w-[460px] -translate-x-1/2 pointer-events-none bg-[radial-gradient(60%_100%_at_50%_0,color-mix(in_srgb,var(--mk-cyan)_36%,transparent)_0%,color-mix(in_srgb,var(--mk-cyan)_4%,transparent)_50%,transparent_100%)]" />
       <div className="relative px-8 pt-10 pb-10">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-(--mk-cyan)">
+        <p className="font-mono text-[12px] font-semibold uppercase tracking-widest text-(--mk-cyan)">
           {eyebrow}
         </p>
         <h1 className="mt-3 font-display text-[30px] leading-[36px] font-semibold tracking-[-0.02em] bg-gradient-to-br from-(--mk-cyan) via-(--mk-cyan) to-[color-mix(in_srgb,var(--mk-cyan)_45%,transparent)] bg-clip-text text-transparent">
@@ -86,7 +86,7 @@ function AuthCard({
 
 function TrustRow() {
   return (
-    <div className="mt-6 flex items-center gap-3 font-mono text-[12px] text-(--mk-fg-muted)">
+    <div className="mt-6 flex items-center gap-3 font-mono text-[13px] text-(--mk-fg-muted)">
       <span className="flex items-center gap-2">
         <span className="w-1.5 h-1.5 rounded-full bg-(--mk-tertiary-container) shadow-[0_0_6px_color-mix(in_srgb,var(--mk-tertiary-container)_80%,transparent)]" />
         <span>Read-only by default</span>
@@ -146,15 +146,15 @@ export function AuthResultVisual() {
       <div className="absolute top-1/2 left-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--mk-cyan)/10 blur-[80px] pointer-events-none" />
       <div className="auth-float relative overflow-hidden rounded-[20px] border border-(--mk-hairline) bg-(--mk-surface) shadow-[0_0_30px_color-mix(in_srgb,var(--mk-cyan)_8%,transparent)]">
         <div className="flex items-center justify-between border-b border-(--mk-hairline) bg-[color-mix(in_srgb,var(--mk-bg)_40%,transparent)] px-4 py-3">
-          <span className="flex items-center gap-2 font-mono text-[12px] text-(--mk-fg-muted)">
+          <span className="flex items-center gap-2 font-mono text-[13px] text-(--mk-fg-muted)">
             <span className="w-1.5 h-1.5 rounded-full bg-(--mk-tertiary-container) animate-pulse" />
             orders-prod
           </span>
-          <span className="font-mono text-[12px] text-(--mk-cyan)">
+          <span className="font-mono text-[13px] text-(--mk-cyan)">
             read-only
           </span>
         </div>
-        <div className="overflow-x-auto border-b border-(--mk-hairline) px-5 py-3.5 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap break-words">
+        <div className="overflow-x-auto border-b border-(--mk-hairline) px-5 py-3.5 font-mono text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">
           <span className="text-(--mk-cyan)">SELECT </span>
           <span className="text-(--mk-fg-primary)">
             id, table, region, status{" "}
@@ -166,7 +166,7 @@ export function AuthResultVisual() {
           <span className="text-(--mk-cyan)">LIMIT </span>
           <span className="text-(--mk-cyan)">4</span>
         </div>
-        <div className="divide-y divide-(--mk-hairline)/30 font-mono text-[12.5px]">
+        <div className="divide-y divide-(--mk-hairline)/30 font-mono text-[13.5px]">
           {RESULT_ROWS.map((row) => (
             <div
               key={row.id}
@@ -187,12 +187,12 @@ export function AuthResultVisual() {
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between border-t border-(--mk-hairline) bg-[color-mix(in_srgb,var(--mk-bg)_40%,transparent)] px-4 py-2.5 font-mono text-[12px] text-(--mk-fg-muted)">
+        <div className="flex items-center justify-between border-t border-(--mk-hairline) bg-[color-mix(in_srgb,var(--mk-bg)_40%,transparent)] px-4 py-2.5 font-mono text-[13px] text-(--mk-fg-muted)">
           <span>4 rows</span>
           <span>11ms</span>
         </div>
       </div>
-      <div className="relative mt-5 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+      <div className="relative mt-5 flex flex-wrap items-center gap-2 font-mono text-[12px]">
         {["signed", "scoped", "audited"].map((chip) => (
           <span
             key={chip}
@@ -216,7 +216,7 @@ function BrandPanel() {
       <div className="relative mx-auto w-full max-w-[500px]">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-(--mk-cyan) shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
-          <span className="font-display text-[20px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)">
+          <span className="font-display text-[21px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)">
             Heptadec
           </span>
         </div>
@@ -225,7 +225,7 @@ function BrandPanel() {
           <br />
           in plain sight.
         </h2>
-        <p className="mt-4 max-w-[440px] text-[15px] leading-relaxed text-(--mk-fg-muted)">
+        <p className="mt-4 max-w-[440px] text-[16px] leading-relaxed text-(--mk-fg-muted)">
           Point Heptadec at your databases and ask real questions. Read-only
           by default, self-hosted in minutes.
         </p>

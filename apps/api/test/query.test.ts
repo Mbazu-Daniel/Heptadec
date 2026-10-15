@@ -1,33 +1,25 @@
 import { createClient as createRedisClient } from "redis";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { dataSource } = schema;
 
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
-
-const TEST_REDIS = { host: "127.0.0.1", port: 6381, database: "0" };
+const TEST_REDIS = { ...STACK.redis, database: "0" };
 
 async function ownerWithSource(readOnly: boolean): Promise<{
   cookie: string;
   id: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Query Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -56,7 +48,7 @@ async function query(
   id: string,
   sql: string,
 ): Promise<Response> {
-  return app.request(`/api/data-sources/${id}/query`, {
+  return request(`/api/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -137,7 +129,7 @@ it("reports a missing table without echoing the password", async () => {
 it("404s for a data source in another organization", async () => {
   const { id } = await ownerWithSource(true);
   const stranger = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Other Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
@@ -158,6 +150,14 @@ function probeKey(): string {
   return `heptadec:query:${Date.now().toString(36)}:${redisProbeSeq}`;
 }
 
+/** A token with no punctuation in it: a Quickwit query reads `:` as a field
+ * separator, so a key shaped for Redis is not a token a search can be asked
+ * for. */
+function probeToken(): string {
+  redisProbeSeq += 1;
+  return `probe${Date.now().toString(36)}${redisProbeSeq}`;
+}
+
 function redisDirect() {
   return createRedisClient({ url: `redis://${TEST_REDIS.host}:${TEST_REDIS.port}` });
 }
@@ -176,12 +176,12 @@ async function withRedis<T>(
 
 async function ownerWithRedisSource(): Promise<{ cookie: string; id: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Redis Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -207,7 +207,7 @@ async function runCommand(
   id: string,
   command: string,
 ): Promise<Response> {
-  return app.request(`/api/data-sources/${id}/query`, {
+  return request(`/api/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ command }),
@@ -246,6 +246,104 @@ it("reads a scalar with GET and the key's type with TYPE", async () => {
   expect(typed.status).toBe(200);
   const typeBody = (await typed.json()) as { rows: Array<Record<string, unknown>> };
   expect(typeBody.rows).toEqual([{ value: "string" }]);
+});
+
+it("runs a search over a quickwit index and answers with the documents it matched", async () => {
+  const { cookie } = await signUp(uniqueEmail());
+  const org = await authFor(db).api.createOrganization({
+    body: { name: "Search Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
+
+  // Quickwit holds no documents until they are ingested, so the search this
+  // asserts on is only meaningful if the test put something there first.
+  const index = `events_${Date.now().toString(36)}`;
+  const created = await fetch(`${STACK.quickwit.endpoint}/api/v1/indexes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      version: "0.8",
+      index_id: index,
+      doc_mapping: {
+        field_mappings: [{ name: "event_name", type: "text", tokenizer: "default" }],
+        store_source: true,
+      },
+      indexing_settings: {},
+      search_settings: { default_search_fields: ["event_name"] },
+    }),
+  });
+  expect(created.status).toBe(200);
+
+  const probe = probeToken();
+  const ingested = await fetch(
+    `${STACK.quickwit.endpoint}/api/v1/${index}/ingest?commit=force`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-ndjson" },
+      body: JSON.stringify({ event_name: probe, region: "eu-west-1" }),
+    },
+  );
+  expect(ingested.status).toBe(200);
+
+  const source = await request("/api/data-sources", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "quickwit",
+      name: "Seeded logs",
+      endpoint: STACK.quickwit.endpoint,
+      database: index,
+    }),
+  });
+  expect(source.status).toBe(200);
+  const stored = await db
+    .select()
+    .from(dataSource)
+    .where(eq(dataSource.organizationId, org.id));
+  const id = stored[0]!.id;
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ search: { index, query: probe } }),
+  });
+  expect(res.status).toBe(200);
+
+  const body = (await res.json()) as {
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+    rowCount: number;
+  };
+  expect(body.columns).toEqual(["event_name", "region"]);
+  expect(body.rows).toEqual([{ event_name: probe, region: "eu-west-1" }]);
+  expect(body.rowCount).toBe(1);
+});
+
+it("refuses a search with no index and nothing is run", async () => {
+  const { cookie } = await signUp(uniqueEmail());
+  await authFor(db).api.createOrganization({
+    body: { name: "Empty Search Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
+  const source = await request("/api/data-sources", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "quickwit",
+      name: "No index",
+      endpoint: STACK.quickwit.endpoint,
+    }),
+  });
+  expect(source.status).toBe(200);
+  const stored = await db.select().from(dataSource);
+  const id = stored[stored.length - 1]!.id;
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ search: { query: "probe" } }),
+  });
+  expect(res.status).toBe(400);
 });
 
 it("refuses SET and nothing is written to redis", async () => {

@@ -32,6 +32,19 @@ function readAccent(): string | null {
   }
 }
 
+function onAccentFor(hex: string): string {
+  const channel = (value: number): number => {
+    const s = value / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance =
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  return luminance > 0.179 ? "#000000" : "#ffffff";
+}
+
 function systemDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -68,10 +81,10 @@ export function applyAccent(color: string | null): void {
   const root = document.documentElement;
   if (accent === null) {
     root.style.removeProperty("--cyan");
-    root.style.removeProperty("--accent-override");
+    root.style.removeProperty("--on-accent");
   } else {
     root.style.setProperty("--cyan", accent);
-    root.style.setProperty("--accent-override", accent);
+    root.style.setProperty("--on-accent", onAccentFor(accent));
   }
   try {
     if (accent === null) {

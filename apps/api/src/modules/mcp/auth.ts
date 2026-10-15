@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../../common/config/better-auth";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { authFor } from "../../common/config/better-auth";
 import { UnauthorizedException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { isBetterAuthError } from "../../common/exceptions/from-better-auth";
@@ -14,6 +14,7 @@ export interface IMcpPrincipal extends IOrganizationScope {
 }
 
 export async function authenticateMcpKey(
+  db: HeptadecDatabase,
   authorization: string | undefined,
 ): Promise<IMcpPrincipal> {
   const token = bearerToken(authorization);
@@ -27,7 +28,7 @@ export async function authenticateMcpKey(
     permissions: Record<string, string[]> | null;
   };
   try {
-    const verified = await auth.api.verifyApiKey({
+    const verified = await authFor(db).api.verifyApiKey({
       body: { key: token, configId: MCP_CONFIG_ID },
     });
     if (!verified.valid) {
@@ -61,6 +62,7 @@ export async function authenticateMcpKey(
   return {
     keyId: key.id,
     organizationId,
+    db,
     permissions: key.permissions,
     where: (column) => eq(column, organizationId),
   };

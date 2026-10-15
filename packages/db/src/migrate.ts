@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { db, resolveDbUrl } from "./client";
+import { localDatabase, resolveDbUrl } from "./client";
 import { ROOT } from "./env";
+
+const db = localDatabase();
 
 const migrationsFolder = join(ROOT, "packages/db/drizzle");
 

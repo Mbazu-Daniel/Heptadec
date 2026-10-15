@@ -11,7 +11,9 @@ allowBuilds:
   esbuild: true
   better-sqlite3: true
   "@prisma/client": true
-  argon2: true
+  # workerd: the local Workers runtime behind `wrangler dev`.
+  workerd: true
+  duckdb: true
 
 minimumReleaseAgeExclude:
   - "@ai-sdk/openai-compatible@3.0.67"

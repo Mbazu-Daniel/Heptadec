@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
 import type { AiProviderRow } from "@heptadec/db";
 import { decryptSecret } from "../data-source/secret";
 import { providerSpec } from "./catalog";
@@ -35,7 +35,7 @@ export async function listModels(row: AiProviderRow): Promise<ModelListing> {
   try {
     response = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
       method: "GET",
-      headers: { authorization: `Bearer ${decryptSecret(row.apiKey)}` },
+      headers: { authorization: `Bearer ${await decryptSecret(row.apiKey)}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {
@@ -84,6 +84,7 @@ export async function listModels(row: AiProviderRow): Promise<ModelListing> {
 }
 
 export async function suggestModels(
+  db: HeptadecDatabase,
   organizationId: string,
   providerId: string,
 ): Promise<IModel[]> {

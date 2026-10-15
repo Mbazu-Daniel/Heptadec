@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { invitation, member, user } = schema;
 
@@ -11,7 +11,7 @@ async function ownerWithOrganization(): Promise<{
   organizationId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const created = await auth.api.createOrganization({
+  const created = await authFor(db).api.createOrganization({
     body: { name: "Meridian", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -21,12 +21,12 @@ async function ownerWithOrganization(): Promise<{
 it("lists the members of the active organization", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const other = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: other.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/organization/members", {
+  const res = await request("/api/organization/members", {
     headers: { cookie },
   });
   expect(res.status).toBe(200);
@@ -42,14 +42,14 @@ it("lists the members of the active organization", async () => {
 it("changes a member's role and stores it", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const editor = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: editor.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
 
   const row = (await db.select().from(member).where(eq(member.userId, editor.user.id)))[0]!;
 
-  const res = await app.request(`/api/organization/members/${row.id}`, {
+  const res = await request(`/api/organization/members/${row.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ role: "viewer" }),
@@ -63,25 +63,25 @@ it("changes a member's role and stores it", async () => {
 it("refuses a role change from a member who is not the owner", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const editor = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: editor.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
   const victim = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: victim.user.id, role: "viewer", organizationId },
     headers: { cookie },
   });
   const victimRow = (await db.select().from(member).where(eq(member.userId, victim.user.id)))[0]!;
   const editorRow = (await db.select().from(member).where(eq(member.userId, editor.user.id)))[0]!;
 
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await app.request(`/api/organization/members/${victimRow.id}`, {
+  const res = await request(`/api/organization/members/${victimRow.id}`, {
     method: "PATCH",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ role: "editor" }),
@@ -96,13 +96,13 @@ it("refuses a role change from a member who is not the owner", async () => {
 it("removes a member and deletes the row", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const leaver = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: leaver.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
   const row = (await db.select().from(member).where(eq(member.userId, leaver.user.id)))[0]!;
 
-  const res = await app.request(`/api/organization/members/${row.id}`, {
+  const res = await request(`/api/organization/members/${row.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -115,7 +115,7 @@ it("removes a member and deletes the row", async () => {
 it("stores a display name on the member row, and reports it as the name this organization sees", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const saved = await app.request("/api/organization/member", {
+  const saved = await request("/api/organization/member", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ displayName: "Platform Lead" }),
@@ -132,7 +132,7 @@ it("stores a display name on the member row, and reports it as the name this org
   const accounts = await db.select().from(user).where(eq(user.id, rows[0]!.userId));
   expect(accounts[0]!.name).not.toBe("Platform Lead");
 
-  const me = await app.request("/api/me", { headers: { cookie } });
+  const me = await request("/api/me", { headers: { cookie } });
   const body = (await me.json()) as {
     user: { name: string };
     displayName: string | null;
@@ -144,7 +144,7 @@ it("stores a display name on the member row, and reports it as the name this org
 it("cancels a pending invitation and marks the row", async () => {
   const { cookie } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -152,7 +152,7 @@ it("cancels a pending invitation and marks the row", async () => {
 
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
 
-  const res = await app.request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/organization/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -165,7 +165,7 @@ it("cancels a pending invitation and marks the row", async () => {
 it("refuses to cancel an invitation when the caller is not an owner", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await app.request("/api/organization/invitations", {
+  await request("/api/organization/invitations", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -173,17 +173,17 @@ it("refuses to cancel an invitation when the caller is not an owner", async () =
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
 
   const editor = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: editor.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await app.request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/organization/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie: editor.cookie },
   });
@@ -195,7 +195,7 @@ it("refuses to cancel an invitation when the caller is not an owner", async () =
 
 it("keeps the owner in place when members are listed", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
-  const res = await app.request("/api/organization/members", { headers: { cookie } });
+  const res = await request("/api/organization/members", { headers: { cookie } });
   const body = (await res.json()) as { members: Array<{ role: string; isYou: boolean }> };
   expect(body.members).toHaveLength(1);
   expect(body.members[0]).toMatchObject({ role: "owner", isYou: true });

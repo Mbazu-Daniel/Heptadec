@@ -1,19 +1,11 @@
 import { createServer, type Server } from "node:http";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { aiProvider, aiChat, dataSource } = schema;
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 interface ICaptured {
   url: string;
@@ -150,11 +142,14 @@ async function ask(
   cookie: string,
   dataSourceId: string,
   question: string,
-): Promise<{ events: IEvent[]; body: { sql: string | null; answered: boolean } }> {
-  const res = await app.request("/api/ai/ask", {
+): Promise<{
+  events: IEvent[];
+  body: { sql: string | null; answered: boolean; dataSourceName?: string };
+}> {
+  const res = await request("/api/ai/ask", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ dataSourceId, question }),
+    body: JSON.stringify({ dataSourceIds: [dataSourceId], question }),
   });
   const text = await res.text();
   const events: IEvent[] = [];
@@ -176,7 +171,14 @@ async function ask(
   if (last === undefined || last.name !== "done") {
     throw new Error(`stream ended without done: ${text.slice(0, 300)}`);
   }
-  return { events, body: JSON.parse(last.data) as { sql: string | null; answered: boolean } };
+  return {
+    events,
+    body: JSON.parse(last.data) as {
+      sql: string | null;
+      answered: boolean;
+      dataSourceName?: string;
+    },
+  };
 }
 
 async function ownerWithSource(): Promise<{
@@ -185,11 +187,11 @@ async function ownerWithSource(): Promise<{
   organizationId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "AI Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -219,7 +221,7 @@ async function addProvider(
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return app.request("/api/ai/providers", {
+  return request("/api/ai/providers", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -292,7 +294,7 @@ it("never stores the key in the clear", async () => {
     expect(rows[0]!.apiKey).not.toContain("sk-never-in-plaintext");
     expect(rows[0]!.apiKey.startsWith("v1:")).toBe(true);
 
-    const listed = await app.request("/api/ai/providers", { headers: { cookie } });
+    const listed = await request("/api/ai/providers", { headers: { cookie } });
     const text = await listed.text();
     expect(text).not.toContain("sk-never-in-plaintext");
   } finally {
@@ -321,12 +323,12 @@ it("keeps one organization's keys and providers out of another's reach", async (
     });
 
     const mineList = (await (
-      await app.request("/api/ai/providers", { headers: { cookie: mine.cookie } })
+      await request("/api/ai/providers", { headers: { cookie: mine.cookie } })
     ).json()) as { providers: Array<{ name: string }> };
     expect(mineList.providers.map((p) => p.name)).toEqual(["mine"]);
 
     const theirList = (await (
-      await app.request("/api/ai/providers", { headers: { cookie: theirs.cookie } })
+      await request("/api/ai/providers", { headers: { cookie: theirs.cookie } })
     ).json()) as { providers: Array<{ name: string }> };
     expect(theirList.providers.map((p) => p.name)).toEqual(["theirs"]);
 
@@ -343,7 +345,7 @@ it("keeps one organization's keys and providers out of another's reach", async (
     const mineRow = rows.find((r) => r.name === "mine")!;
     const theirRow = rows.find((r) => r.name === "theirs")!;
 
-    const stolen = await app.request(`/api/ai/providers/${theirRow.id}`, {
+    const stolen = await request(`/api/ai/providers/${theirRow.id}`, {
       method: "DELETE",
       headers: { cookie: mine.cookie },
     });
@@ -361,7 +363,7 @@ it("keeps one organization's keys and providers out of another's reach", async (
 
 it("refuses to ask before a provider exists", async () => {
   const { cookie, sourceId } = await ownerWithSource();
-  const res = await app.request("/api/ai/ask", {
+  const res = await request("/api/ai/ask", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ dataSourceId: sourceId, question: "anything?" }),
@@ -467,7 +469,7 @@ it("refuses a provider that is not in the catalog", async () => {
 
 it("offers Groq in the catalog as a ready choice", async () => {
   const { cookie } = await ownerWithSource();
-  const res = await app.request("/api/ai/providers", { headers: { cookie } });
+  const res = await request("/api/ai/providers", { headers: { cookie } });
   const body = (await res.json()) as {
     catalog: Array<{
       id: string;
@@ -486,16 +488,16 @@ it("offers Groq in the catalog as a ready choice", async () => {
 it("keeps providers away from anyone who is not an owner", async () => {
   const { cookie, organizationId: orgId } = await ownerWithSource();
   const editor = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: editor.user.id, role: "editor", organizationId: orgId },
     headers: { cookie },
   });
-  await auth.api.setActiveOrganization({
+  await authFor(db).api.setActiveOrganization({
     body: { organizationId: orgId },
     headers: { cookie: editor.cookie },
   });
 
-  const res = await app.request("/api/ai/providers", { headers: { cookie: editor.cookie } });
+  const res = await request("/api/ai/providers", { headers: { cookie: editor.cookie } });
   expect(res.status).toBe(403);
 });
 
@@ -516,7 +518,7 @@ it("lists the models the provider actually serves, not a shipped list", async ()
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await app.request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(200);
@@ -556,7 +558,7 @@ it("falls back to what the organization already uses when a provider lists nothi
     });
     const id = ((await first.json()) as { id: string }).id;
 
-    const res = await app.request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(200);
@@ -587,7 +589,7 @@ it("says the key was refused rather than listing nothing", async () => {
     });
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await app.request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(400);
@@ -611,7 +613,7 @@ it("keeps one organization's model list out of another's reach", async () => {
     });
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await app.request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/ai/providers/${id}/models`, {
       headers: { cookie: mine.cookie },
     });
     expect(res.status).toBe(404);
@@ -640,6 +642,211 @@ it("prunes a huge schema to a budget instead of sending all of it", async () => 
     const prompt = sent.messages.at(-1)!.content;
     expect(prompt.length).toBeLessThan(20_000);
     expect(prompt).toContain("events");
+  } finally {
+    await provider.close();
+  }
+});
+
+it("names the source that answered when several are in scope", async () => {
+  const provider = await startProvider("SELECT 1");
+  try {
+  const { cookie, sourceId, organizationId } = await ownerWithSource();
+  await addProvider(cookie, {
+    name: "laptop",
+    provider: "openai-compatible",
+    model: "some-model",
+    baseUrl: provider.baseUrl,
+    apiKey: "sk-org-secret",
+  });
+
+  const res = await request("/api/ai/ask", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      dataSourceIds: [sourceId],
+      question: "How many events are there?",
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const text = await res.text();
+  let body: { dataSourceId: string; dataSourceName: string } | null = null;
+  for (const frame of text.split("\n\n")) {
+    const data = frame
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .join("\n");
+    if (frame.includes("event: done") && data !== "") {
+      body = JSON.parse(data) as { dataSourceId: string; dataSourceName: string };
+    }
+  }
+  expect(body).not.toBeNull();
+  expect(body!.dataSourceId).toBe(sourceId);
+  expect(body!.dataSourceName.length).toBeGreaterThan(0);
+
+  // The chat row remembers which source the answer came from.
+  const rows = await db
+    .select()
+    .from(aiChat)
+    .where(eq(aiChat.organizationId, organizationId))
+    .orderBy(desc(aiChat.createdAt));
+  expect(rows[0]!.dataSourceId).toBe(sourceId);
+  } finally {
+    await provider.close();
+  }
+});
+
+it("404s when the scope names a source that is not the caller's", async () => {
+  const mine = await ownerWithSource();
+  const theirs = await ownerWithSource();
+
+  const res = await request("/api/ai/ask", {
+    method: "POST",
+    headers: { cookie: mine.cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      dataSourceIds: [theirs.sourceId],
+      question: "How many events are there?",
+    }),
+  });
+  expect(res.status).toBe(404);
+});
+
+it("answers a redis question with a read-only command", async () => {
+  const provider = await startProvider("HGETALL event:1");
+  try {
+    const { cookie } = await ownerWithSource();
+    await addProvider(cookie, {
+      name: "laptop",
+      provider: "openai-compatible",
+      model: "some-model",
+      baseUrl: provider.baseUrl,
+      apiKey: "sk-org-secret",
+    });
+    const created = await request("/api/data-sources", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "redis",
+        name: "Cache",
+        host: "127.0.0.1",
+        port: 6381,
+      }),
+    });
+    expect(created.status).toBe(200);
+    const { dataSource: cache } = (await created.json()) as {
+      dataSource: { id: string };
+    };
+
+    const res = await request("/api/ai/ask", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        dataSourceIds: [cache.id],
+        question: "What is stored under event:1?",
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    let body: {
+      language: string;
+      command: string | null;
+      sql: string | null;
+      dataSourceName: string;
+    } | null = null;
+    for (const frame of text.split("\n\n")) {
+      const data = frame
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("\n");
+      if (frame.includes("event: done") && data !== "") {
+        body = JSON.parse(data) as typeof body;
+      }
+    }
+    expect(body).not.toBeNull();
+    expect(body!.dataSourceName).toBe("Cache");
+    expect(body!.language).toBe("command");
+    expect(body!.command).toBe("HGETALL event:1");
+    // A command is not SQL, and must not be offered as such.
+    expect(body!.sql).toBeNull();
+
+    // The command it answered with is one the server will actually run.
+    const ran = await request(`/api/data-sources/${cache.id}/query`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ command: body!.command }),
+    });
+    expect(ran.status).toBe(200);
+  } finally {
+    await provider.close();
+  }
+});
+
+it("answers a quickwit question with a search over one index", async () => {
+  const provider = await startProvider(
+    '{"index": "otel-logs", "query": "body:probe"}',
+  );
+  try {
+    const { cookie } = await ownerWithSource();
+    await addProvider(cookie, {
+      name: "laptop",
+      provider: "openai-compatible",
+      model: "some-model",
+      baseUrl: provider.baseUrl,
+      apiKey: "sk-org-secret",
+    });
+    const created = await request("/api/data-sources", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "quickwit",
+        name: "Logs",
+        endpoint: STACK.quickwit.endpoint,
+        database: "otel-logs",
+      }),
+    });
+    expect(created.status).toBe(200);
+    const { dataSource: logs } = (await created.json()) as {
+      dataSource: { id: string };
+    };
+
+    const res = await request("/api/ai/ask", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        dataSourceIds: [logs.id],
+        question: "Find the probe in the logs",
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    let body: {
+      language: string;
+      search: { index: string; query: string } | null;
+      sql: string | null;
+      command: string | null;
+    } | null = null;
+    for (const frame of (await res.text()).split("\n\n")) {
+      const data = frame
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("\n");
+      if (frame.includes("event: done") && data !== "") {
+        body = JSON.parse(data) as typeof body;
+      }
+    }
+    expect(body).not.toBeNull();
+    expect(body!.language).toBe("search");
+    // A search is neither SQL nor a Redis command.
+    expect(body!.sql).toBeNull();
+    expect(body!.command).toBeNull();
+    expect(body!.search).toEqual({
+      index: "otel-logs",
+      query: "body:probe",
+    });
   } finally {
     await provider.close();
   }

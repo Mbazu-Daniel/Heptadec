@@ -1,6 +1,6 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 import type { Column } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { checkAlerts } from "../alert/evaluate";
 import { materializeResult } from "../query-result/cache";
@@ -14,7 +14,7 @@ const MAX_JOBS_PER_TICK = 20;
 
 type IJob = typeof scheduledJob.$inferSelect;
 
-export async function runDueJobs(now: Date): Promise<void> {
+export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void> {
   const due = await db
     .select()
     .from(scheduledJob)
@@ -23,14 +23,14 @@ export async function runDueJobs(now: Date): Promise<void> {
     .limit(MAX_JOBS_PER_TICK);
 
   for (const job of due) {
-    if (!(await claim(job, now))) {
+    if (!(await claim(db, job, now))) {
       continue;
     }
-    await runOne(job, now);
+    await runOne(db, job, now);
   }
 }
 
-async function claim(job: IJob, now: Date): Promise<boolean> {
+async function claim(db: HeptadecDatabase, job: IJob, now: Date): Promise<boolean> {
   const claimed = await db
     .update(scheduledJob)
     .set({ leaseUntil: new Date(now.getTime() + LEASE_MS), updatedAt: now })
@@ -44,15 +44,20 @@ async function claim(job: IJob, now: Date): Promise<boolean> {
   return claimed.length > 0;
 }
 
-async function runOne(job: IJob, now: Date): Promise<void> {
+async function runOne(
+  db: HeptadecDatabase,
+  job: IJob,
+  now: Date,
+): Promise<void> {
   const organization: IOrganizationScope = {
     organizationId: job.organizationId,
+    db,
     where: (column: Column) => eq(column, job.organizationId),
   };
 
   try {
     const grid = await materializeResult(job.savedQueryId, organization, job.ttlSeconds);
-    await checkAlerts(job.savedQueryId, job.organizationId, grid);
+    await checkAlerts(db, job.savedQueryId, job.organizationId, grid);
   } catch (caught) {
     console.error(`[scheduler] job ${job.id} (${job.name}) failed:`, caught);
   }
@@ -96,9 +101,9 @@ function organizationOffset(organizationId: string): number {
   return Math.abs(hash) % 60;
 }
 
-export function startScheduler(tickMs: number): () => void {
+export function startScheduler(db: HeptadecDatabase, tickMs: number): () => void {
   const timer = setInterval(() => {
-    void runDueJobs(new Date()).catch((caught: unknown) => {
+    void runDueJobs(db, new Date()).catch((caught: unknown) => {
       console.error("[scheduler] tick failed:", caught);
     });
   }, tickMs);

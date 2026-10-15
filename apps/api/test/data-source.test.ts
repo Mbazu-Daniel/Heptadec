@@ -1,18 +1,18 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
 import { decryptSecret } from "../src/modules/data-source/secret";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { db, request, signUp, TEST_POSTGRES_PORT, uniqueEmail, uniqueSlug } from "./helpers";
 
-const { dataSource } = schema;
+const { auditLog, dataSource } = schema;
 
 async function ownerWithOrganization(): Promise<{
   cookie: string;
   organizationId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const created = await auth.api.createOrganization({
+  const created = await authFor(db).api.createOrganization({
     body: { name: "Source Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -34,7 +34,7 @@ function postgresInput(name: string) {
 it("stores a postgres source with its secret encrypted", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Production replica")),
@@ -59,7 +59,7 @@ it("stores a postgres source with its secret encrypted", async () => {
   expect(rows[0]!.secret).not.toBeNull();
   expect(rows[0]!.secret).not.toContain("s3cret-password");
   expect(rows[0]!.secret!.startsWith("v1:")).toBe(true);
-  expect(decryptSecret(rows[0]!.secret!)).toBe("s3cret-password");
+  expect(await decryptSecret(rows[0]!.secret!)).toBe("s3cret-password");
 
   const body = (await res.json()) as {
     dataSource: { id: string; hasSecret: boolean };
@@ -72,7 +72,7 @@ it("stores a postgres source with its secret encrypted", async () => {
 it("stores a redis source without a secret when no password is sent", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -99,18 +99,18 @@ it("lists only the sources of the active organization", async () => {
   const first = await ownerWithOrganization();
   const second = await ownerWithOrganization();
 
-  await app.request("/api/data-sources", {
+  await request("/api/data-sources", {
     method: "POST",
     headers: { cookie: first.cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("First source")),
   });
-  await app.request("/api/data-sources", {
+  await request("/api/data-sources", {
     method: "POST",
     headers: { cookie: second.cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Second source")),
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     headers: { cookie: first.cookie },
   });
   expect(res.status).toBe(200);
@@ -128,7 +128,7 @@ it("returns 404 and keeps the row when deleting another organization's source", 
   const mine = await ownerWithOrganization();
   const theirs = await ownerWithOrganization();
 
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie: theirs.cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Their source")),
@@ -137,7 +137,7 @@ it("returns 404 and keeps the row when deleting another organization's source", 
     (await created.json()) as { dataSource: { id: string } }
   ).dataSource.id;
 
-  const res = await app.request(`/api/data-sources/${createdId}`, {
+  const res = await request(`/api/data-sources/${createdId}`, {
     method: "DELETE",
     headers: { cookie: mine.cookie },
   });
@@ -155,16 +155,16 @@ it("refuses a create from a viewer and writes nothing", async () => {
   const { organizationId } = await ownerWithOrganization();
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
 
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Viewer source")),
@@ -181,7 +181,7 @@ it("refuses a create from a viewer and writes nothing", async () => {
 it("rejects an unknown engine and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ ...postgresInput("Bad engine"), kind: "oracle" }),
@@ -198,7 +198,7 @@ it("rejects an unknown engine and writes nothing", async () => {
 it("rejects a quickwit endpoint that is not a URL and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -219,7 +219,7 @@ it("rejects a quickwit endpoint that is not a URL and writes nothing", async () 
 it("stores a quickwit source keyed by its endpoint URL", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -247,7 +247,7 @@ it("stores a quickwit source keyed by its endpoint URL", async () => {
 it("stores a mysql source with its own default port", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -278,7 +278,7 @@ it("stores a mysql source with its own default port", async () => {
 it("stores a sqlite source keyed by its file path", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -307,7 +307,7 @@ it("stores a sqlite source keyed by its file path", async () => {
 it("reads a pasted connection URL into the columns a filled form would write", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -328,14 +328,14 @@ it("reads a pasted connection URL into the columns a filled form would write", a
   expect(row.port).toBe(6543);
   expect(row.database).toBe("warehouse");
   expect(row.username).toBe("readonly_svc");
-  expect(decryptSecret(row.secret!)).toBe("s3cret password");
+  expect(await decryptSecret(row.secret!)).toBe("s3cret password");
   expect(row.connectionMode).toBe("tcp");
 });
 
 it("takes the connection mode from the scheme of a pasted URL", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -360,7 +360,7 @@ it("takes the connection mode from the scheme of a pasted URL", async () => {
 it("refuses a URL in a scheme the engine does not speak and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -381,7 +381,7 @@ it("refuses a URL in a scheme the engine does not speak and writes nothing", asy
 it("refuses a URL for an engine that cannot take one and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -402,7 +402,7 @@ it("refuses a URL for an engine that cannot take one and writes nothing", async 
 it("refuses a host filled in beside a pasted URL rather than picking one", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -424,7 +424,7 @@ it("refuses a host filled in beside a pasted URL rather than picking one", async
 it("refuses a connection URL it cannot read and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -445,7 +445,7 @@ it("refuses a connection URL it cannot read and writes nothing", async () => {
 it("stores a TLS source with every certificate encrypted and none of them returned", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -469,8 +469,8 @@ it("stores a TLS source with every certificate encrypted and none of them return
   expect(row.caCertificate!.startsWith("v1:")).toBe(true);
   expect(row.clientCertificate!.startsWith("v1:")).toBe(true);
   expect(row.clientKey!.startsWith("v1:")).toBe(true);
-  expect(decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
-  expect(decryptSecret(row.clientKey!)).toBe("CLIENT-KEY-MATERIAL");
+  expect(await decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
+  expect(await decryptSecret(row.clientKey!)).toBe("CLIENT-KEY-MATERIAL");
 
   const text = await res.text();
   expect(text).not.toContain("CA-CERTIFICATE-MATERIAL");
@@ -494,7 +494,7 @@ it("stores a TLS source with every certificate encrypted and none of them return
 it("stores a socket source with its path and no host to fall back on", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -522,7 +522,7 @@ it("stores a socket source with its path and no host to fall back on", async () 
 it("rejects a host on a socket source rather than ignoring it", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -547,7 +547,7 @@ it("rejects a host on a socket source rather than ignoring it", async () => {
 it("rejects a certificate outside TLS mode and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -567,7 +567,7 @@ it("rejects a certificate outside TLS mode and writes nothing", async () => {
 it("stores the schema the structure reader should look in", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ ...postgresInput("Sales"), schema: "sales" }),
@@ -584,7 +584,7 @@ it("stores the schema the structure reader should look in", async () => {
 it("rejects an unknown connection mode and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -604,7 +604,7 @@ it("rejects an unknown connection mode and writes nothing", async () => {
 it("rejects a sqlite source carrying server fields and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -626,7 +626,7 @@ it("rejects a sqlite source carrying server fields and writes nothing", async ()
 it("stores a clickhouse source with its own default port", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -655,7 +655,7 @@ it("stores a clickhouse source with its own default port", async () => {
 it("stores a libsql source keyed by its endpoint URL", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -681,7 +681,7 @@ it("stores a libsql source keyed by its endpoint URL", async () => {
 it("rejects a libsql endpoint that is not a URL and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -702,7 +702,7 @@ it("rejects a libsql endpoint that is not a URL and writes nothing", async () =>
 it("stores a mariadb source with its own default port", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -733,14 +733,14 @@ it("stores a mariadb source with its own default port", async () => {
 it("tests a connection without writing anything", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources/test", {
+  const res = await request("/api/data-sources/test", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
       kind: "postgres",
       name: "Connection test",
       host: "127.0.0.1",
-      port: 5434,
+      port: TEST_POSTGRES_PORT,
       database: "heptadec_test",
       username: "heptadec",
       password: "heptadec",
@@ -765,7 +765,7 @@ it("tests a connection without writing anything", async () => {
 it("answers 502 when the database cannot be reached", async () => {
   const { cookie } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources/test", {
+  const res = await request("/api/data-sources/test", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -786,7 +786,7 @@ it("answers 502 when the database cannot be reached", async () => {
 it("deletes its own source and the row is gone", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Temporary source")),
@@ -795,7 +795,7 @@ it("deletes its own source and the row is gone", async () => {
     (await created.json()) as { dataSource: { id: string } }
   ).dataSource.id;
 
-  const res = await app.request(`/api/data-sources/${createdId}`, {
+  const res = await request(`/api/data-sources/${createdId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -811,14 +811,14 @@ it("deletes its own source and the row is gone", async () => {
 it("defaults a new source to fully writable and stores read-only when asked", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const plain = await app.request("/api/data-sources", {
+  const plain = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput("Writable replica")),
   });
   expect(plain.status).toBe(200);
 
-  const restricted = await app.request("/api/data-sources", {
+  const restricted = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -844,7 +844,7 @@ it("defaults a new source to fully writable and stores read-only when asked", as
 it("refuses a non-boolean readOnly and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -859,4 +859,284 @@ it("refuses a non-boolean readOnly and writes nothing", async () => {
     .from(dataSource)
     .where(eq(dataSource.organizationId, organizationId));
   expect(rows).toHaveLength(0);
+});
+
+async function createdSource(
+  cookie: string,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const res = await request("/api/data-sources", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { dataSource: { id: string } }).dataSource.id;
+}
+
+async function rowOf(organizationId: string, id: string) {
+  const rows = await db
+    .select()
+    .from(dataSource)
+    .where(
+      and(
+        eq(dataSource.id, id),
+        eq(dataSource.organizationId, organizationId),
+      ),
+    );
+  return rows[0]!;
+}
+
+it("renames a source and leaves every other column and the secret alone", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Old name"));
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "New name" }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.name).toBe("New name");
+  expect(row.host).toBe("db.internal");
+  expect(row.port).toBe(5432);
+  expect(row.database).toBe("warehouse");
+  expect(row.username).toBe("readonly_svc");
+  expect(row.readOnly).toBe(false);
+  // The secret is never sent back, so it can only have been kept.
+  expect(await decryptSecret(row.secret!)).toBe("s3cret-password");
+});
+
+it("replaces a secret only when a new one is sent", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Rotated"));
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Rotated", password: "rotated-password" }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  expect(await decryptSecret(row.secret!)).toBe("rotated-password");
+});
+
+it("keeps the engine the source already has when a different one is sent", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Not mysql"));
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Still postgres", kind: "mysql" }),
+  });
+  expect(res.status).toBe(200);
+
+  const body = (await res.json()) as { dataSource: { kind: string } };
+  expect(body.dataSource.kind).toBe("postgres");
+
+  const row = await rowOf(organizationId, id);
+  expect(row.kind).toBe("postgres");
+});
+
+it("keeps a socket source on its socket when the restatement names neither", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, {
+    kind: "postgres",
+    name: "Local socket",
+    connectionMode: "socket",
+    socketPath: "/var/run/postgresql/.s.PGSQL.5432",
+    database: "warehouse",
+    username: "readonly_svc",
+  });
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Local socket, renamed" }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.connectionMode).toBe("socket");
+  expect(row.socketPath).toBe("/var/run/postgresql/.s.PGSQL.5432");
+  expect(row.host).toBeNull();
+  expect(row.port).toBeNull();
+});
+
+it("drops the host when a source moves from tcp to a socket", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Moving"));
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Moving",
+      connectionMode: "socket",
+      socketPath: "/var/run/postgresql/.s.PGSQL.5432",
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.connectionMode).toBe("socket");
+  expect(row.host).toBeNull();
+  expect(row.port).toBeNull();
+  expect(row.socketPath).toBe("/var/run/postgresql/.s.PGSQL.5432");
+});
+
+it("keeps a TLS source's stored certificates when they are not sent back", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, {
+    ...postgresInput("TLS replica"),
+    connectionMode: "tls",
+    caCert: "CA-CERTIFICATE-MATERIAL",
+    clientCert: "CLIENT-CERTIFICATE-MATERIAL",
+    clientKey: "CLIENT-KEY-MATERIAL",
+  });
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "TLS replica, renamed" }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  // Moving off TLS drops them; staying on TLS keeps them.
+  expect(row.connectionMode).toBe("tls");
+  expect(await decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
+  expect(await decryptSecret(row.clientCertificate!)).toBe(
+    "CLIENT-CERTIFICATE-MATERIAL",
+  );
+  expect(await decryptSecret(row.clientKey!)).toBe("CLIENT-KEY-MATERIAL");
+});
+
+it("keeps a stored certificate when a source moves off TLS", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, {
+    ...postgresInput("TLS leaving"),
+    connectionMode: "tls",
+    caCert: "CA-CERTIFICATE-MATERIAL",
+  });
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "TLS leaving", connectionMode: "tcp" }),
+  });
+  expect(res.status).toBe(200);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.connectionMode).toBe("tcp");
+  expect(row.host).toBe("db.internal");
+  // A certificate is never shown back, so it is kept rather than destroyed
+  // silently: moving back to TLS works without asking for it again.
+  expect(await decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
+});
+
+it("refuses an update that would empty a required field and writes nothing", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Keep the host"));
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Keep the host", host: "" }),
+  });
+  expect(res.status).toBe(400);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.host).toBe("db.internal");
+});
+
+it("refuses an update carrying a field the engine does not have", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, {
+    kind: "sqlite",
+    name: "Local analytics",
+    filePath: "/data/analytics.db",
+  });
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Local analytics", socketPath: "/tmp/sock" }),
+  });
+  expect(res.status).toBe(400);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.socketPath).toBeNull();
+});
+
+it("refuses an update from a viewer and writes nothing", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Editorial eye"));
+  const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
+
+  await authFor(db).api.addMember({
+    body: { userId: viewer.id, role: "viewer", organizationId },
+  });
+  await request("/api/organization/switch", {
+    method: "POST",
+    headers: { cookie: viewerCookie, "content-type": "application/json" },
+    body: JSON.stringify({ organizationId }),
+  });
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie: viewerCookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Viewer tried" }),
+  });
+  expect(res.status).toBe(403);
+
+  const row = await rowOf(organizationId, id);
+  expect(row.name).toBe("Editorial eye");
+});
+
+it("returns 404 and keeps the row when updating another organization's source", async () => {
+  const mine = await ownerWithOrganization();
+  const theirs = await ownerWithOrganization();
+
+  const id = await createdSource(
+    theirs.cookie,
+    postgresInput("Their source"),
+  );
+
+  const res = await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie: mine.cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Taken over" }),
+  });
+  expect(res.status).toBe(404);
+
+  const row = await rowOf(theirs.organizationId, id);
+  expect(row.name).toBe("Their source");
+});
+
+it("records an audit entry naming the member who changed a source", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createdSource(cookie, postgresInput("Audited"));
+
+  await request(`/api/data-sources/${id}`, {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "Audited, renamed" }),
+  });
+
+  const entries = await db
+    .select()
+    .from(auditLog)
+    .where(eq(auditLog.organizationId, organizationId))
+    .orderBy(desc(auditLog.occurredAt));
+  const updated = entries.find((entry) => entry.event === "data_source.updated");
+  expect(updated).toBeDefined();
+  expect(updated!.targetId).toBe(id);
+  expect(updated!.targetLabel).toBe("Audited, renamed");
+  expect(updated!.actorId).not.toBe("");
+  expect(updated!.actorLabel).not.toBe("");
 });

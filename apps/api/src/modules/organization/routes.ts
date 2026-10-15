@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../../common/config/better-auth";
+import { schema } from "@heptadec/db";
+import { authFor } from "../../common/config/better-auth";
 import {
   requireSession,
   type IAuthVars,
@@ -47,7 +47,7 @@ export function organizationRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/organization", requireSession, async (c) => {
     const session = c.get("session")!;
-    const rows = await db
+    const rows = await c.get("db")
       .select({
         id: organization.id,
         name: organization.name,
@@ -79,7 +79,7 @@ export function organizationRoutes(): Hono<IAuthVars> {
       "An organization id is required",
     );
 
-    const membership = await db
+    const membership = await c.get("db")
       .select({ id: member.id })
       .from(member)
       .where(
@@ -93,7 +93,7 @@ export function organizationRoutes(): Hono<IAuthVars> {
       throw new ForbiddenException("You are not a member of that organization");
     }
 
-    await auth.api.setActiveOrganization({
+    await authFor(c.get("db")).api.setActiveOrganization({
       body: { organizationId },
       headers: c.req.raw.headers,
     });
@@ -105,13 +105,13 @@ export function organizationRoutes(): Hono<IAuthVars> {
   routes.post("/api/organization/delete", requireSession, async (c) => {
     const scope = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "organization", "delete"))) {
+    if (!(await can(scope.db, c.req.raw.headers, "organization", "delete"))) {
       throw new ForbiddenException("Only an owner can delete an organization");
     }
 
     const body = readBody(await c.req.json(), "Type the organization slug to confirm");
     const slug = readString(body, "slug", "Type the organization slug to confirm", MAX_SLUG);
-    const current = await db
+    const current = await c.get("db")
       .select({ slug: organization.slug })
       .from(organization)
       .where(eq(organization.id, scope.organizationId))
@@ -120,13 +120,13 @@ export function organizationRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That slug is not this organization's");
     }
 
-    await db.transaction(async (tx) => {
+    await c.get("db").transaction(async (tx) => {
       for (const table of ORG_SCOPED_TABLES) {
         await tx.delete(table).where(scope.where(table.organizationId));
       }
     });
 
-    await auth.api.deleteOrganization({
+    await authFor(c.get("db")).api.deleteOrganization({
       body: { organizationId: scope.organizationId },
       headers: c.req.raw.headers,
     });

@@ -1,23 +1,13 @@
 import { Client as PgClient } from "pg";
 import { createConnection as createMysqlConnection } from "mysql2/promise";
 import { createClient as createRedisClient } from "redis";
-import { createClient as createClickhouseClient } from "@clickhouse/client";
+import { createClient as createClickhouseClient } from "@clickhouse/client-web";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
-
-const STACK = {
-  postgres: { host: "127.0.0.1", port: 5434, database: "heptadec_test", username: "heptadec", password: "heptadec" },
-  mysql: { host: "127.0.0.1", port: 3308, database: "heptadec_test", username: "heptadec", password: "Delta1force" },
-  mariadb: { host: "127.0.0.1", port: 3309, database: "heptadec_test", username: "heptadec", password: "Delta1force" },
-  redis: { host: "127.0.0.1", port: 6381 },
-  clickhouse: { host: "127.0.0.1", port: 8124, database: "heptadec_test", username: "heptadec", password: "Delta1force" },
-  libsql: { endpoint: "http://127.0.0.1:8081" },
-  quickwit: { endpoint: "http://127.0.0.1:7282" },
-};
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, STACK, uniqueEmail, uniqueSlug } from "./helpers";
 
 let probeSeq = 0;
 
@@ -31,7 +21,7 @@ async function ownerWithOrganization(): Promise<{
   organizationId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const created = await auth.api.createOrganization({
+  const created = await authFor(db).api.createOrganization({
     body: { name: "Preview Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -42,7 +32,7 @@ async function createSource(
   cookie: string,
   input: Record<string, unknown>,
 ): Promise<string> {
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(input),
@@ -95,7 +85,7 @@ it("lists postgres tables and previews the rows inside", async () => {
     password: STACK.postgres.password,
   });
 
-  const listed = await app.request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -104,7 +94,7 @@ it("lists postgres tables and previews the rows inside", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: "public.events", type: "table" });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "public.events", limit: 100 }),
@@ -134,7 +124,7 @@ it("refuses a preview for an object that is not listed, and the table survives",
   });
 
   const before = await pgCount();
-  const res = await app.request(`/api/data-sources/${id}/preview`, {
+  const res = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events; DROP TABLE events--" }),
@@ -155,7 +145,7 @@ it("refuses a preview limit outside 1 to 100", async () => {
     password: STACK.postgres.password,
   });
 
-  const res = await app.request(`/api/data-sources/${id}/preview`, {
+  const res = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "public.events", limit: 500 }),
@@ -166,16 +156,16 @@ it("refuses a preview limit outside 1 to 100", async () => {
 it("refuses browsing to a viewer", async () => {
   const { organizationId } = await ownerWithOrganization();
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await app.request("/api/data-sources/00000000-0000-4000-8000-000000000000/objects", {
+  const res = await request("/api/data-sources/00000000-0000-4000-8000-000000000000/objects", {
     headers: { cookie: viewerCookie },
   });
   expect(res.status).toBe(403);
@@ -194,7 +184,7 @@ it("returns 404 when browsing another organization's source", async () => {
     password: STACK.postgres.password,
   });
 
-  const res = await app.request(`/api/data-sources/${id}/objects`, {
+  const res = await request(`/api/data-sources/${id}/objects`, {
     headers: { cookie: mine.cookie },
   });
   expect(res.status).toBe(404);
@@ -217,7 +207,7 @@ it("lists redis keys and previews a hash", async () => {
     port: STACK.redis.port,
   });
 
-  const listed = await app.request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -226,7 +216,7 @@ it("lists redis keys and previews a hash", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: `event:${probe}`, type: "key" });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: `event:${probe}` }),
@@ -282,7 +272,7 @@ it("searches a quickwit index for the ingested probe", async () => {
     database: "events",
   });
 
-  const listed = await app.request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -291,7 +281,7 @@ it("searches a quickwit index for the ingested probe", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: "events", type: "index" });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events", query: `id:${probe}` }),
@@ -328,7 +318,7 @@ it("previews mysql and mariadb tables through the same path", async () => {
       password: engine.password,
     });
 
-    const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+    const previewed = await request(`/api/data-sources/${id}/preview`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ object: "events" }),
@@ -367,7 +357,7 @@ it("previews a clickhouse table", async () => {
     password: STACK.clickhouse.password,
   });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),
@@ -395,7 +385,7 @@ it("previews a local sqlite file", async () => {
     filePath,
   });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),
@@ -428,7 +418,7 @@ it("previews a libsql table over http", async () => {
     endpoint: STACK.libsql.endpoint,
   });
 
-  const previewed = await app.request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),

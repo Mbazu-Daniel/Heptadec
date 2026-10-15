@@ -27,6 +27,8 @@ interface IEngine {
   file: string;
   latency: string;
   snippet: string[];
+  /** Marks an engine still shipping as a preview. */
+  preview?: boolean;
 }
 
 const ENGINES: IEngine[] = [
@@ -63,6 +65,7 @@ const ENGINES: IEngine[] = [
       "end",
       "return out",
     ],
+    preview: true,
   },
   {
     id: "quickwit",
@@ -76,6 +79,7 @@ const ENGINES: IEngine[] = [
       "sort: -created_at",
       "max_hits: 25",
     ],
+    preview: true,
   },
   {
     id: "clickhouse",
@@ -107,7 +111,7 @@ const ENGINES: IEngine[] = [
 ];
 
 const STAR_CLASS =
-  "inline-flex h-[40px] items-center gap-2 rounded-[16px] border border-(--mk-hairline) bg-(--mk-tint-f5) px-3 text-sm font-semibold text-(--mk-fg-primary) transition-all duration-150 hover:border-(--mk-cyan) hover:text-(--mk-cyan)";
+  "inline-flex h-[40px] items-center gap-2 rounded-[16px] border border-(--mk-hairline) bg-(--mk-tint-f10) px-3 text-sm font-semibold text-(--mk-fg-primary) transition-all duration-150 hover:border-(--mk-cyan) hover:text-(--mk-cyan)";
 
 function GitHubStars({ label }: { label?: string }) {
   const [stars, setStars] = useState<number | null>(null);
@@ -136,7 +140,7 @@ function GitHubStars({ label }: { label?: string }) {
       aria-label="Star Heptadec on GitHub"
       className={STAR_CLASS}
     >
-      <span className="material-symbols-outlined text-[18px]">star</span>
+      <span className="material-symbols-outlined text-[19px]">star</span>
       {label === undefined ? null : <span>{label}</span>}
       {stars === null ? null : (
         <span className="font-mono tabular-nums">{stars}</span>
@@ -156,7 +160,7 @@ function Header({ onGetStarted }: { onGetStarted: () => void }) {
           <button
             type="button"
             onClick={onGetStarted}
-            className="font-display text-[20px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)"
+            className="font-display text-[21px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)"
           >
             Heptadec
           </button>
@@ -166,7 +170,7 @@ function Header({ onGetStarted }: { onGetStarted: () => void }) {
           <button
             type="button"
             onClick={onGetStarted}
-            className="h-[40px] px-4 flex items-center justify-center rounded-[16px] border border-(--mk-hairline) bg-gradient-to-b from-(--mk-tint-f5) to-(--mk-tint-f10) backdrop-blur-[25px] text-sm font-semibold text-(--mk-cyan) transition-all duration-150 hover:bg-(--mk-cyan) hover:text-(--mk-on-accent) hover:shadow-[0_0_4px_color-mix(in_srgb,var(--mk-cyan)_6%,transparent),0_1px_14px_color-mix(in_srgb,var(--mk-cyan)_12%,transparent),0_3px_32px_color-mix(in_srgb,var(--mk-cyan)_18%,transparent)]"
+            className={`h-[40px] px-4 flex items-center justify-center rounded-[16px] ${PRIMARY} text-sm font-semibold transition-all duration-150 ${PRIMARY_HOVER}`}
           >
             Get Started
           </button>
@@ -176,14 +180,13 @@ function Header({ onGetStarted }: { onGetStarted: () => void }) {
   );
 }
 
-const GLASS =
-  "border border-(--mk-hairline) bg-gradient-to-b from-(--mk-tint-f5) to-(--mk-tint-f10) backdrop-blur-[25px]";
-const GLASS_HOVER =
-  "hover:bg-(--mk-cyan) hover:text-(--mk-on-accent) hover:shadow-[0_0_4px_color-mix(in_srgb,var(--mk-cyan)_6%,transparent),0_1px_14px_color-mix(in_srgb,var(--mk-cyan)_12%,transparent),0_3px_32px_color-mix(in_srgb,var(--mk-cyan)_18%,transparent)]";
+const PRIMARY = "border border-transparent bg-(--mk-cyan) text-(--mk-on-accent)";
+const PRIMARY_HOVER =
+  "hover:opacity-90 hover:shadow-[0_1px_14px_color-mix(in_srgb,var(--mk-cyan)_12%,transparent),0_3px_32px_color-mix(in_srgb,var(--mk-cyan)_18%,transparent)]";
 const GRADIENT_HEADING =
   "bg-gradient-to-br from-(--mk-cyan) via-(--mk-cyan) to-[color-mix(in_srgb,var(--mk-cyan)_45%,transparent)] bg-clip-text text-transparent";
 const EYEBROW =
-  "text-[11px] font-semibold uppercase tracking-widest text-(--mk-cyan) mb-1";
+  "text-[12px] font-semibold uppercase tracking-widest text-(--mk-cyan) mb-1";
 
 const DATABASE_CELLS = [
   "users",
@@ -207,7 +210,7 @@ function HeroCopy({ onGetStarted }: { onGetStarted: () => void }) {
       >
         <span className="w-1.5 h-1.5 rounded-full bg-(--mk-cyan) shadow-[0_0_6px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
         <span className="text-sm text-(--mk-fg-primary)">Free and open source. No paid plan</span>
-        <span className="font-mono text-[13.5px] text-(--mk-cyan) group-hover:translate-x-0.5 transition-transform duration-150">
+        <span className="font-mono text-[14.5px] text-(--mk-cyan) group-hover:translate-x-0.5 transition-transform duration-150">
           →
         </span>
       </button>
@@ -216,7 +219,7 @@ function HeroCopy({ onGetStarted }: { onGetStarted: () => void }) {
       >
         Your data, in plain sight.
       </h1>
-      <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-8">
+      <p className="text-[19px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-8">
         The calm way to visualize queries across Postgres, MySQL, Redis,
         ClickHouse, and more. Open source, self-hosted, and free to run on
         your own infrastructure.
@@ -225,7 +228,7 @@ function HeroCopy({ onGetStarted }: { onGetStarted: () => void }) {
         <button
           type="button"
           onClick={() => scrollToSection("deploy")}
-          className={`h-12 px-6 flex items-center justify-center rounded-[16px] ${GLASS} text-sm font-semibold text-(--mk-cyan) transition-all duration-200 ${GLASS_HOVER}`}
+          className={`h-12 px-6 flex items-center justify-center rounded-[16px] ${PRIMARY} text-sm font-semibold transition-all duration-200 ${PRIMARY_HOVER}`}
         >
           Deploy it free
         </button>
@@ -241,7 +244,7 @@ function HeroCopy({ onGetStarted }: { onGetStarted: () => void }) {
           </span>
         </a>
       </div>
-      <div className="mt-12 pt-6 border-t border-(--mk-subtle)/40 flex items-center gap-6 text-(--mk-fg-muted) font-mono text-[13.5px]">
+      <div className="mt-12 pt-6 border-t border-(--mk-subtle)/40 flex items-center gap-6 text-(--mk-fg-muted) font-mono text-[14.5px]">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-(--mk-tertiary-container) shadow-[0_0_6px_color-mix(in_srgb,var(--mk-tertiary-container)_80%,transparent)]" />
           <span>Zero-egress telemetry</span>
@@ -260,7 +263,7 @@ function HeroStage() {
       <div className="relative w-72 h-72 [transform-style:preserve-3d] [transform:rotateX(-24deg)_rotateY(-36deg)_rotateZ(12deg)] transition-transform duration-700 hover:[transform:rotateX(-18deg)_rotateY(-24deg)_rotateZ(6deg)]">
         <div className="absolute inset-0 rounded-[20px] bg-(--mk-surface) border border-(--mk-active)/60 [box-shadow:0_0_30px_color-mix(in_srgb,var(--mk-cyan)_15%,transparent)] [transform:translateZ(0px)] flex flex-col p-4 justify-between">
           <div className="flex items-center justify-between border-b border-(--mk-hairline) pb-2">
-            <span className="font-mono text-[13.5px] text-(--mk-cyan)">
+            <span className="font-mono text-[14.5px] text-(--mk-cyan)">
               pg_heptadec_primary
             </span>
             <span className="w-2 h-2 rounded-full bg-(--mk-tertiary-container) shadow-[0_0_6px_color-mix(in_srgb,var(--mk-tertiary-container)_80%,transparent)]" />
@@ -271,17 +274,17 @@ function HeroStage() {
                 key={cell}
                 className={
                   cell === "WAL"
-                    ? "h-10 rounded-[8px] bg-(--mk-tint-f10) border border-(--mk-cyan)/40 flex items-center justify-center text-(--mk-fg-primary) font-mono text-[11px] shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_20%,transparent)]"
+                    ? "h-10 rounded-[8px] bg-(--mk-tint-f10) border border-(--mk-cyan)/40 flex items-center justify-center text-(--mk-fg-primary) font-mono text-[12px] shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_20%,transparent)]"
                     : cell === "vectors" || cell === "mcp"
-                      ? "h-10 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center justify-center text-(--mk-secondary) font-mono text-[11px]"
-                      : "h-10 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center justify-center text-(--mk-cyan) font-mono text-[11px]"
+                      ? "h-10 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center justify-center text-(--mk-secondary) font-mono text-[12px]"
+                      : "h-10 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center justify-center text-(--mk-cyan) font-mono text-[12px]"
                 }
               >
                 {cell}
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono text-(--mk-fg-muted) pt-2 border-t border-(--mk-hairline)">
+          <div className="flex items-center justify-between text-[12px] font-mono text-(--mk-fg-muted) pt-2 border-t border-(--mk-hairline)">
             <span>0.4ms lat</span>
             <span className="text-(--mk-tertiary-container)">synced 100%</span>
           </div>
@@ -289,19 +292,19 @@ function HeroStage() {
         <div className="absolute inset-2 rounded-[16px] bg-[color-mix(in_srgb,var(--mk-bg)_85%,transparent)] border border-(--mk-hairline) [transform:translateZ(46px)] backdrop-blur-md p-3 grid grid-cols-3 gap-2 pointer-events-none">
           <div className="rounded-[8px] bg-(--mk-cyan)/10 border border-(--mk-active)/40 flex flex-col justify-center items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-(--mk-cyan) mb-1" />
-            <span className="font-mono text-[9px] text-(--mk-cyan)">SHARD 01</span>
+            <span className="font-mono text-[10px] text-(--mk-cyan)">SHARD 01</span>
           </div>
           <div className="rounded-[8px] bg-(--mk-tint-f3) border border-(--mk-hairline) flex flex-col justify-center items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-(--mk-tertiary-container) mb-1" />
-            <span className="font-mono text-[9px] text-(--mk-fg-muted)">REPLICA</span>
+            <span className="font-mono text-[10px] text-(--mk-fg-muted)">REPLICA</span>
           </div>
           <div className="rounded-[8px] bg-(--mk-tint-f3) border border-(--mk-hairline) flex flex-col justify-center items-center">
             <span className="w-1.5 h-1.5 rounded-full bg-(--mk-secondary) mb-1" />
-            <span className="font-mono text-[9px] text-(--mk-secondary)">EMBED</span>
+            <span className="font-mono text-[10px] text-(--mk-secondary)">EMBED</span>
           </div>
           <div className="rounded-[8px] col-span-3 bg-gradient-to-r from-black via-(--mk-tint-f5) to-black border border-(--mk-hairline) flex items-center justify-around px-2 py-1">
-            <span className="font-mono text-[10px] text-(--mk-fg-muted)">throughput:</span>
-            <span className="font-mono text-[10px] text-(--mk-tertiary-container)">
+            <span className="font-mono text-[11px] text-(--mk-fg-muted)">throughput:</span>
+            <span className="font-mono text-[11px] text-(--mk-tertiary-container)">
               4,821,902 op/s
             </span>
           </div>
@@ -359,7 +362,7 @@ function EditorSection() {
           >
             One syntax across relational, cache, and vector storage.
           </h2>
-          <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) mt-2">
+          <p className="text-[19px] leading-[27px] text-(--mk-fg-muted) mt-2">
             Select target engines on the fly. Heptadec translates, optimizes, and
             pipelines queries with direct memory isolation.
           </p>
@@ -407,18 +410,18 @@ function EditorSection() {
               <span className="w-2.5 h-2.5 rounded-full bg-(--mk-container-highest)" />
               <span className="w-2.5 h-2.5 rounded-full bg-(--mk-container-highest)" />
               <span className="w-2.5 h-2.5 rounded-full bg-(--mk-container-highest)" />
-              <div className="ml-4 h-7 px-3 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center gap-2 text-(--mk-fg-primary) font-mono text-[12px]">
-                <span className="material-symbols-outlined text-[14px] text-(--mk-cyan)">
+              <div className="ml-4 h-7 px-3 rounded-[8px] bg-(--mk-tint-f5) border border-(--mk-hairline) flex items-center gap-2 text-(--mk-fg-primary) font-mono text-[13px]">
+                <span className="material-symbols-outlined text-[15px] text-(--mk-cyan)">
                   terminal
                 </span>
                 <span>{engine.file}</span>
               </div>
-              <div className="h-7 px-3 rounded-[8px] hidden sm:flex items-center gap-2 text-(--mk-fg-muted) hover:text-(--mk-fg-primary) font-mono text-[12px] cursor-pointer">
+              <div className="h-7 px-3 rounded-[8px] hidden sm:flex items-center gap-2 text-(--mk-fg-muted) hover:text-(--mk-fg-primary) font-mono text-[13px] cursor-pointer">
                 <span>redis_pipeline_dump.lua</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-[12px] text-(--mk-tertiary-container) flex items-center gap-1.5">
+              <span className="font-mono text-[13px] text-(--mk-tertiary-container) flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-(--mk-tertiary-container)" />
                 Execution: {ranAt ?? engine.latency}
               </span>
@@ -427,13 +430,13 @@ function EditorSection() {
                 onClick={() =>
                   setRanAt(`${(Math.random() * 0.6 + 0.4).toFixed(2)}ms`)
                 }
-                className="h-7 px-3 rounded-[8px] bg-(--mk-cyan) text-(--mk-on-accent) text-[12px] font-semibold hover:bg-white transition-colors"
+                className="h-7 px-3 rounded-[8px] bg-(--mk-cyan) text-(--mk-on-accent) text-[13px] font-semibold hover:opacity-90 transition"
               >
                 Run
               </button>
             </div>
           </div>
-          <div className="relative p-6 font-mono text-[13.5px] leading-[20px] overflow-x-auto bg-gradient-to-b from-transparent via-transparent to-[color-mix(in_srgb,var(--mk-surface)_90%,transparent)]">
+          <div className="relative p-6 font-mono text-[14.5px] leading-[20px] overflow-x-auto bg-gradient-to-b from-transparent via-transparent to-[color-mix(in_srgb,var(--mk-surface)_90%,transparent)]">
             <div className="grid grid-cols-[40px_1fr] gap-4">
               <div className="select-none text-right text-(--mk-fg-muted) font-mono">
                 {engine.snippet.map((_, index) => (
@@ -511,10 +514,10 @@ function ErdSection() {
             </h2>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 font-mono text-[13.5px] text-(--mk-fg-muted)">
+            <div className="flex items-center gap-2 font-mono text-[14.5px] text-(--mk-fg-muted)">
               <span className="w-2 h-2 rounded-full bg-(--mk-cyan)" /> Primary Key
             </div>
-            <div className="flex items-center gap-2 font-mono text-[13.5px] text-(--mk-fg-muted)">
+            <div className="flex items-center gap-2 font-mono text-[14.5px] text-(--mk-fg-muted)">
               <span className="w-2 h-2 rounded-full bg-(--mk-secondary)" /> Foreign
               Key / Embedding
             </div>
@@ -556,24 +559,24 @@ function ErdSection() {
               >
                 <div className="px-4 py-3 bg-[color-mix(in_srgb,var(--mk-bg)_60%,transparent)] border-b border-(--mk-hairline) flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-(--mk-cyan) text-[16px]">
+                    <span className="material-symbols-outlined text-(--mk-cyan) text-[17px]">
                       {table.icon}
                     </span>
-                    <span className="font-mono text-[13.5px] font-semibold text-(--mk-fg-primary)">
+                    <span className="font-mono text-[14.5px] font-semibold text-(--mk-fg-primary)">
                       {table.name}
                     </span>
                   </div>
                   <span
                     className={
                       table.name === "events_stream"
-                        ? "font-mono text-[11px] text-(--mk-tertiary-container)"
-                        : "font-mono text-[11px] text-(--mk-fg-muted)"
+                        ? "font-mono text-[12px] text-(--mk-tertiary-container)"
+                        : "font-mono text-[12px] text-(--mk-fg-muted)"
                     }
                   >
                     {table.kind}
                   </span>
                 </div>
-                <div className="divide-y divide-(--mk-hairline)/30 font-mono text-[13px]">
+                <div className="divide-y divide-(--mk-hairline)/30 font-mono text-[14px]">
                   {table.rows.map((row) => (
                     <div
                       key={row.field}
@@ -658,7 +661,7 @@ function FeaturesSection() {
           >
             Zero-overhead developer primitives.
           </h2>
-          <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) mt-2">
+          <p className="text-[19px] leading-[27px] text-(--mk-fg-muted) mt-2">
             No external proxy layers. No bloatware daemons. Heptadec drops directly
             into your current network topology.
           </p>
@@ -667,11 +670,11 @@ function FeaturesSection() {
           {FEATURES.map((feature) => (
             <div key={feature.title} className="flex flex-col space-y-3">
               <div className={`w-10 h-10 rounded-[10px] bg-(--mk-surface) border border-(--mk-hairline) flex items-center justify-center ${feature.tone}`}>
-                <span className="material-symbols-outlined text-[20px]">
+                <span className="material-symbols-outlined text-[21px]">
                   {feature.icon}
                 </span>
               </div>
-              <h3 className="font-display text-[20px] leading-[26px] text-(--mk-fg-primary) font-normal">
+              <h3 className="font-display text-[21px] leading-[26px] text-(--mk-fg-primary) font-normal">
                 {feature.title}
               </h3>
               <p className="text-sm text-(--mk-fg-muted) leading-relaxed">
@@ -696,7 +699,7 @@ function FinalCta({ onGetStarted }: { onGetStarted: () => void }) {
         >
           Experience calm query architecture.
         </h2>
-        <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-8">
+        <p className="text-[19px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-8">
           Clone the repo, install dependencies, apply the migrations, and run it
           locally. Everything you need is in the README.
         </p>
@@ -704,7 +707,7 @@ function FinalCta({ onGetStarted }: { onGetStarted: () => void }) {
           <button
             type="button"
             onClick={onGetStarted}
-            className={`h-12 px-8 flex items-center justify-center rounded-[16px] ${GLASS} text-sm font-semibold text-(--mk-cyan) transition-all duration-200 ${GLASS_HOVER}`}
+            className={`h-12 px-8 flex items-center justify-center rounded-[16px] ${PRIMARY} text-sm font-semibold transition-all duration-200 ${PRIMARY_HOVER}`}
           >
             Start building in minutes
           </button>
@@ -735,7 +738,7 @@ function ConnectAnythingSection() {
         >
           Connect anything.
         </h2>
-        <p className="text-[17px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-10">
+        <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-10">
           Every database your team already runs, one control plane. Point
           Heptadec at any of these and browse, query, and diagram it right away.
         </p>
@@ -766,7 +769,7 @@ function DeploySection() {
         <h2 className={`font-serif text-[40px] lg:text-[56px] tracking-[-0.01em] mb-4 ${GRADIENT_HEADING}`}>
           Deploy it your way.
         </h2>
-        <p className="text-[17px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-10">
+        <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-10">
           No pricing tiers and no paid plan. Clone it, run it on your own
           server, or let Cloudflare provision it for you.
         </p>
@@ -778,7 +781,7 @@ function DeploySection() {
                 <div className="text-sm font-semibold text-(--mk-fg-primary)">
                   Deploy to Cloudflare
                 </div>
-                <span className="rounded-[6px] border border-(--mk-hairline) px-1.5 py-0.5 font-mono text-[10px] uppercase text-(--mk-fg-muted)">
+                <span className="rounded-[6px] border border-(--mk-hairline) px-1.5 py-0.5 font-mono text-[11px] uppercase text-(--mk-fg-muted)">
                   Soon
                 </span>
               </div>
@@ -805,14 +808,14 @@ function DeploySection() {
                 Clone it, install with pnpm, run it on any VPS or your own
                 box.
               </p>
-              <pre className="mt-3 overflow-x-auto rounded-[12px] border border-(--mk-hairline) bg-(--mk-bg-surface) p-3 font-mono text-[12px] leading-[20px] text-(--mk-fg-primary)">
+              <pre className="mt-3 overflow-x-auto rounded-[12px] border border-(--mk-hairline) bg-(--mk-bg-surface) p-3 font-mono text-[13px] leading-[20px] text-(--mk-fg-primary)">
 {`git clone https://github.com/${REPO}.git
 cd Heptadec && pnpm install
 cp .env.example .env
 pnpm db:migrate && pnpm dev`}
               </pre>
             </div>
-            <span className="font-mono text-[11px] text-(--mk-fg-muted)">
+            <span className="font-mono text-[12px] text-(--mk-fg-muted)">
               API :8787 · web :5173
             </span>
           </div>
@@ -850,10 +853,10 @@ function Footer() {
       <div className="mx-auto flex max-w-[1280px] flex-col items-center justify-between gap-4 md:flex-row">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-(--mk-cyan) shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
-          <span className="font-display text-[16px] font-semibold tracking-tight text-(--mk-fg-primary)">
+          <span className="font-display text-[17px] font-semibold tracking-tight text-(--mk-fg-primary)">
             Heptadec
           </span>
-          <span className="font-mono text-[11px] text-(--mk-fg-muted)">
+          <span className="font-mono text-[12px] text-(--mk-fg-muted)">
             © 2026
           </span>
         </div>
@@ -866,7 +869,7 @@ function Footer() {
             rel="noreferrer"
             className="inline-flex h-[36px] items-center gap-2 rounded-[14px] bg-(--mk-cyan) px-4 text-sm font-semibold text-(--mk-on-accent) transition-all duration-150 hover:brightness-110"
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[19px]">
               favorite
             </span>
             Sponsor

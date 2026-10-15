@@ -26,7 +26,7 @@ export function FieldInput({
   const label = (
     <span className="text-xs text-muted-foreground">
       {field.label}{" "}
-      {field.required ? null : <span className="text-[10px]">— optional</span>}
+      {field.required ? null : <span className="text-[11px]">— optional</span>}
     </span>
   );
 
@@ -99,7 +99,7 @@ function SecretInput({
           aria-label={shown ? `Hide ${field.label}` : `Show ${field.label}`}
           className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground transition-colors hover:text-fg"
         >
-          <span className="material-symbols-outlined text-[16px]">
+          <span className="material-symbols-outlined text-[17px]">
             {shown ? "visibility_off" : "visibility"}
           </span>
         </button>

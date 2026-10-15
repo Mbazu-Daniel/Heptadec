@@ -1,12 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { IconPlus } from "@tabler/icons-react";
 import type {
-  ConnectionFieldKind,
+  ConnectionMode,
   DataSourceKind,
-  ICreateDataSourceRequest,
   IDataSource,
 } from "@heptadec/api/data-source-contracts";
-import { ENGINE_SPECS, PORT_MAX, PORT_MIN } from "@heptadec/api/data-source-contracts";
+import {
+  ENGINE_SPECS,
+  PORT_MAX,
+  PORT_MIN,
+  defaultConnectionMode,
+  isPreviewEngine,
+} from "@heptadec/api/data-source-contracts";
 import {
   createDataSource,
   deleteDataSource,
@@ -41,13 +46,14 @@ import {
   type ICrumb,
 } from "./workspace";
 import { EngineForm } from "./connection/EngineForm";
+import { SourceMenu } from "./connection/SourceMenu";
+import { SourceSettingsDialog } from "./connection/SourceSettingsDialog";
+import { connectionPayload } from "./connection/payload";
 import type { ConnectionMethod } from "./connection/ConnectionMethod";
 import { SourceDetail } from "./SourceDetail";
 import { SchemaBrowser } from "./schema/SchemaBrowser";
 
 const ENGINES = Object.keys(ENGINE_SPECS) as DataSourceKind[];
-
-const KEEP_VERBATIM: readonly ConnectionFieldKind[] = ["password", "token"];
 
 type TestState =
   | { status: "idle" }
@@ -84,6 +90,9 @@ export function DataSources({
   const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<DataSourceKind>("postgres");
   const [name, setName] = useState("");
+  const [mode, setMode] = useState<ConnectionMode | null>(() =>
+    defaultConnectionMode("postgres"),
+  );
   const [method, setMethod] = useState<ConnectionMethod>("fields");
   const [connectionUrl, setConnectionUrl] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -91,6 +100,15 @@ export function DataSources({
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [testState, setTestState] = useState<TestState>({ status: "idle" });
+
+  // An open ellipsis menu points at the source being changed or removed.
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<IDataSource | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const settingsSource =
+    sources.find((source) => source.id === settingsId) ?? null;
 
   async function reload(): Promise<void> {
     try {
@@ -128,6 +146,7 @@ export function DataSources({
   }): void {
     setKind(next.kind);
     setMethod(next.method);
+    setMode(defaultConnectionMode(next.kind));
     setValues({});
     setConnectionUrl("");
     setFormError(null);
@@ -149,48 +168,21 @@ export function DataSources({
     setFormOpen(true);
   }
 
-  function connectionPayload(): ICreateDataSourceRequest | null {
-    const body: ICreateDataSourceRequest = {
-      kind,
-      name: name.trim().length === 0 ? "connection test" : name.trim(),
-      readOnly,
-    };
-    if (method === "url") {
-      body.connectionUrl = connectionUrl.trim();
-      return body;
-    }
-    type ITextField = Exclude<ConnectionFieldKind, "port" | "connectionMode">;
-    const connection: Partial<Record<ITextField, string>> = {};
-    for (const field of ENGINE_SPECS[kind].fields) {
-      if (field.kind === "port" || field.kind === "connectionMode") {
-        continue;
-      }
-      const raw = values[field.kind] ?? "";
-      const value = KEEP_VERBATIM.includes(field.kind) ? raw : raw.trim();
-      if (value.length > 0) {
-        connection[field.kind] = value;
-      }
-    }
-
-    const port = (values.port ?? "").trim();
-    if (port.length > 0) {
-      const parsed = Number(port);
-      if (!Number.isInteger(parsed) || parsed < PORT_MIN || parsed > PORT_MAX) {
-        return null;
-      }
-      body.port = parsed;
-    }
-
-    return { ...body, ...connection };
-  }
-
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
     if (name.trim().length === 0) {
       setFormError("A name is required");
       return;
     }
-    const payload = connectionPayload();
+    const payload = connectionPayload({
+      kind,
+      mode,
+      method,
+      connectionUrl,
+      name,
+      readOnly,
+      values,
+    });
     if (payload === null) {
       setFormError(`The port must be a whole number between ${PORT_MIN} and ${PORT_MAX}`);
       return;
@@ -209,7 +201,15 @@ export function DataSources({
   }
 
   async function testConnection(): Promise<void> {
-    const payload = connectionPayload();
+    const payload = connectionPayload({
+      kind,
+      mode,
+      method,
+      connectionUrl,
+      name,
+      readOnly,
+      values,
+    });
     if (payload === null) {
       setTestState({
         status: "failed",
@@ -230,6 +230,23 @@ export function DataSources({
     }
   }
 
+  async function remove(target: IDataSource): Promise<void> {
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await deleteDataSource(target.id);
+      if (openedId === target.id) {
+        setOpenedId(null);
+      }
+      setRemoveTarget(null);
+      await reload();
+    } catch (caught) {
+      setRemoveError(messageFor(caught, "The source was not removed."));
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   const term = query.trim().toLowerCase();
   const visible = sources.filter((source) => {
     if (engine !== "" && source.kind !== engine) {
@@ -243,16 +260,15 @@ export function DataSources({
   const filtering = term !== "" || engine !== "";
 
   if (opened !== null) {
-    if (opened.kind !== "postgres") {
+    // A source whose statements are SQL or an aggregation pipeline reports a
+    // structure the app can read and diagram. A command or search source has
+    // nothing to introspect, so it keeps the plain detail view.
+    if (opened.queryLanguage !== "sql" && opened.queryLanguage !== "pipeline") {
       return (
         <section className={VIEW_CLASSNAME}>
           <SourceDetail
             source={opened}
             onBack={() => setOpenedId(null)}
-            onRemoved={() => {
-              setOpenedId(null);
-              void reload();
-            }}
           />
         </section>
       );
@@ -261,9 +277,7 @@ export function DataSources({
       <section className={VIEW_CLASSNAME}>
         <SchemaBrowser
           source={opened}
-          sources={sources}
           onTrail={onTrail}
-          onOpenSource={setOpenedId}
           onBack={() => setOpenedId(null)}
           onRemove={async (target) => {
             setListError(null);
@@ -276,14 +290,7 @@ export function DataSources({
             }
           }}
           onBrowseRows={(target, back) => (
-            <SourceDetail
-              source={target}
-              onBack={back}
-              onRemoved={() => {
-                setOpenedId(null);
-                void reload();
-              }}
-            />
+            <SourceDetail source={target} onBack={back} />
           )}
         />
       </section>
@@ -293,7 +300,7 @@ export function DataSources({
   return (
     <section className={VIEW_CLASSNAME}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {sources.length} connected
         </span>
       </div>
@@ -315,11 +322,16 @@ export function DataSources({
           className={TOOLBAR_SELECT_CLASSNAME}
         >
           <option value="">All engines</option>
-          {ENGINES.map((option) => (
-            <option key={option} value={option}>
-              {ENGINE_SPECS[option].name}
-            </option>
-          ))}
+          {ENGINES.map((option) => {
+            const spec = ENGINE_SPECS[option];
+            const isPreview = isPreviewEngine(option);
+            return (
+              <option key={option} value={option}>
+                {spec.name}
+                {isPreview ? " — preview" : ""}
+              </option>
+            );
+          })}
         </select>
         <div
           className="flex items-center border border-border"
@@ -337,7 +349,7 @@ export function DataSources({
                 : "flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-fg"
             }
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[19px]">
               view_list
             </span>
           </button>
@@ -352,13 +364,13 @@ export function DataSources({
                 : "flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-fg"
             }
           >
-            <span className="material-symbols-outlined text-[18px]">
+            <span className="material-symbols-outlined text-[19px]">
               grid_view
             </span>
           </button>
         </div>
         <Button
-          className="ml-auto h-9 gap-1.5 border-transparent bg-cyan px-4 text-sm font-semibold text-black hover:bg-cyan/85 hover:text-black"
+          className="ml-auto h-9 gap-1.5 px-4 text-sm"
           onClick={openForm}
         >
           <IconPlus size={16} />
@@ -404,11 +416,11 @@ export function DataSources({
             ) : layout === "cards" ? (
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {visible.map((source) => (
-                  <li key={source.id}>
+                  <li key={source.id} className="relative">
                     <button
                       type="button"
                       onClick={() => setOpenedId(source.id)}
-                      className="flex min-h-36 w-full flex-col justify-center gap-3 border border-border bg-card/30 p-6 text-left transition-colors hover:border-cyan/40"
+                      className="flex min-h-36 w-full flex-col justify-center gap-3 border border-border bg-card/30 p-6 pr-12 text-left transition-colors hover:border-cyan/40"
                     >
                       <span className="flex items-center gap-3">
                         <EngineIcon name={source.kind} className="size-8" />
@@ -420,6 +432,14 @@ export function DataSources({
                         {targetOf(source)}
                       </span>
                     </button>
+                    <SourceMenu
+                      className="absolute top-2 right-2"
+                      onSettings={() => setSettingsId(source.id)}
+                      onRemove={() => {
+                        setRemoveError(null);
+                        setRemoveTarget(source);
+                      }}
+                    />
                   </li>
                 ))}
               </ul>
@@ -432,6 +452,9 @@ export function DataSources({
                     </th>
                     <th scope="col" className={TABLE_HEAD_CLASSNAME}>
                       Target
+                    </th>
+                    <th scope="col" className={TABLE_HEAD_CLASSNAME}>
+                      <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -455,6 +478,16 @@ export function DataSources({
                         )}
                       >
                         {targetOf(source)}
+                      </td>
+                      <td className={cn(TABLE_CELL_CLASSNAME, "text-right")}>
+                        <SourceMenu
+                          className="inline-flex"
+                          onSettings={() => setSettingsId(source.id)}
+                          onRemove={() => {
+                            setRemoveError(null);
+                            setRemoveTarget(source);
+                          }}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -501,9 +534,11 @@ export function DataSources({
 
             <EngineForm
               kind={kind}
+              mode={mode}
               method={method}
               url={connectionUrl}
               values={values}
+              onModeChange={setMode}
               onMethodChange={(next) => resetConnection({ kind, method: next })}
               onUrlChange={setConnectionUrl}
               onChange={(field, next) =>
@@ -520,7 +555,7 @@ export function DataSources({
               />
               <span className="text-xs text-muted-foreground">
                 Read-only
-                <span className="text-[10px]"> — limit this source to reads</span>
+                <span className="text-[11px]"> — limit this source to reads</span>
               </span>
             </label>
 
@@ -563,6 +598,67 @@ export function DataSources({
           </form>
         </DialogContent>
       </Dialog>
+
+      {settingsSource === null ? null : (
+        <SourceSettingsDialog
+          key={settingsSource.id}
+          source={settingsSource}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSettingsId(null);
+            }
+          }}
+          onSaved={() => {
+            setSettingsId(null);
+            void reload();
+          }}
+        />
+      )}
+
+      {removeTarget === null ? null : (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setRemoveTarget(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-sm gap-4 rounded-none border-border bg-card">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-semibold">
+                Remove {removeTarget.name}?
+              </DialogTitle>
+            </DialogHeader>
+
+            <p className="text-xs text-muted-foreground">
+              The connection and the password stored with it are deleted. Saved
+              queries for this source are kept.
+            </p>
+
+            {removeError ? <Alert>{removeError}</Alert> : null}
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setRemoveTarget(null)}
+                className="rounded-none"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={removing}
+                className="rounded-none bg-red text-background hover:bg-red/85"
+                onClick={() => void remove(removeTarget)}
+              >
+                {removing ? "Removing" : "Remove"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </section>
   );
 }

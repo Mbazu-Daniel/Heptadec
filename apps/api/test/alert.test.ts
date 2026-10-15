@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import { and, eq } from "drizzle-orm";
 import { afterAll, expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import { runDueJobs } from "../src/modules/scheduler";
 
 const {
@@ -27,14 +27,6 @@ afterAll(async () => {
     await db.delete(notificationChannel).where(eq(notificationChannel.id, id));
   }
 });
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
@@ -95,12 +87,12 @@ async function ownerWithChart(): Promise<{
   savedQueryId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Alert Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const source = await app.request("/api/data-sources", {
+  const source = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -120,7 +112,7 @@ async function ownerWithChart(): Promise<{
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
 
-  const saved = await app.request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
+  const saved = await request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
@@ -134,7 +126,7 @@ async function connectChannel(
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<void> {
-  const res = await app.request("/api/notification-channels", {
+  const res = await request("/api/notification-channels", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -150,7 +142,7 @@ async function rule(
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return app.request("/api/alert-rules", {
+  return request("/api/alert-rules", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -158,7 +150,7 @@ async function rule(
 }
 
 async function runScheduledCheck(cookie: string, savedQueryId: string): Promise<void> {
-  const created = await app.request("/api/scheduled-jobs", {
+  const created = await request("/api/scheduled-jobs", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ savedQueryId, name: "Check", cron: "* * * * *" }),
@@ -172,7 +164,7 @@ async function runScheduledCheck(cookie: string, savedQueryId: string): Promise<
     .set({ nextRunAt: new Date(Date.now() - 60_000) })
     .where(eq(scheduledJob.id, job.id));
 
-  await runDueJobs(new Date());
+  await runDueJobs(db, new Date());
 }
 
 function deliveries(ruleId: string) {
@@ -344,18 +336,18 @@ it("404s another organization's rule and clears the log when the query goes", as
   const { alertRule: placed } = (await created.json()) as { alertRule: { id: string } };
 
   const stranger = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Stranger Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
 
-  const removed = await app.request(`/api/alert-rules/${placed.id}`, {
+  const removed = await request(`/api/alert-rules/${placed.id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
   expect(removed.status).toBe(404);
   expect(await deliveries(placed.id)).toHaveLength(0);
-  const deleted = await app.request(`/api/saved-queries/${savedQueryId}`, {
+  const deleted = await request(`/api/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -376,10 +368,10 @@ it("refuses a viewer who cannot add a rule", async () => {
   const { cookie, orgId, savedQueryId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId: orgId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: orgId }),
@@ -404,4 +396,55 @@ it("refuses a viewer who cannot add a rule", async () => {
       ),
     );
   expect(rows).toHaveLength(0);
+});
+it("marks a rule whose query nothing schedules, so it cannot look live", async () => {
+  const { cookie, orgId, savedQueryId } = await ownerWithChart();
+
+  const created = await rule(cookie, {
+    savedQueryId,
+    name: "Not scheduled",
+    column: "events",
+    operator: ">=",
+    threshold: 1,
+  });
+  expect(created.status).toBe(201);
+  const body = (await created.json()) as { alertRule: { id: string; scheduled: boolean } };
+  expect(body.alertRule.scheduled).toBe(false);
+
+  const stored = await db
+    .select()
+    .from(alertRule)
+    .where(
+      and(
+        eq(alertRule.id, body.alertRule.id),
+        eq(alertRule.organizationId, orgId),
+      ),
+    );
+  expect(stored).toHaveLength(1);
+
+  const listed = await request("/api/alert-rules", { headers: { cookie } });
+  expect(listed.status).toBe(200);
+  const { alertRules } = (await listed.json()) as {
+    alertRules: Array<{ id: string; scheduled: boolean }>;
+  };
+  const unscheduled = alertRules.find((entry) => entry.id === body.alertRule.id);
+  expect(unscheduled?.scheduled).toBe(false);
+
+  // Scheduling the query is what makes the rule live, and nothing else changes.
+  const job = await request("/api/scheduled-jobs", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ savedQueryId, name: "Check", cron: "* * * * *" }),
+  });
+  expect(job.status).toBe(201);
+  const { scheduledJob: createdJob } = (await job.json()) as {
+    scheduledJob: { id: string };
+  };
+  createdJobs.push(createdJob.id);
+
+  const after = await request("/api/alert-rules", { headers: { cookie } });
+  const { alertRules: afterRules } = (await after.json()) as {
+    alertRules: Array<{ id: string; scheduled: boolean }>;
+  };
+  expect(afterRules.find((entry) => entry.id === body.alertRule.id)?.scheduled).toBe(true);
 });

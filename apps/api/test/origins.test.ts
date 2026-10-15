@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { requestOrigins } from "../src/common/config/origins";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { db, request as callApp, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
 function request(headers: Record<string, string>): Request {
   return new Request("http://localhost:8787/api/auth/sign-in/email", { headers });
@@ -59,7 +59,7 @@ it("never trusts a foreign origin just because the host matches", () => {
 it("allows a request from the host it came in on", async () => {
   const { cookie } = await signUp(uniqueEmail());
 
-  const allowed = await app.request("/api/auth/organization/create", {
+  const allowed = await callApp("/api/auth/organization/create", {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -74,14 +74,14 @@ it("allows a request from the host it came in on", async () => {
 
 it("accepts a sign-up from the host the request came in on", async () => {
   const email = uniqueEmail();
-  const created = await app.request("/api/auth/sign-up/email", {
+  const created = await callApp("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "content-type": "application/json", host: "heptadec.test" },
     body: JSON.stringify({ name: "A", email, password: "supersecret1" }),
   });
   expect(created.status).toBe(200);
 
-  const signedIn = await app.request("/api/auth/sign-in/email", {
+  const signedIn = await callApp("/api/auth/sign-in/email", {
     method: "POST",
     headers: {
       "content-type": "application/json",

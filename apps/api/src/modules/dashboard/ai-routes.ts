@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -24,6 +24,7 @@ import {
 } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { savedConnection } from "../data-source/connection";
+import { canUseTooling } from "../data-source/contracts";
 import { introspectPostgres } from "../schema/postgres";
 import { runPostgresQuery } from "../query/postgres";
 import type { IQueryResponse } from "../query/contracts";
@@ -99,7 +100,7 @@ function dashboardAiRoutes() {
   routes.post("/api/dashboards/generate", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "create"))) {
       throw new ForbiddenException(
         "Only owners and editors can create dashboards",
       );
@@ -124,6 +125,7 @@ function dashboardAiRoutes() {
 
     const sources = await ownSources(request.dataSourceIds, organization);
     const provider = await chosenProvider(
+      organization.db,
       organization.organizationId,
       payload.providerId,
     );
@@ -134,7 +136,7 @@ function dashboardAiRoutes() {
     }
 
     const now = new Date();
-    const created = await db.transaction(async (tx) => {
+    const created = await organization.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(dashboard)
         .values({
@@ -170,10 +172,10 @@ function dashboardAiRoutes() {
       const skipped: string[] = [];
 
       try {
-        const analysed = sources.filter((row) => row.kind === "postgres");
+        const analysed = sources.filter(canUseTooling);
         if (analysed.length === 0) {
           problem =
-            "None of those sources can be analysed yet — only Postgres can.";
+            "None of those sources can be described in full yet, so there is nothing to build from them.";
         } else {
           const blocks: string[] = [];
           for (const source of analysed) {
@@ -181,7 +183,7 @@ function dashboardAiRoutes() {
               event: "status",
               data: JSON.stringify({ message: `Reading ${source.name}…` }),
             });
-            const described = await introspectPostgres(savedConnection(source));
+            const described = await introspectPostgres(await savedConnection(source));
             blocks.push(schemaBlock(source, described));
           }
 
@@ -250,13 +252,13 @@ function dashboardAiRoutes() {
   routes.post("/api/dashboards/:id/ask", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "update"))) {
       throw new ForbiddenException(
         "Only owners and editors can change dashboards",
       );
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
@@ -269,6 +271,7 @@ function dashboardAiRoutes() {
       MAX_QUESTION,
     );
     const provider = await chosenProvider(
+      organization.db,
       organization.organizationId,
       payload.providerId,
     );
@@ -302,7 +305,7 @@ function dashboardAiRoutes() {
             event: "status",
             data: JSON.stringify({ message: `Reading ${source.name}…` }),
           });
-          const described = await introspectPostgres(savedConnection(source));
+          const described = await introspectPostgres(await savedConnection(source));
           blocks.push(schemaBlock(source, described));
         }
 
@@ -350,13 +353,13 @@ function dashboardAiRoutes() {
   routes.post("/api/dashboards/:id/apply", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "update"))) {
       throw new ForbiddenException(
         "Only owners and editors can change dashboards",
       );
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
@@ -529,7 +532,7 @@ async function buildChart(
   };
 
   const grid = await runPostgresQuery(
-    { ...savedConnection(source), readOnly: true },
+    { ...(await savedConnection(source)), readOnly: true },
     sql,
   );
   const columns = pickChartColumns(grid, wanted);
@@ -549,7 +552,7 @@ async function persistChart(
 ): Promise<string> {
   const now = new Date();
 
-  const inserted = await db
+  const inserted = await organization.db
     .insert(savedQuery)
     .values({
       organizationId: organization.organizationId,
@@ -564,9 +567,9 @@ async function persistChart(
   if (query === undefined) {
     throw new BadRequestException("That chart's query could not be saved");
   }
-  await cacheResult(organization.organizationId, query.id, draft.grid);
+  await cacheResult(organization.db, organization.organizationId, query.id, draft.grid);
 
-  const placed = await db
+  const placed = await organization.db
     .insert(widget)
     .values({
       organizationId: organization.organizationId,
@@ -598,7 +601,7 @@ async function applyAction(
 
   if (action.kind === "remove") {
     const owned = ownedWidget(action.widgetId, widgets);
-    await db.delete(widget).where(eq(widget.id, owned.id));
+    await organization.db.delete(widget).where(eq(widget.id, owned.id));
     return owned.id;
   }
 
@@ -626,7 +629,7 @@ async function updateChart(
   now: Date,
 ): Promise<string> {
   const owned = ownedWidget(action.widgetId, widgets);
-  const query = await oneRow(savedQuery, owned.savedQueryId, organization);
+  const query = await oneRow(organization.db, savedQuery, owned.savedQueryId, organization);
   if (query === undefined) {
     throw new NotFoundException("That chart's query no longer exists");
   }
@@ -651,7 +654,7 @@ async function updateChart(
         );
       }
     }
-    await db
+    await organization.db
       .update(widget)
       .set({
         ...(action.title === undefined ? {} : { title: action.title }),
@@ -687,19 +690,19 @@ async function updateChart(
     analysed,
   );
 
-  await db.insert(queryVersion).values({
+  await organization.db.insert(queryVersion).values({
     organizationId: query.organizationId,
     savedQueryId: query.id,
     name: query.name,
     sql: query.sql,
     createdAt: now,
   });
-  await db
+  await organization.db
     .update(savedQuery)
     .set({ sql: draft.sql, updatedAt: now })
     .where(eq(savedQuery.id, query.id));
-  await cacheResult(organization.organizationId, query.id, draft.grid);
-  await db
+  await cacheResult(organization.db, organization.organizationId, query.id, draft.grid);
+  await organization.db
     .update(widget)
     .set({
       chartType: draft.chartType,
@@ -732,7 +735,7 @@ async function dashboardSources(
     connected.map((entry) => entry.dataSourceId),
     organization,
   );
-  return rows.filter((row) => row.kind === "postgres");
+  return rows.filter(canUseTooling);
 }
 
 function schemaBlock(
@@ -759,7 +762,7 @@ async function askPrompt(
   const queries =
     ids.length === 0
       ? []
-      : await db
+      : await organization.db
           .select()
           .from(savedQuery)
           .where(

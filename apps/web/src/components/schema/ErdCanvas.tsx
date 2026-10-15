@@ -342,7 +342,7 @@ export function ErdCanvas(props: {
   onSelect: (table: string) => void;
 }) {
   return (
-    <div className="erd erd-canvas relative min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div className="erd erd-canvas relative h-full w-full min-h-0 min-w-0 overflow-hidden">
       <ReactFlowProvider>
         <Diagram {...props} />
       </ReactFlowProvider>

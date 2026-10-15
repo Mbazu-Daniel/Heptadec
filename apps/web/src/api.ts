@@ -8,6 +8,10 @@ import type {
   IMemberProfileResponse,
   IMembersResponse,
 } from "@heptadec/api/member-contracts";
+import type {
+  IImagesConfigResponse,
+  IUploadImageResponse,
+} from "@heptadec/api/images-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import type {
   ApiErrorCode,
@@ -26,6 +30,8 @@ import type {
   IObjectsResponse,
   IPreviewResponse,
   ITestConnectionResponse,
+  IUpdateDataSourceRequest,
+  IUpdateDataSourceResponse,
 } from "@heptadec/api/data-source-contracts";
 import type {
   IAuditLogListResponse,
@@ -44,7 +50,9 @@ import type {
 import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
 import type {
   IExplainResponse,
+  IMongoPipeline,
   IQueryRequest,
+  ISearchStatement,
   IQueryResponse,
   IRedisQueryResponse,
 } from "@heptadec/api/query-contracts";
@@ -179,6 +187,22 @@ export function fetchMemberProfile(): Promise<IMemberProfileResponse> {
   return request<IMemberProfileResponse>("/api/organization/member");
 }
 
+export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
+  return request<IImagesConfigResponse>("/api/images/config");
+}
+
+export function uploadAvatar(dataUrl: string): Promise<IUploadImageResponse> {
+  return request<IUploadImageResponse>("/api/images/avatar", "POST", {
+    dataUrl,
+  });
+}
+
+export function uploadOrganizationLogo(
+  dataUrl: string,
+): Promise<IUploadImageResponse> {
+  return request<IUploadImageResponse>("/api/images/logo", "POST", { dataUrl });
+}
+
 export async function saveMemberDisplayName(
   displayName: string | null,
 ): Promise<IMemberProfileResponse> {
@@ -296,7 +320,7 @@ async function streamRequest<T>(
 export type IAskHandlers = IStreamHandlers<IGenerateQueryResponse>;
 
 export async function askQuestion(
-  dataSourceId: string,
+  dataSourceIds: readonly string[],
   question: string,
   providerId: string | undefined,
   handlers: IAskHandlers,
@@ -304,7 +328,8 @@ export async function askQuestion(
   return streamRequest(
     "/api/ai/ask",
     {
-      dataSourceId,
+      // An empty list asks every source the organization can ask about.
+      dataSourceIds: [...dataSourceIds],
       question,
       ...(providerId === undefined ? {} : { providerId }),
     },
@@ -383,6 +408,17 @@ export function createDataSource(
   return request<ICreateDataSourceResponse>("/api/data-sources", "POST", input);
 }
 
+export function updateDataSource(
+  id: string,
+  input: IUpdateDataSourceRequest,
+): Promise<IUpdateDataSourceResponse> {
+  return request<IUpdateDataSourceResponse>(
+    `/api/data-sources/${id}`,
+    "PATCH",
+    input,
+  );
+}
+
 export function deleteDataSource(
   id: string,
 ): Promise<IDeleteDataSourceResponse> {
@@ -425,6 +461,14 @@ export function runQuery(id: string, sql: string): Promise<IQueryResponse> {
   return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
 }
 
+export function runPipeline(
+  id: string,
+  pipeline: IMongoPipeline,
+): Promise<IQueryResponse> {
+  const body: IQueryRequest = { mongo: pipeline };
+  return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
+}
+
 export function runRedisCommand(
   id: string,
   command: string,
@@ -432,6 +476,16 @@ export function runRedisCommand(
   return request<IRedisQueryResponse>(`/api/data-sources/${id}/query`, "POST", {
     command,
   });
+}
+
+/** A search names its own index, because a search source holds many and none of
+ * them is the source. */
+export function runSearch(
+  id: string,
+  statement: ISearchStatement,
+): Promise<IQueryResponse> {
+  const body: IQueryRequest = { search: statement };
+  return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
 }
 
 export function listSavedQueries(

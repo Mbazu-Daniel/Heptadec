@@ -17,6 +17,7 @@ import {
   isBetterAuthError,
 } from "./common/exceptions/from-better-auth";
 import type { IAuthVars } from "./common/middleware/require-session";
+import { database } from "./common/middleware/database";
 import { auditRoutes } from "./modules/audit";
 import { authRoutes } from "./modules/auth";
 import { dataSourceRoutes } from "./modules/data-source";
@@ -33,11 +34,13 @@ import { mcpRoutes } from "./modules/mcp";
 import { aiRoutes } from "./modules/ai";
 import { memberRoutes } from "./modules/member";
 import { organizationRoutes } from "./modules/organization";
+import { imageRoutes } from "./modules/images";
 
 export function buildApp(): Hono<IAuthVars> {
   const app = new Hono<IAuthVars>();
 
   app.use(logger());
+  app.use(database);
   app.use(secureHeaders());
   app.use(
     bodyLimit({
@@ -63,6 +66,8 @@ export function buildApp(): Hono<IAuthVars> {
   app.route("/", notificationRoutes());
   app.route("/", organizationRoutes());
   app.route("/", memberRoutes());
+  app.route("/", imageRoutes());
+  app.route("/", imageRoutes());
   app.route("/", invitationRoutes());
   app.route("/", mcpRoutes());
   app.route("/", aiRoutes());

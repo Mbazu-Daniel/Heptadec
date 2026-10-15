@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterAll, expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import { runDueJobs, startScheduler } from "../src/modules/scheduler";
 
 const { dataSource, queryResult, savedQuery, scheduledJob } = schema;
@@ -14,14 +14,6 @@ afterAll(async () => {
     await db.delete(scheduledJob).where(eq(scheduledJob.id, id));
   }
 });
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
@@ -43,12 +35,12 @@ async function ownerWithQuery(): Promise<{
   savedQueryId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Scheduler Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const source = await app.request("/api/data-sources", {
+  const source = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -68,7 +60,7 @@ async function ownerWithQuery(): Promise<{
     .select()
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
-  const saved = await app.request(
+  const saved = await request(
     `/api/data-sources/${rows[0]!.id}/saved-queries`,
     {
       method: "POST",
@@ -86,7 +78,7 @@ async function schedule(
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return app.request("/api/scheduled-jobs", {
+  return request("/api/scheduled-jobs", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -122,6 +114,24 @@ async function waitForCacheRow(
     const rows = await cacheRows(queryId);
     if (rows.length > 0) {
       return rows[0];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return undefined;
+}
+
+async function waitForSettledJob(
+  jobId: string,
+  attempts = 200,
+): Promise<typeof scheduledJob.$inferSelect | undefined> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const rows = await db
+      .select()
+      .from(scheduledJob)
+      .where(eq(scheduledJob.id, jobId));
+    const row = rows[0];
+    if (row !== undefined && row.lastRunAt !== null && row.leaseUntil === null) {
+      return row;
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -167,7 +177,7 @@ it("runs a due job on the timer and populates the cache", async () => {
     .set({ nextRunAt: new Date(Date.now() - 60_000) })
     .where(eq(scheduledJob.id, id));
 
-  const stop = startScheduler(20);
+  const stop = startScheduler(db, 20);
   try {
     const cached = await waitForCacheRow(savedQueryId);
     expect(cached).toBeDefined();
@@ -187,13 +197,11 @@ it("runs a due job on the timer and populates the cache", async () => {
   } finally {
     stop();
   }
-  const after = await db
-    .select()
-    .from(scheduledJob)
-    .where(eq(scheduledJob.id, id));
-  expect(after[0]!.lastRunAt).not.toBeNull();
-  expect(after[0]!.leaseUntil).toBeNull();
-  expect(after[0]!.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+  const after = await waitForSettledJob(id);
+  expect(after).toBeDefined();
+  expect(after!.lastRunAt).not.toBeNull();
+  expect(after!.leaseUntil).toBeNull();
+  expect(after!.nextRunAt.getTime()).toBeGreaterThan(Date.now());
 });
 
 it("skips a job another runner holds, and runs it once the lease is clear", async () => {
@@ -209,14 +217,14 @@ it("skips a job another runner holds, and runs it once the lease is clear", asyn
     })
     .where(eq(scheduledJob.id, id));
 
-  await runDueJobs(now);
+  await runDueJobs(db, now);
   expect(await cacheRows(savedQueryId)).toHaveLength(0);
   await db
     .update(scheduledJob)
     .set({ leaseUntil: new Date(now.getTime() - 1_000) })
     .where(eq(scheduledJob.id, id));
 
-  await runDueJobs(new Date());
+  await runDueJobs(db, new Date());
   expect(await cacheRows(savedQueryId)).toHaveLength(1);
 });
 
@@ -235,7 +243,7 @@ it("keeps ticking when a stored schedule cannot be read", async () => {
     .set({ nextRunAt: new Date(now - 60_000) })
     .where(eq(scheduledJob.id, healthy));
 
-  await runDueJobs(new Date());
+  await runDueJobs(db, new Date());
 
   const rows = await db
     .select()
@@ -269,7 +277,7 @@ it("refuses a schedule it could not honour and writes nothing", async () => {
 it("refuses scheduling a query on a source that cannot answer it", async () => {
   const { cookie, orgId } = await ownerWithQuery();
 
-  const source = await app.request("/api/data-sources", {
+  const source = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -285,7 +293,7 @@ it("refuses scheduling a query on a source that cannot answer it", async () => {
     .from(dataSource)
     .where(eq(dataSource.organizationId, orgId));
 
-  const saved = await app.request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
+  const saved = await request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Keys", sql: "KEYS *" }),
@@ -305,12 +313,12 @@ it("404s another organization's schedule", async () => {
   const id = await createSchedule(cookie, savedQueryId);
 
   const stranger = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Stranger Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
 
-  const removed = await app.request(`/api/scheduled-jobs/${id}`, {
+  const removed = await request(`/api/scheduled-jobs/${id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
@@ -327,7 +335,7 @@ it("removes the schedule when the saved query goes", async () => {
   const { cookie, savedQueryId } = await ownerWithQuery();
   const id = await createSchedule(cookie, savedQueryId);
 
-  const res = await app.request(`/api/saved-queries/${savedQueryId}`, {
+  const res = await request(`/api/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });

@@ -72,7 +72,7 @@ export function AcceptInvitation({
 
       <div className="mx-auto flex min-h-screen max-w-[1280px] flex-col justify-center px-6">
         <div className="halo mx-auto w-full max-w-[560px] px-8 pt-10 pb-10">
-          <p className="text-[11px] uppercase tracking-[0.02em] text-muted-foreground">
+          <p className="text-[12px] uppercase tracking-[0.02em] text-muted-foreground">
             Invitation
           </p>
 

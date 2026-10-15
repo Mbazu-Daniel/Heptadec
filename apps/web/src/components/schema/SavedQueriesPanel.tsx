@@ -81,7 +81,7 @@ export function SavedQueriesPanel({
 
   return (
     <aside className="flex w-full flex-col gap-3 overflow-auto bg-card/40 px-4 py-4">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Saved queries
       </h2>
 
@@ -106,7 +106,7 @@ export function SavedQueriesPanel({
       {problem !== null ? <Alert>{problem}</Alert> : null}
 
       {queries === null ? (
-        <p className="font-mono text-[10px] text-muted-foreground">Loading…</p>
+        <p className="font-mono text-[11px] text-muted-foreground">Loading…</p>
       ) : queries.length === 0 ? (
         <EmptyState
           title="No saved queries"

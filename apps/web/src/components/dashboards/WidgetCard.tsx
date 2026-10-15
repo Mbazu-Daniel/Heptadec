@@ -113,7 +113,7 @@ export function WidgetCard({
       )}
 
       {meta !== undefined ? (
-        <div className="border-t border-border px-4 py-2 font-mono text-[10px] tabular-nums text-muted-foreground">
+        <div className="border-t border-border px-4 py-2 font-mono text-[11px] tabular-nums text-muted-foreground">
           {meta}
         </div>
       ) : null}

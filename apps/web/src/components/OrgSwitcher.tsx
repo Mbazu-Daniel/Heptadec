@@ -13,7 +13,7 @@ function OrgTile({ name }: { name: string }) {
   return (
     <span
       aria-hidden="true"
-      className="grid size-8 shrink-0 place-items-center rounded-lg bg-cyan text-sm font-bold text-black"
+      className="grid size-8 shrink-0 place-items-center rounded-lg bg-cyan text-sm font-bold text-on-accent"
     >
       {initial}
     </span>

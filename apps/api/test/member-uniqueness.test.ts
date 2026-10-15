@@ -1,27 +1,27 @@
 import { expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { member } = schema;
 
 it("cannot hold two memberships for one person in one organization", async () => {
   const owner = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Dup Org", slug: uniqueSlug() },
     headers: { cookie: owner.cookie },
   });
   const guest = await signUp(uniqueEmail());
 
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: guest.user.id, role: "editor", organizationId: org.id },
     headers: { cookie: owner.cookie },
   });
 
   let secondError: string | null = null;
   try {
-    await auth.api.addMember({
+    await authFor(db).api.addMember({
       body: { userId: guest.user.id, role: "viewer", organizationId: org.id },
       headers: { cookie: owner.cookie },
     });

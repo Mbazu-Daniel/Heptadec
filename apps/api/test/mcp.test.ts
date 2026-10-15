@@ -1,17 +1,9 @@
 import { afterAll, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { auth } from "../src/common/config/better-auth";
+import { authFor } from "../src/common/config/better-auth";
 import { MCP_TOOLS } from "../src/modules/mcp/contracts";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
+import { app, db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 let base = "";
 
@@ -25,7 +17,11 @@ async function startServer(): Promise<string> {
     close: () => Promise<void>;
   }>((resolve) => {
     const server = serve(
-      { fetch: app.fetch, port: 0, hostname: "127.0.0.1" },
+      {
+        fetch: (request: Request) => app.fetch(request, { db }),
+        port: 0,
+        hostname: "127.0.0.1",
+      },
       (info) => {
         resolve({
           port: info.port,
@@ -51,12 +47,12 @@ async function ownerWithSource(readOnly: boolean): Promise<{
   dataSourceId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  await auth.api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "MCP Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await app.request("/api/data-sources", {
+  const created = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -76,7 +72,7 @@ async function ownerWithSource(readOnly: boolean): Promise<{
 }
 
 async function issueToken(cookie: string, name = "laptop"): Promise<string> {
-  const res = await app.request("/api/mcp-tokens", {
+  const res = await request("/api/mcp-tokens", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, capabilities: [...MCP_TOOLS] }),
@@ -227,11 +223,11 @@ it("stops honouring a revoked token", async () => {
   expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   await client.close();
 
-  const listed = await app.request("/api/mcp-tokens", { headers: { cookie } });
+  const listed = await request("/api/mcp-tokens", { headers: { cookie } });
   const rows = (await listed.json()) as { tokens: Array<{ id: string }> };
   expect(rows.tokens).toHaveLength(1);
 
-  const revoked = await app.request(`/api/mcp-tokens/${rows.tokens[0]!.id}`, {
+  const revoked = await request(`/api/mcp-tokens/${rows.tokens[0]!.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -250,7 +246,7 @@ it("never hands the raw token back after creation", async () => {
   const { cookie } = await ownerWithSource(true);
   const token = await issueToken(cookie);
 
-  const res = await app.request("/api/mcp-tokens", { headers: { cookie } });
+  const res = await request("/api/mcp-tokens", { headers: { cookie } });
   const body = await res.text();
   expect(body).not.toContain(token);
   expect(body).not.toContain("hdc_");

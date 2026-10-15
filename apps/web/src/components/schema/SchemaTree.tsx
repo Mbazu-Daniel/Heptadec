@@ -89,7 +89,7 @@ export function SchemaTree({
   }
 
   return (
-    <div className="erd erd-tree flex min-h-0 w-full flex-col self-stretch overflow-hidden">
+    <div className="erd erd-tree flex h-full w-full min-h-0 flex-col overflow-hidden">
       <div className="border-b border-border p-2">
         <label className="relative flex items-center">
           <IconSearch
@@ -103,7 +103,7 @@ export function SchemaTree({
             aria-label="Search tables and columns"
             className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-7 text-xs outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
           />
-          <kbd className="pointer-events-none absolute right-2 font-mono text-[10px] text-muted-foreground">
+          <kbd className="pointer-events-none absolute right-2 font-mono text-[11px] text-muted-foreground">
             /
           </kbd>
         </label>

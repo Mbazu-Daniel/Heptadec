@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { IMembership } from "@heptadec/api/organization-contracts";
 import { readAvatar } from "../lib/avatar";
 import { authClient } from "../auth";
-import { deleteOrganization, messageFor } from "../api";
+import {
+  deleteOrganization,
+  messageFor,
+  uploadOrganizationLogo,
+} from "../api";
+import { useImagesConfigured } from "../lib/images";
 import { Avatar } from "./ui/feedback";
 import { Button } from "./ui/button";
 import { Alert } from "./ui/feedback";
@@ -32,6 +37,7 @@ export function OrganizationSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const imagesConfigured = useImagesConfigured();
 
   useEffect(() => {
     setName(membership.organization.name);
@@ -49,18 +55,23 @@ export function OrganizationSettings({
     start();
     try {
       const picture = await readAvatar(file);
+      if (picture === null) {
+        setError("Pick an image under 8 MB.");
+        return;
+      }
+      const { path } = await uploadOrganizationLogo(picture);
       const result = await authClient.organization.update({
-        data: { logo: picture },
+        data: { logo: path },
       });
       if (result.error) {
         setError(result.error.message ?? "The logo was not saved.");
         return;
       }
-      setLogo(picture);
+      setLogo(path);
       setNotice("The logo is updated.");
       onChanged();
-    } catch {
-      setError("That image could not be read.");
+    } catch (caught) {
+      setError(messageFor(caught, "That image could not be read."));
     } finally {
       setBusy(false);
     }
@@ -136,38 +147,44 @@ export function OrganizationSettings({
             />
           )}
           {isOwner ? (
-            <>
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    void pickLogo(file);
-                  }
-                }}
-              />
-              <Button
-                variant="ghost"
-                className={SMALL_BUTTON_CLASSNAME}
-                disabled={busy}
-                onClick={() => fileInput.current?.click()}
-              >
-                Change logo
-              </Button>
-              {logo === null ? null : (
+            imagesConfigured ? (
+              <>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      void pickLogo(file);
+                    }
+                  }}
+                />
                 <Button
                   variant="ghost"
                   className={SMALL_BUTTON_CLASSNAME}
                   disabled={busy}
-                  onClick={() => void removeLogo()}
+                  onClick={() => fileInput.current?.click()}
                 >
-                  Remove
+                  Change logo
                 </Button>
-              )}
-            </>
+                {logo === null ? null : (
+                  <Button
+                    variant="ghost"
+                    className={SMALL_BUTTON_CLASSNAME}
+                    disabled={busy}
+                    onClick={() => void removeLogo()}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Image storage is not configured on this deployment.
+              </p>
+            )
           ) : null}
         </div>
 
@@ -219,7 +236,7 @@ export function OrganizationSettings({
 
         {isOwner ? (
           <div className="flex flex-col gap-3 border-t-2 border-red pt-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-red">
+            <h3 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-red">
               Danger zone
             </h3>
             {erasing ? (

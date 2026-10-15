@@ -1,8 +1,8 @@
 import { desc, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { auditLog, user } = schema;
 
@@ -20,7 +20,7 @@ function headers(cookie: string): Record<string, string> {
 
 it("records an organization created through better auth", async () => {
   const created = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Audit Works", slug: uniqueSlug() },
     headers: { cookie: created.cookie },
   });
@@ -43,13 +43,13 @@ it("records an organization created through better auth", async () => {
 
 it("records an invitation better auth sends without going through our route", async () => {
   const created = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Invite Audit", slug: uniqueSlug() },
     headers: { cookie: created.cookie },
   });
   const invitee = uniqueEmail();
 
-  await auth.api.createInvitation({
+  await authFor(db).api.createInvitation({
     body: { email: invitee, role: "editor", organizationId: org.id },
     headers: { cookie: created.cookie },
   });
@@ -71,12 +71,12 @@ it("records an invitation better auth sends without going through our route", as
 
 it("records an mcp token created and revoked through the api", async () => {
   const created = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Token Audit", slug: uniqueSlug() },
     headers: { cookie: created.cookie },
   });
 
-  const issued = await app.request("/api/mcp-tokens", {
+  const issued = await request("/api/mcp-tokens", {
     method: "POST",
     headers: headers(created.cookie),
     body: JSON.stringify({
@@ -87,7 +87,7 @@ it("records an mcp token created and revoked through the api", async () => {
   expect(issued.status).toBe(201);
   const token = (await issued.json()) as { id: string };
 
-  const revoked = await app.request(`/api/mcp-tokens/${token.id}`, {
+  const revoked = await request(`/api/mcp-tokens/${token.id}`, {
     method: "DELETE",
     headers: headers(created.cookie),
   });
@@ -120,11 +120,11 @@ it("records an mcp token created and revoked through the api", async () => {
 
 it("keeps each organization's rows to itself when read back", async () => {
   const member = await signUp(uniqueEmail());
-  const first = await auth.api.createOrganization({
+  const first = await authFor(db).api.createOrganization({
     body: { name: "First Org", slug: uniqueSlug() },
     headers: { cookie: member.cookie },
   });
-  const second = await auth.api.createOrganization({
+  const second = await authFor(db).api.createOrganization({
     body: { name: "Second Org", slug: uniqueSlug() },
     headers: { cookie: member.cookie },
   });
@@ -135,12 +135,12 @@ it("keeps each organization's rows to itself when read back", async () => {
   expect(secondRows).toHaveLength(1);
 
   const listAs = async (organizationId: string) => {
-    await app.request("/api/organization/switch", {
+    await request("/api/organization/switch", {
       method: "POST",
       headers: headers(member.cookie),
       body: JSON.stringify({ organizationId }),
     });
-    const res = await app.request("/api/audit-logs", {
+    const res = await request("/api/audit-logs", {
       headers: { cookie: member.cookie },
     });
     expect(res.status).toBe(200);

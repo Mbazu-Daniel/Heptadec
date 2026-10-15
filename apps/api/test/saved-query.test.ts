@@ -1,14 +1,14 @@
 import { desc, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { dataSource, queryVersion, savedQuery } = schema;
 
 async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Views Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -19,7 +19,7 @@ async function createSource(
   cookie: string,
 ): Promise<string> {
   const name = `Warehouse ${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ kind: "postgres", name, host: "db.internal", port: 5432, database: "warehouse", username: "readonly_svc", password: "s3cret-password", readOnly: true }),
@@ -35,7 +35,7 @@ async function createSource(
 }
 
 async function save(cookie: string, sourceId: string, body: unknown): Promise<Response> {
-  return app.request(`/api/data-sources/${sourceId}/saved-queries`, {
+  return request(`/api/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -74,7 +74,7 @@ it("renames a saved query and leaves the SQL untouched", async () => {
   const created = await save(cookie, sourceId, { name: "Old", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "New" }),
@@ -92,7 +92,7 @@ it("deletes a saved query and leaves the database without it", async () => {
   const created = await save(cookie, sourceId, { name: "Gone", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -108,7 +108,7 @@ it("404s a saved query that belongs to another organization", async () => {
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
   const stranger = await ownerWithOrg();
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie: stranger.cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Hijacked" }),
@@ -124,10 +124,10 @@ it("refuses a viewer who cannot save queries", async () => {
   const sourceId = await createSource(cookie);
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId: orgId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: orgId }),
@@ -153,12 +153,12 @@ it("keeps a version of a saved query before every real edit", async () => {
   const created = await save(cookie, sourceId, { name: "v0", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
-  await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT 2" }),
   });
-  await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT 3" }),
@@ -179,7 +179,7 @@ it("does not write a version when an edit changes nothing", async () => {
   const created = await save(cookie, sourceId, { name: "Same", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Same" }),
@@ -195,14 +195,14 @@ it("restores an earlier version and keeps the replaced state as a new version", 
   const created = await save(cookie, sourceId, { name: "v0", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
 
-  await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT 2" }),
   });
   const versions = await versionsFor(createdQuery.id);
   const v0 = versions[0]!; 
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}/restore`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}/restore`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ versionId: v0.id }),
@@ -223,7 +223,7 @@ it("404s a restore of a version from another organization", async () => {
   const sourceId = await createSource(cookie);
   const created = await save(cookie, sourceId, { name: "v0", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
-  await app.request(`/api/saved-queries/${createdQuery.id}`, {
+  await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT 2" }),
@@ -232,7 +232,7 @@ it("404s a restore of a version from another organization", async () => {
   const v0 = versions[0]!;
 
   const stranger = await ownerWithOrg();
-  const res = await app.request(`/api/saved-queries/${createdQuery.id}/restore`, {
+  const res = await request(`/api/saved-queries/${createdQuery.id}/restore`, {
     method: "POST",
     headers: { cookie: stranger.cookie, "content-type": "application/json" },
     body: JSON.stringify({ versionId: v0.id }),
@@ -244,7 +244,7 @@ it("404s a restore of a version from another organization", async () => {
 });
 
 async function record(cookie: string, sourceId: string, sql: string): Promise<Response> {
-  return app.request(`/api/data-sources/${sourceId}/saved-queries/runs`, {
+  return request(`/api/data-sources/${sourceId}/saved-queries/runs`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -293,7 +293,7 @@ it("does not let one organization record runs against another's source", async (
   const sourceId = await createSource(cookie);
   const other = await ownerWithOrg();
 
-  const res = await app.request(`/api/data-sources/${sourceId}/saved-queries/runs`, {
+  const res = await request(`/api/data-sources/${sourceId}/saved-queries/runs`, {
     method: "POST",
     headers: { cookie: other.cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT 3" }),
@@ -308,10 +308,10 @@ it("refuses to record a run for a viewer", async () => {
   const sourceId = await createSource(cookie);
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId: orgId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: orgId }),

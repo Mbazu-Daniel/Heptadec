@@ -90,7 +90,7 @@ export function VersionHistory({
                   <span className="min-w-0 flex-1 truncate font-medium text-fg">
                     {version.name}
                   </span>
-                  <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
+                  <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">
                     {new Date(version.createdAt).toLocaleString()}
                   </span>
                   <Button
@@ -102,7 +102,7 @@ export function VersionHistory({
                     {restoring === version.id ? "Restoring…" : "Restore"}
                   </Button>
                 </div>
-                <pre className="max-h-32 overflow-auto rounded bg-muted px-2.5 py-2 font-mono text-[11px] leading-4 text-muted-foreground">
+                <pre className="max-h-32 overflow-auto rounded bg-muted px-2.5 py-2 font-mono text-[12px] leading-4 text-muted-foreground">
                   {version.sql}
                 </pre>
               </li>

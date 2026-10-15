@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { readAvatar } from "../lib/avatar";
-import { fetchMemberProfile, messageFor, saveMemberDisplayName } from "../api";
+import {
+  fetchMemberProfile,
+  messageFor,
+  saveMemberDisplayName,
+  uploadAvatar,
+} from "../api";
+import { useImagesConfigured } from "../lib/images";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import { authClient } from "../auth";
 import { Avatar } from "./ui/feedback";
@@ -19,12 +25,11 @@ const MIN_PASSWORD = 8;
 
 interface IMemberProfileProps {
   me: IMe;
-  step?: string | null;
   onReload: () => void;
   onBack: () => void;
 }
 
-export function MemberProfile({ me, step, onReload, onBack }: IMemberProfileProps) {
+export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   const [image, setImage] = useState<string | null>(me.user.image);
   const [displayName, setDisplayName] = useState("");
   const [current, setCurrent] = useState("");
@@ -35,6 +40,7 @@ export function MemberProfile({ me, step, onReload, onBack }: IMemberProfileProp
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const imagesConfigured = useImagesConfigured();
 
   useEffect(() => {
     let live = true;
@@ -74,16 +80,17 @@ export function MemberProfile({ me, step, onReload, onBack }: IMemberProfileProp
         setError("Pick an image under 8 MB.");
         return;
       }
-      const result = await authClient.updateUser({ image: picture });
+      const { path } = await uploadAvatar(picture);
+      const result = await authClient.updateUser({ image: path });
       if (result.error) {
         setError(result.error.message ?? "That image was not saved.");
         return;
       }
-      setImage(picture);
+      setImage(path);
       setNotice("Your image is updated.");
       onReload();
-    } catch {
-      setError("That image could not be read.");
+    } catch (caught) {
+      setError(messageFor(caught, "That image could not be read."));
     } finally {
       stop();
     }
@@ -155,7 +162,7 @@ export function MemberProfile({ me, step, onReload, onBack }: IMemberProfileProp
   return (
     <AuthPage
       wide
-      eyebrow={step ?? "Your profile"}
+      eyebrow="Your profile"
       title="Profile settings"
       lede="Your picture, the name this organization knows you by, and your password."
     >
@@ -194,35 +201,43 @@ export function MemberProfile({ me, step, onReload, onBack }: IMemberProfileProp
               />
             )}
             <div className="flex flex-col gap-2">
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    void chooseImage(file);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                disabled={busy}
-                className={AUTH_GHOST_BUTTON_CLASSNAME}
-                onClick={() => fileInput.current?.click()}
-              >
-                Change image
-              </button>
-              {image === null ? null : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={AUTH_GHOST_BUTTON_CLASSNAME}
-                  onClick={() => void removeImage()}
-                >
-                  Remove image
-                </button>
+              {imagesConfigured ? (
+                <>
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void chooseImage(file);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={AUTH_GHOST_BUTTON_CLASSNAME}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    Change image
+                  </button>
+                  {image === null ? null : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className={AUTH_GHOST_BUTTON_CLASSNAME}
+                      onClick={() => void removeImage()}
+                    >
+                      Remove image
+                    </button>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-(--mk-fg-muted)">
+                  Image storage is not configured on this deployment.
+                </p>
               )}
             </div>
           </div>

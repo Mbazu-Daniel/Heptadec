@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { db, auditLog } from "@heptadec/db";
+import { auditLog, type HeptadecDatabase } from "@heptadec/db";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import type { AuditEvent, AuditTargetKind } from "./contracts";
 
@@ -33,16 +33,19 @@ export function auditActor(c: Context<IAuthVars>): IAuditActor {
   return auditActorOf(session.user);
 }
 
-export async function recordAudit(input: {
-  organizationId: string;
-  actorId: string;
-  actorLabel: string;
-  event: AuditEvent;
-  targetKind: AuditTargetKind;
-  targetId?: string;
-  targetLabel?: string;
-  detail?: string;
-}): Promise<void> {
+export async function recordAudit(
+  db: HeptadecDatabase,
+  input: {
+    organizationId: string;
+    actorId: string;
+    actorLabel: string;
+    event: AuditEvent;
+    targetKind: AuditTargetKind;
+    targetId?: string;
+    targetLabel?: string;
+    detail?: string;
+  },
+): Promise<void> {
   await db.insert(auditLog).values({
     organizationId: input.organizationId,
     occurredAt: new Date(),

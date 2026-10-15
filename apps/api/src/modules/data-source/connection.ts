@@ -6,6 +6,10 @@ import {
   ENGINE_SPECS,
   PORT_MAX,
   PORT_MIN,
+  connectionFields,
+  defaultConnectionMode,
+  engineFrom,
+  kindOf,
   type ConnectionFieldKind,
   type ConnectionMode,
   type DataSourceKind,
@@ -114,6 +118,7 @@ const carriedByUrl: Partial<
   database: "database",
   username: "username",
   password: "password",
+  options: "options",
 };
 
 function rejectField(
@@ -128,7 +133,6 @@ function rejectField(
     );
   }
 }
-
 function rejectForeign(
   body: Record<string, unknown>,
   inMode: ReadonlySet<ConnectionFieldKind>,
@@ -149,6 +153,7 @@ interface IFromUrl {
   database: string | null;
   username: string | null;
   password: string | null;
+  options: string | null;
 }
 
 function fromUrl(raw: unknown, kind: DataSourceKind): IFromUrl {
@@ -197,6 +202,10 @@ function fromUrl(raw: unknown, kind: DataSourceKind): IFromUrl {
     database: database.length === 0 ? null : database,
     username: url.username.length === 0 ? null : decode(url.username),
     password: url.password.length === 0 ? null : decode(url.password),
+    options:
+      spec.carriesUrlQuery !== true || url.search.length <= 1
+        ? null
+        : url.search.slice(1).slice(0, MAX_OPTIONS),
   };
 }
 
@@ -208,10 +217,7 @@ function decode(part: string): string {
   }
 }
 
-export function readConnection(
-  body: Record<string, unknown>,
-): IConnectionInput {
-  const kind = readKind(body);
+function readName(body: Record<string, unknown>): string {
   const name = readString(body, "name", "A name is required").trim();
   if (name.length === 0) {
     throw new BadRequestException("A name is required");
@@ -219,6 +225,14 @@ export function readConnection(
   if (name.length > MAX_NAME) {
     throw new BadRequestException("The name is too long");
   }
+  return name;
+}
+
+export function readConnection(
+  body: Record<string, unknown>,
+): IConnectionInput {
+  const kind = readKind(body);
+  const name = readName(body);
 
   const spec: IEngineSpec = ENGINE_SPECS[kind];
   const pasted = body.connectionUrl;
@@ -234,8 +248,8 @@ export function readConnection(
     }
   }
   const connectionMode =
-    fromUrl_?.connectionMode ?? readMode(body) ?? defaultMode(spec.fields);
-  const active = visibleFields(spec.fields, connectionMode);
+    fromUrl_?.connectionMode ?? readMode(body) ?? defaultConnectionMode(kind);
+  const active = connectionFields(kind, connectionMode);
   if (fromUrl_ === null) {
     rejectForeign(body, new Set(active.map((field) => field.kind)), kind);
   }
@@ -268,23 +282,6 @@ export function readConnection(
     clientKey: text(values.clientKey),
     token: text(values.token),
   };
-}
-
-function defaultMode(fields: readonly IConnectionField[]): ConnectionMode | null {
-  const modes = fields.flatMap((field) => field.modes ?? []);
-  return modes.length === 0 ? null : "tcp";
-}
-
-function visibleFields(
-  fields: readonly IConnectionField[],
-  mode: ConnectionMode | null,
-): readonly IConnectionField[] {
-  if (mode === null) {
-    return fields.filter((field) => field.modes === undefined);
-  }
-  return fields.filter(
-    (field) => field.modes === undefined || field.modes.includes(mode),
-  );
 }
 
 function readField(
@@ -372,7 +369,168 @@ function readKind(body: Record<string, unknown>): DataSourceKind {
   if (!Object.hasOwn(ENGINE_SPECS, kind)) {
     throw new BadRequestException("Pick a supported database engine");
   }
+  engineFrom(kind);
   return kind as DataSourceKind;
+}
+
+/**
+ * The five columns held encrypted. The client is shown only that one exists, so
+ * a blank one means keep what is stored; there is no way to send an empty one
+ * back. Everything else a form leaves out is a field the caller no longer wants,
+ * so it is cleared.
+ */
+const SECRETS: readonly ConnectionFieldKind[] = [
+  "password",
+  "caCert",
+  "clientCert",
+  "clientKey",
+  "token",
+];
+
+function readSecret(
+  body: Record<string, unknown>,
+  field: IConnectionField,
+): string | undefined {
+  const raw = body[field.kind];
+  if (raw === undefined || raw === null || raw === "") {
+    return undefined;
+  }
+  if (typeof raw !== "string") {
+    throw new BadRequestException(`${field.label} must be text`);
+  }
+  const limit = LENGTHS[field.kind];
+  if (limit !== undefined && raw.length > limit) {
+    throw new BadRequestException(`${field.label} is too long`);
+  }
+  return raw;
+}
+
+export interface IConnectionPatch {
+  name?: string;
+  readOnly?: boolean;
+  connectionMode: ConnectionMode | null;
+  host: string | null;
+  port: number | null;
+  socketPath: string | null;
+  database: string | null;
+  schemaName: string | null;
+  options: string | null;
+  username: string | null;
+  /** Absent leaves the secret already sealed on the source. */
+  password?: string;
+  caCert?: string;
+  clientCert?: string;
+  clientKey?: string;
+  token?: string;
+}
+
+/**
+ * The column a connection field already holds on a stored source, so a request
+ * that leaves it out keeps the value rather than emptying it.
+ */
+function storedColumn(
+  column: ConnectionFieldKind,
+  row: DataSourceRow,
+): string | number | null {
+  switch (column) {
+    case "host":
+      return row.host;
+    case "port":
+      return row.port;
+    case "socketPath":
+      return row.socketPath;
+    case "database":
+      return row.database;
+    case "schema":
+      return row.schemaName;
+    case "options":
+      return row.options;
+    case "username":
+      return row.username;
+    default:
+      return null;
+  }
+}
+
+/**
+ * A whole connection restated against a source that already exists, so the
+ * engine is the one already stored and never the caller's to change.
+ *
+ * A field the request leaves out keeps what the source already holds; a field
+ * it sends replaces it, and an empty one clears it. A secret is the exception:
+ * it is held encrypted and never shown back, so a blank one means keep, and
+ * there is no way to clear it short of removing the source.
+ *
+ * A mode also decides which fields are reachable at all — a socket has no host
+ * and only TLS carries a certificate — so leaving a mode drops the plain fields
+ * the new one cannot hold. A stored certificate is deliberately kept: it is
+ * never shown back, so dropping it would strand the source with no warning the
+ * user could act on, while keeping it means moving back to TLS simply works.
+ */
+export function readConnectionUpdate(
+  body: Record<string, unknown>,
+  row: DataSourceRow,
+): IConnectionPatch {
+  const kind = kindOf(row);
+
+  const name = Object.hasOwn(body, "name") ? readName(body) : undefined;
+  const readOnly = Object.hasOwn(body, "readOnly")
+    ? readReadOnly(body)
+    : undefined;
+
+  const connectionMode = readMode(body) ?? storedMode(row.connectionMode);
+
+  const reachable = connectionFields(kind, connectionMode);
+  rejectForeign(body, new Set(reachable.map((field) => field.kind)), kind);
+
+  // Only the fields this mode reaches get a value, so switching mode drops what
+  // the new one cannot hold: a socket has no host, and only TLS carries a
+  // certificate. A field the request does not name keeps what is already stored.
+  const values: Partial<Record<ConnectionFieldKind, string | number | null>> =
+    {};
+  const secrets: Partial<Record<(typeof SECRETS)[number], string>> = {};
+
+  for (const field of reachable) {
+    if (field.kind === "connectionMode") {
+      continue;
+    }
+    if (SECRETS.includes(field.kind)) {
+      const secret = readSecret(body, field);
+      if (secret !== undefined) {
+        secrets[field.kind] = secret;
+      }
+      continue;
+    }
+    // An endpoint URL and a file path are stored in the host and database
+    // columns, so either spelling reaches the same place.
+    const column: ConnectionFieldKind =
+      field.kind === "endpoint"
+        ? "host"
+        : field.kind === "filePath"
+          ? "database"
+          : field.kind;
+    values[column] = Object.hasOwn(body, field.kind)
+      ? readField(body, field, kind, null)
+      : storedColumn(column, row);
+  }
+
+  return {
+    name,
+    readOnly,
+    connectionMode,
+    host: text(values.host),
+    port: typeof values.port === "number" ? values.port : null,
+    socketPath: text(values.socketPath),
+    database: text(values.database),
+    schemaName: text(values.schema),
+    options: text(values.options),
+    username: text(values.username),
+    password: secrets.password,
+    caCert: secrets.caCert,
+    clientCert: secrets.clientCert,
+    clientKey: secrets.clientKey,
+    token: secrets.token,
+  };
 }
 
 function storedMode(value: string | null): ConnectionMode | null {
@@ -402,9 +560,11 @@ export interface IStoredConnection {
   token: string | null;
 }
 
-export function storedFromRow(row: DataSourceRow): IStoredConnection {
+export async function storedFromRow(
+  row: DataSourceRow,
+): Promise<IStoredConnection> {
   return {
-    kind: row.kind as DataSourceKind,
+    kind: kindOf(row),
     connectionMode: storedMode(row.connectionMode),
     host: row.host,
     port: row.port,
@@ -413,11 +573,11 @@ export function storedFromRow(row: DataSourceRow): IStoredConnection {
     schemaName: row.schemaName,
     options: row.options,
     username: row.username,
-    password: unseal(row.secret),
-    caCert: unseal(row.caCertificate),
-    clientCert: unseal(row.clientCertificate),
-    clientKey: unseal(row.clientKey),
-    token: unseal(row.token),
+    password: await unseal(row.secret),
+    caCert: await unseal(row.caCertificate),
+    clientCert: await unseal(row.clientCertificate),
+    clientKey: await unseal(row.clientKey),
+    token: await unseal(row.token),
   };
 }
 
@@ -440,7 +600,7 @@ export function storedFromInput(input: IConnectionInput): IStoredConnection {
   };
 }
 
-function unseal(envelope: string | null): string | null {
+async function unseal(envelope: string | null): Promise<string | null> {
   return envelope === null ? null : decryptSecret(envelope);
 }
 
@@ -471,13 +631,20 @@ export function databaseName(connection: IStoredConnection): string {
   return connection.database;
 }
 
+/**
+ * A source as its driver needs it. `host`, `port` and `username` are nullable
+ * because a source reached over a Unix socket has none of them — they used to
+ * be defaulted to "", 0 and "" here, which made this type claim every source
+ * has a host it can dial, and each of its three consumers either branched
+ * anyway or papered over the lie in turn.
+ */
 export interface ISavedConnection {
   connectionMode: ConnectionMode | null;
-  host: string;
-  port: number;
+  host: string | null;
+  port: number | null;
   socketPath: string | null;
   database: string;
-  username: string;
+  username: string | null;
   password: string | null;
   schemaName: string | null;
   options: string | null;
@@ -487,8 +654,10 @@ export interface ISavedConnection {
   readOnly: boolean;
 }
 
-export function savedConnection(row: DataSourceRow): ISavedConnection {
-  return asRelational(storedFromRow(row), row.readOnly);
+export async function savedConnection(
+  row: DataSourceRow,
+): Promise<ISavedConnection> {
+  return asRelational(await storedFromRow(row), row.readOnly);
 }
 
 export function asRelational(
@@ -509,11 +678,11 @@ export function asRelational(
 
   return {
     connectionMode: stored.connectionMode,
-    host: stored.host ?? "",
-    port: stored.port ?? 0,
+    host: stored.host,
+    port: stored.port,
     socketPath: stored.socketPath,
     database: stored.database,
-    username: stored.username ?? "",
+    username: stored.username,
     password: stored.password,
     schemaName: stored.schemaName,
     options: stored.options,

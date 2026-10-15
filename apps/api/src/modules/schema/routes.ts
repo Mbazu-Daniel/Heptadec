@@ -1,19 +1,18 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
 import {
-  BadRequestException,
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
-import { savedConnection } from "../data-source/connection";
+import { storedFromRow } from "../data-source/connection";
 import { can } from "../rbac/authorize";
-import { introspectPostgres } from "./postgres";
+import { introspectSchema } from "./introspect";
 import type { ISchemaResponse } from "./contracts";
 
 const { dataSource } = schema;
@@ -23,13 +22,13 @@ export function schemaRoutes(): Hono<IAuthVars> {
   routes.get("/api/data-sources/:id/schema", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "query"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
       throw new ForbiddenException(
         "Only owners and editors can read a source's structure",
       );
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(dataSource)
       .where(
@@ -44,13 +43,11 @@ export function schemaRoutes(): Hono<IAuthVars> {
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
-    if (source.kind !== "postgres") {
-      throw new BadRequestException(
-        `Reading structure is only available for postgres, not ${source.kind}`,
-      );
-    }
 
-    const introspected = await introspectPostgres(savedConnection(source));
+    const introspected = await introspectSchema(
+      await storedFromRow(source),
+      source.readOnly,
+    );
     const body: ISchemaResponse = { sourceId: source.id, ...introspected };
     return c.json(body);
   });

@@ -38,7 +38,7 @@ export function AskAiPanel({
   const [approved, setApproved] = useState<number[]>([]);
 
   const analysable = dashboard.sources.filter(
-    (source) => source.kind === "postgres",
+    (source) => source.tooling,
   );
 
   async function ask(): Promise<void> {

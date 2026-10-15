@@ -1,9 +1,10 @@
 import { and, desc, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
 
 const { aiProvider } = schema;
 
 export async function chosenProvider(
+  db: HeptadecDatabase,
   organizationId: string,
   requested: unknown,
 ): Promise<typeof aiProvider.$inferSelect | null> {

@@ -258,13 +258,13 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                         >
                           <Avatar
                             name={member.displayName ?? member.name}
-                            className="size-5 text-[10px]"
+                            className="size-5 text-[11px]"
                           />
                           <span className="truncate">
                             {member.displayName ?? member.name}
                           </span>
                           {member.isYou ? (
-                            <span className="font-mono text-[10px] text-muted-foreground">
+                            <span className="font-mono text-[11px] text-muted-foreground">
                               you
                             </span>
                           ) : null}
@@ -287,7 +287,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
 
             {isOwner && pending.length > 0 ? (
               <div className="mt-8">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Awaiting acceptance
                 </h2>
                 <ul className="mt-2">
@@ -302,7 +302,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                       <span className="font-mono text-xs text-muted-foreground">
                         {row.role}
                       </span>
-                      <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                      <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                         expires {new Date(row.expiresAt).toLocaleDateString()}
                       </span>
                       <Button

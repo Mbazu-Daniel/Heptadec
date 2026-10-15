@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -58,7 +58,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.get("/api/dashboards", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(dashboard)
       .where(organization.where(dashboard.organizationId))
@@ -70,7 +70,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.post("/api/dashboards", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "create"))) {
       throw new ForbiddenException("Only owners and editors can create dashboards");
     }
 
@@ -87,7 +87,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
 
     const sources = await ownSources(request.dataSourceIds, organization);
     const now = new Date();
-    const created = await db.transaction(async (tx) => {
+    const created = await organization.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(dashboard)
         .values({
@@ -115,7 +115,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That dashboard could not be created");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -129,7 +129,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.get("/api/dashboards/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
@@ -140,11 +140,11 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.patch("/api/dashboards/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "update"))) {
       throw new ForbiddenException("Only owners and editors can rename dashboards");
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
@@ -168,7 +168,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       name === undefined || name === found.name
         ? found
         : (
-            await db
+            await organization.db
               .update(dashboard)
               .set({ name, updatedAt: new Date() })
               .where(eq(dashboard.id, found.id))
@@ -180,7 +180,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -195,20 +195,20 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.delete("/api/dashboards/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "delete"))) {
       throw new ForbiddenException("Only owners and editors can delete dashboards");
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
-    await db.delete(shareLink).where(eq(shareLink.dashboardId, found.id));
-    await db.delete(dashboardDataSource).where(eq(dashboardDataSource.dashboardId, found.id));
-    await db.delete(widget).where(eq(widget.dashboardId, found.id));
-    await db.delete(dashboard).where(eq(dashboard.id, found.id));
+    await organization.db.delete(shareLink).where(eq(shareLink.dashboardId, found.id));
+    await organization.db.delete(dashboardDataSource).where(eq(dashboardDataSource.dashboardId, found.id));
+    await organization.db.delete(widget).where(eq(widget.dashboardId, found.id));
+    await organization.db.delete(dashboard).where(eq(dashboard.id, found.id));
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -223,18 +223,18 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.post("/api/dashboards/:id/widgets", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "create"))) {
       throw new ForbiddenException("Only owners and editors can add charts");
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
 
     const body = readBody(await c.req.json(), "A chart is required");
     const savedQueryId = readString(body, "savedQueryId", "Pick the query to chart", 64);
-    const source = await oneRow(savedQuery, savedQueryId, organization);
+    const source = await oneRow(organization.db, savedQuery, savedQueryId, organization);
     if (source === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
@@ -250,7 +250,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     const valueColumn = readString(body, "valueColumn", "Pick the column to plot", MAX_COLUMN);
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(widget)
       .values({
         organizationId: organization.organizationId,
@@ -270,7 +270,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That chart could not be created");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -284,7 +284,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.get("/api/widgets/:id/data", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const found = await oneRow(widget, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, widget, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That chart does not exist");
     }
@@ -295,11 +295,11 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.post("/api/widgets/:id/refresh", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "update"))) {
       throw new ForbiddenException("Only owners and editors can refresh charts");
     }
 
-    const found = await oneRow(widget, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, widget, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That chart does not exist");
     }
@@ -312,17 +312,17 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.patch("/api/widgets/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "update"))) {
       throw new ForbiddenException("Only owners and editors can edit charts");
     }
 
-    const found = await oneRow(widget, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, widget, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That chart does not exist");
     }
 
     const body = readBody(await c.req.json(), "An update is required");
-    const updated = await db
+    const updated = await organization.db
       .update(widget)
       .set({
         chartType: readChartType(body, "Choose a bar, line, or pie chart"),
@@ -339,7 +339,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That chart does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -354,18 +354,18 @@ export function dashboardRoutes(): Hono<IAuthVars> {
   routes.delete("/api/widgets/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dashboard", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dashboard", "delete"))) {
       throw new ForbiddenException("Only owners and editors can remove charts");
     }
 
-    const found = await oneRow(widget, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, widget, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That chart does not exist");
     }
 
-    await db.delete(widget).where(eq(widget.id, found.id));
+    await organization.db.delete(widget).where(eq(widget.id, found.id));
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,

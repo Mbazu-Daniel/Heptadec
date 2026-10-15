@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -27,7 +27,7 @@ import {
   type IAlertRuleResponse,
 } from "./contracts";
 
-const { alertDelivery, alertRule, savedQuery } = schema;
+const { alertDelivery, alertRule, savedQuery, scheduledJob } = schema;
 
 const MAX_NAME = 120;
 
@@ -41,7 +41,10 @@ const LOG_LIMIT = 50;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function toAlertRule(row: typeof alertRule.$inferSelect): IAlertRule {
+function toAlertRule(
+  row: typeof alertRule.$inferSelect,
+  scheduled: boolean,
+): IAlertRule {
   return {
     id: row.id,
     savedQueryId: row.savedQueryId,
@@ -49,6 +52,7 @@ function toAlertRule(row: typeof alertRule.$inferSelect): IAlertRule {
     column: row.column,
     operator: row.operator as AlertOperator,
     threshold: row.threshold,
+    scheduled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -72,26 +76,36 @@ export function alertRoutes(): Hono<IAuthVars> {
   routes.get("/api/alert-rules", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(alertRule)
       .where(organization.where(alertRule.organizationId))
       .orderBy(desc(alertRule.createdAt));
 
-    const body: IAlertRuleListResponse = { alertRules: rows.map(toAlertRule) };
+    const running = await organization.db
+      .selectDistinct({ savedQueryId: scheduledJob.savedQueryId })
+      .from(scheduledJob)
+      .where(organization.where(scheduledJob.organizationId));
+
+    const scheduled = new Set(running.map((job) => job.savedQueryId));
+    const body: IAlertRuleListResponse = {
+      alertRules: rows.map((row) =>
+        toAlertRule(row, scheduled.has(row.savedQueryId)),
+      ),
+    };
     return c.json(body);
   });
 
   routes.post("/api/alert-rules", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "schedule", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "create"))) {
       throw new ForbiddenException("Only owners and editors can add alert rules");
     }
 
     const body = readBody(await c.req.json(), "An alert rule is required");
     const savedQueryId = readString(body, "savedQueryId", "Pick the query to watch", 64);
-    const query = await oneRow(savedQuery, savedQueryId, organization);
+    const query = await oneRow(organization.db, savedQuery, savedQueryId, organization);
     if (query === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
@@ -111,7 +125,7 @@ export function alertRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(alertRule)
       .values({
         organizationId: organization.organizationId,
@@ -130,7 +144,7 @@ export function alertRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That alert rule could not be created");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -139,22 +153,35 @@ export function alertRoutes(): Hono<IAuthVars> {
       targetId: created.id,
       targetLabel: created.name,
     });
-    const response: IAlertRuleResponse = { alertRule: toAlertRule(created) };
+    const running = await organization.db
+      .select({ id: scheduledJob.id })
+      .from(scheduledJob)
+      .where(
+        and(
+          eq(scheduledJob.savedQueryId, savedQueryId),
+          organization.where(scheduledJob.organizationId),
+        ),
+      )
+      .limit(1);
+
+    const response: IAlertRuleResponse = {
+      alertRule: toAlertRule(created, running.length > 0),
+    };
     return c.json(response, 201);
   });
 
   routes.delete("/api/alert-rules/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "schedule", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "delete"))) {
       throw new ForbiddenException("Only owners and editors can remove alert rules");
     }
 
-    const found = await oneRow(alertRule, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, alertRule, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That alert rule does not exist");
     }
-    await db
+    await organization.db
       .delete(alertDelivery)
       .where(
         and(
@@ -162,9 +189,9 @@ export function alertRoutes(): Hono<IAuthVars> {
           organization.where(alertDelivery.organizationId),
         ),
       );
-    await db.delete(alertRule).where(eq(alertRule.id, found.id));
+    await organization.db.delete(alertRule).where(eq(alertRule.id, found.id));
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -178,7 +205,7 @@ export function alertRoutes(): Hono<IAuthVars> {
   routes.get("/api/alert-deliveries", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(alertDelivery)
       .where(organization.where(alertDelivery.organizationId))

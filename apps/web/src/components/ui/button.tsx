@@ -3,13 +3,14 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-foreground/5 bg-linear-[104deg,from-foreground/5,from-5%,to-foreground/10] font-semibold whitespace-nowrap text-foreground backdrop-blur-[25px] shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)] transition-all duration-200 outline-none hover:bg-foreground hover:text-background hover:shadow-[0_0_4px_rgb(233_242_246/0.06),0_1px_14px_rgb(233_242_246/0.12),0_3px_32px_rgb(233_242_246/0.18)] focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-secondary font-semibold whitespace-nowrap text-foreground shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)] transition-all duration-200 outline-none hover:bg-foreground hover:text-background hover:shadow-[0_0_20px_-4px_color-mix(in_srgb,var(--foreground)_35%,transparent)] focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "",
+        default:
+          "border-transparent bg-cyan text-on-accent hover:bg-cyan/85 hover:text-on-accent",
         ghost:
-          "border-transparent bg-transparent text-muted-foreground-foreground shadow-none backdrop-blur-none hover:bg-transparent hover:text-foreground hover:shadow-none",
+          "border-transparent bg-transparent text-muted-foreground shadow-none backdrop-blur-none hover:bg-transparent hover:text-foreground hover:shadow-none",
         social: "w-full border-border",
       },
       size: {

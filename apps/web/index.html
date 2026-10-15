@@ -20,7 +20,6 @@
           var accent = localStorage.getItem("heptadec-accent");
           if (accent !== null && /^#[0-9a-fA-F]{6}$/.test(accent)) {
             root.style.setProperty("--cyan", accent);
-            root.style.setProperty("--accent-override", accent);
           }
         } catch (error) {
           // Storage can be unavailable; the CSS defaults are the fallback.

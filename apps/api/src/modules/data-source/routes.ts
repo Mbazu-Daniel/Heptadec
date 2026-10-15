@@ -1,37 +1,66 @@
-import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import {
+  Hono,
+} from "hono";
+import {
+  and,
+  eq,
+} from "drizzle-orm";
+import {
+  schema,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
-import { readBody } from "../../common/http/body";
-import { activeOrganization } from "../../common/session/current-organization";
-import { ForbiddenException, NotFoundException, BadRequestException, BadGatewayException } from "../../common/exceptions";
-import { can } from "../rbac/authorize";
-import { encryptSecret } from "./secret";
-import { recordAudit, auditActor } from "../audit";
+import {
+  readBody,
+} from "../../common/http/body";
+import {
+  activeOrganization,
+} from "../../common/session/current-organization";
+import {
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  BadGatewayException,
+} from "../../common/exceptions";
+import {
+  can,
+} from "../rbac/authorize";
+import {
+  encryptSecret,
+} from "./secret";
+import {
+  recordAudit,
+  auditActor,
+} from "../audit";
 import {
   readConnection,
+  readConnectionUpdate,
   storedFromInput,
   storedFromRow,
 } from "./connection";
+import {
+  engineOf,
+  kindOf,
+} from "./contracts";
 import {
   PREVIEW_DEFAULT_LIMIT,
   PREVIEW_MAX_LIMIT,
   listObjects,
   previewObject,
 } from "./preview";
-import type {
-  ConnectionMode,
-  DataSourceKind,
-  ICreateDataSourceResponse,
-  IDataSource,
-  IDataSourceListResponse,
-  IDeleteDataSourceResponse,
-  IObjectsResponse,
-  IPreviewResponse,
-  ITestConnectionResponse,
+import {
+  type ConnectionMode,
+  type DataSourceKind,
+  type ICreateDataSourceResponse,
+  type IDataSource,
+  type IDataSourceListResponse,
+  type IDeleteDataSourceResponse,
+  type IObjectsResponse,
+  type IPreviewResponse,
+  type ITestConnectionResponse,
+  type IUpdateDataSourceResponse,
 } from "./contracts";
 import type { DataSourceRow } from "@heptadec/db";
 
@@ -41,7 +70,7 @@ function toIDataSource(row: DataSourceRow): IDataSource {
   return {
     id: row.id,
     organizationId: row.organizationId,
-    kind: row.kind as DataSourceKind,
+    kind: kindOf(row),
     name: row.name,
     host: row.host,
     port: row.port,
@@ -57,12 +86,16 @@ function toIDataSource(row: DataSourceRow): IDataSource {
     hasClientKey: row.clientKey !== null,
     hasToken: row.token !== null,
     readOnly: row.readOnly,
+    sqlDialect: engineOf(row).sqlDialect,
+    queryLanguage: engineOf(row).queryLanguage,
+    canExplain: engineOf(row).supportsExplain,
+    tooling: engineOf(row).supportsTooling,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-function sealed(value: string | null): string | null {
+async function sealed(value: string | null): Promise<string | null> {
   return value === null ? null : encryptSecret(value);
 }
 
@@ -72,7 +105,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
   routes.get("/api/data-sources", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(dataSource)
       .where(organization.where(dataSource.organizationId))
@@ -87,7 +120,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
   routes.post("/api/data-sources", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "create"))) {
       throw new ForbiddenException(
         "Only owners and editors can add data sources",
       );
@@ -98,7 +131,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     );
 
     const now = new Date();
-    const rows = await db
+    const rows = await organization.db
       .insert(dataSource)
       .values({
         organizationId: organization.organizationId,
@@ -112,11 +145,11 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
         schemaName: input.schemaName,
         options: input.options,
         username: input.username,
-        secret: sealed(input.password),
-        caCertificate: sealed(input.caCert),
-        clientCertificate: sealed(input.clientCert),
-        clientKey: sealed(input.clientKey),
-        token: sealed(input.token),
+        secret: await sealed(input.password),
+        caCertificate: await sealed(input.caCert),
+        clientCertificate: await sealed(input.clientCert),
+        clientKey: await sealed(input.clientKey),
+        token: await sealed(input.token),
         readOnly: input.readOnly,
         createdAt: now,
         updatedAt: now,
@@ -127,7 +160,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       dataSource: toIDataSource(rows[0]!),
     };
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -139,16 +172,98 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     return c.json(body);
   });
 
+  routes.patch("/api/data-sources/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "update"))) {
+      throw new ForbiddenException(
+        "Only owners and editors can change data sources",
+      );
+    }
+
+    const found = await organization.db
+      .select()
+      .from(dataSource)
+      .where(
+        and(
+          eq(dataSource.id, c.req.param("id")),
+          organization.where(dataSource.organizationId),
+        ),
+      );
+
+    if (found.length === 0) {
+      throw new NotFoundException("That data source does not exist");
+    }
+    const current = found[0]!;
+
+    // The engine stays the one already stored: a source that points at a
+    // different database engine is a different source, not an edit.
+    const patch = readConnectionUpdate(
+      readBody(await c.req.json(), "A data source is required"),
+      current,
+    );
+
+    const updated = await organization.db
+      .update(dataSource)
+      .set({
+        name: patch.name,
+        readOnly: patch.readOnly,
+        connectionMode: patch.connectionMode,
+        host: patch.host,
+        port: patch.port,
+        socketPath: patch.socketPath,
+        database: patch.database,
+        schemaName: patch.schemaName,
+        options: patch.options,
+        username: patch.username,
+        // A secret left out of the request keeps the one already sealed, since
+        // the client is never shown it and so cannot send it back.
+        ...(patch.password === undefined
+          ? {}
+          : { secret: await sealed(patch.password) }),
+        ...(patch.caCert === undefined
+          ? {}
+          : { caCertificate: await sealed(patch.caCert) }),
+        ...(patch.clientCert === undefined
+          ? {}
+          : { clientCertificate: await sealed(patch.clientCert) }),
+        ...(patch.clientKey === undefined
+          ? {}
+          : { clientKey: await sealed(patch.clientKey) }),
+        ...(patch.token === undefined
+          ? {}
+          : { token: await sealed(patch.token) }),
+        updatedAt: new Date(),
+      })
+      .where(eq(dataSource.id, current.id))
+      .returning();
+
+    const body: IUpdateDataSourceResponse = {
+      dataSource: toIDataSource(updated[0]!),
+    };
+    const actor = auditActor(c);
+    await recordAudit(organization.db, {
+      organizationId: organization.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      event: "data_source.updated",
+      targetKind: "data_source",
+      targetId: updated[0]!.id,
+      targetLabel: updated[0]!.name,
+    });
+    return c.json(body);
+  });
+
   routes.delete("/api/data-sources/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "delete"))) {
       throw new ForbiddenException(
         "Only owners and editors can remove data sources",
       );
     }
 
-    const removed = await db
+    const removed = await organization.db
       .delete(dataSource)
       .where(
         and(
@@ -163,7 +278,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -180,13 +295,13 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
   routes.get("/api/data-sources/:id/objects", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "query"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
       throw new ForbiddenException(
         "Only owners and editors can browse data sources",
       );
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(dataSource)
       .where(
@@ -201,7 +316,9 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     }
 
     const body: IObjectsResponse = {
-      objects: await reachable(() => listObjects(storedFromRow(rows[0]!))),
+      objects: await reachable(async () =>
+        listObjects(await storedFromRow(rows[0]!)),
+      ),
     };
     return c.json(body);
   });
@@ -209,13 +326,13 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
   routes.post("/api/data-sources/:id/preview", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "query"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
       throw new ForbiddenException(
         "Only owners and editors can browse data sources",
       );
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(dataSource)
       .where(
@@ -229,7 +346,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That data source does not exist");
     }
     const row = rows[0]!;
-    const kind = row.kind as DataSourceKind;
+    const kind = kindOf(row);
 
     const payload = readBody(await c.req.json(), "An object is required");
     const object = payload.object;
@@ -239,7 +356,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const limit = readPreviewLimit(payload.limit);
     const query = readPreviewQuery(payload.query, kind);
 
-    const stored = storedFromRow(row);
+    const stored = await storedFromRow(row);
     const objects = await reachable(() => listObjects(stored));
     const target = objects.find((entry) => entry.name === object);
     if (!target) {
@@ -258,9 +375,9 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
   });
 
   routes.post("/api/data-sources/test", requireSession, async (c) => {
-    activeOrganization(c);
+    const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "dataSource", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "create"))) {
       throw new ForbiddenException(
         "Only owners and editors can test connections",
       );

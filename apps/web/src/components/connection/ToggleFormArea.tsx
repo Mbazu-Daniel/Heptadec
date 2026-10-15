@@ -19,7 +19,7 @@ export function ToggleFormArea({
         aria-expanded={open}
         className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-fg"
       >
-        <span className="material-symbols-outlined text-[16px]">
+        <span className="material-symbols-outlined text-[17px]">
           {open ? "keyboard_arrow_down" : "keyboard_arrow_right"}
         </span>
         {title}

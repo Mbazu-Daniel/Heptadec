@@ -1,6 +1,7 @@
 import {
   siClickhouse,
   siMariadb,
+  siMongodb,
   siMysql,
   siPostgresql,
   siRedis,
@@ -33,6 +34,7 @@ const BRAND_MARKS: Record<string, IBrandMark> = {
   sqlite: fromSimpleIcons(siSqlite),
   clickhouse: fromSimpleIcons(siClickhouse),
   libsql: fromSimpleIcons(siTurso),
+  mongodb: fromSimpleIcons(siMongodb),
   quickwit: {
     title: "Quickwit",
     hex: "ff0026",

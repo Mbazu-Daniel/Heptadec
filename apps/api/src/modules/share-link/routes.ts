@@ -1,7 +1,6 @@
-import { createHash, randomInt } from "node:crypto";
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -72,15 +71,31 @@ const TOKEN_LENGTH = 10;
 
 const TOKEN_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
 function newToken(): string {
-  return Array.from(
-    { length: TOKEN_LENGTH },
-    () => TOKEN_ALPHABET[randomInt(TOKEN_ALPHABET.length)],
-  ).join("");
+  const limit = TOKEN_ALPHABET.length * Math.floor(256 / TOKEN_ALPHABET.length);
+  const characters: string[] = [];
+  while (characters.length < TOKEN_LENGTH) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(TOKEN_LENGTH))) {
+      if (byte < limit) {
+        characters.push(TOKEN_ALPHABET.charAt(byte % TOKEN_ALPHABET.length));
+        if (characters.length === TOKEN_LENGTH) {
+          break;
+        }
+      }
+    }
+  }
+  return characters.join("");
 }
 
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
+async function hashToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function toShareLink(row: typeof shareLink.$inferSelect): IShareLink {
@@ -115,7 +130,7 @@ async function snapshot(
   dashboardId: string,
   organization: IOrganizationScope,
 ): Promise<ISharedDashboard> {
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(widget)
     .where(
@@ -146,16 +161,16 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
   routes.get("/api/dashboards/:id/share-links", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "shareLink", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "shareLink", "create"))) {
       throw new ForbiddenException("Only owners and editors can see share links");
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(shareLink)
       .where(
@@ -175,11 +190,11 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
   routes.post("/api/dashboards/:id/share-links", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "shareLink", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "shareLink", "create"))) {
       throw new ForbiddenException("Only owners and editors can share dashboards");
     }
 
-    const found = await oneRow(dashboard, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, dashboard, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
@@ -196,12 +211,12 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
         ? null
         : new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000);
 
-    const inserted = await db
+    const inserted = await organization.db
       .insert(shareLink)
       .values({
         organizationId: organization.organizationId,
         dashboardId: found.id,
-        tokenHash: hashToken(token),
+        tokenHash: await hashToken(token),
         snapshot: JSON.stringify(frozen),
         expiresAt,
         createdAt: now,
@@ -215,7 +230,7 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -233,23 +248,23 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
   routes.post("/api/share-links/:id/refresh", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "shareLink", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "shareLink", "create"))) {
       throw new ForbiddenException("Only owners and editors can refresh share links");
     }
 
-    const found = await oneRow(shareLink, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, shareLink, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That share link does not exist");
     }
 
-    const dash = await oneRow(dashboard, found.dashboardId, organization);
+    const dash = await oneRow(organization.db, dashboard, found.dashboardId, organization);
     if (dash === undefined) {
       throw new NotFoundException("That dashboard no longer exists");
     }
 
     const frozen = await snapshot(dash.name, dash.id, organization);
     const now = new Date();
-    const updated = await db
+    const updated = await organization.db
       .update(shareLink)
       .set({ snapshot: JSON.stringify(frozen), updatedAt: now })
       .where(eq(shareLink.id, found.id))
@@ -260,7 +275,7 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That share link does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -274,18 +289,18 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
   routes.delete("/api/share-links/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "shareLink", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "shareLink", "delete"))) {
       throw new ForbiddenException("Only owners and editors can revoke share links");
     }
 
-    const found = await oneRow(shareLink, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, shareLink, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That share link does not exist");
     }
 
-    await db.delete(shareLink).where(eq(shareLink.id, found.id));
+    await organization.db.delete(shareLink).where(eq(shareLink.id, found.id));
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -298,10 +313,12 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
   routes.get("/api/share/:token", async (c) => {
     rateLimit(c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "direct");
 
-    const rows = await db
+    const tokenHash = await hashToken(c.req.param("token"));
+    const rows = await c
+      .get("db")
       .select()
       .from(shareLink)
-      .where(eq(shareLink.tokenHash, hashToken(c.req.param("token"))))
+      .where(eq(shareLink.tokenHash, tokenHash))
       .limit(1);
 
     const found = rows[0];

@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
 const { organization, member, invitation, session } = schema;
 
@@ -10,7 +10,7 @@ it("stores the organization, the owner membership, and the active organization",
   const { user: created, cookie } = await signUp(uniqueEmail());
   const slug = uniqueSlug();
 
-  const createdOrg = await auth.api.createOrganization({
+  const createdOrg = await authFor(db).api.createOrganization({
     body: { name: "Acme Data", slug },
     headers: { cookie },
   });
@@ -37,12 +37,12 @@ it("stores an invitation with its role and a pending status", async () => {
   const { cookie } = await signUp(uniqueEmail());
   const slug = uniqueSlug();
 
-  const createdOrg = await auth.api.createOrganization({
+  const createdOrg = await authFor(db).api.createOrganization({
     body: { name: "Beta Labs", slug },
     headers: { cookie },
   });
 
-  await auth.api.createInvitation({
+  await authFor(db).api.createInvitation({
     body: {
       email: "grace.hopper@example.com",
       role: "viewer",
@@ -69,16 +69,16 @@ it("switches the active organization in the session row", async () => {
   const firstSlug = uniqueSlug();
   const secondSlug = uniqueSlug();
 
-  const first = await auth.api.createOrganization({
+  const first = await authFor(db).api.createOrganization({
     body: { name: "First Org", slug: firstSlug },
     headers: { cookie },
   });
-  const second = await auth.api.createOrganization({
+  const second = await authFor(db).api.createOrganization({
     body: { name: "Second Org", slug: secondSlug },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/organization/switch", {
+  const res = await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: first.id }),
@@ -98,12 +98,12 @@ it("writes the member display name against the active organization only", async 
   const { cookie } = await signUp(uniqueEmail());
   const slug = uniqueSlug();
 
-  const createdOrg = await auth.api.createOrganization({
+  const createdOrg = await authFor(db).api.createOrganization({
     body: { name: "Gamma Group", slug },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/organization/member", {
+  const res = await request("/api/organization/member", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ displayName: "Platform Lead" }),
@@ -122,12 +122,12 @@ it("refuses to switch into an organization the user does not belong to", async (
   const { user: mine, cookie: myCookie } = await signUp(uniqueEmail());
   const { cookie: theirCookie } = await signUp(uniqueEmail());
 
-  const other = await auth.api.createOrganization({
+  const other = await authFor(db).api.createOrganization({
     body: { name: "Not Mine", slug: uniqueSlug() },
     headers: { cookie: theirCookie },
   });
 
-  const res = await app.request("/api/organization/switch", {
+  const res = await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: myCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: other.id }),

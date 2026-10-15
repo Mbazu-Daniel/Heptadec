@@ -1,4 +1,5 @@
 import pg from "pg";
+import { BadRequestException } from "../../common/exceptions";
 import type { ConnectionOptions } from "node:tls";
 import type { ISavedConnection } from "./connection";
 
@@ -9,17 +10,24 @@ export function postgresClient(
   applicationName: string,
 ): pg.Client {
   const overSocket = source.connectionMode === "socket";
+  // A socket source has no host to dial and a TCP one has no socket, so each
+  // branch carries only what it will actually use rather than both, defaulted.
+  const dial: { socketPath: string } | { host: string; port: number } = overSocket
+    ? source.socketPath === null
+      ? notConnectable()
+      : { socketPath: source.socketPath }
+    : source.host === null || source.port === null
+      ? notConnectable()
+      : { host: source.host, port: source.port };
   const startup = [
     ...(source.options === null ? [] : [source.options]),
     ...(source.readOnly ? ["-c default_transaction_read_only=on"] : []),
   ].join(" ");
 
   return new pg.Client({
-    ...(overSocket
-      ? { socketPath: source.socketPath ?? "" }
-      : { host: source.host, port: source.port }),
+    ...dial,
     database: source.database,
-    user: source.username,
+    ...(source.username === null ? {} : { user: source.username }),
     ...(source.password === null ? {} : { password: source.password }),
     ...(source.connectionMode === "tls" ? { ssl: tls(source) } : {}),
     ...(startup.length === 0 ? {} : { options: startup }),
@@ -36,4 +44,9 @@ function tls(source: ISavedConnection): ConnectionOptions {
     ...(source.clientKey === null ? {} : { key: source.clientKey }),
     rejectUnauthorized: source.caCert !== null,
   };
+}
+
+/** A source that names neither a host nor a socket cannot be dialled. */
+function notConnectable(): never {
+  throw new BadRequestException("That source is missing connection details");
 }

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import type { NotificationChannelRow } from "@heptadec/db";
 import {
   requireSession,
@@ -44,24 +44,26 @@ export function notificationRoutes(): Hono<IAuthVars> {
   routes.get("/api/notification-channels", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(notificationChannel)
       .where(organization.where(notificationChannel.organizationId))
       .orderBy(notificationChannel.createdAt);
 
     const body: INotificationChannelListResponse = {
-      notificationChannels: rows.map(toChannel),
+      notificationChannels: await Promise.all(rows.map(toChannel)),
     };
     return c.json(body);
   });
 
   routes.post("/api/notification-channels", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
     await requireOwner(
+      organization.db,
       c.req.raw.headers,
       "Only owners can manage notification channels",
     );
-    const organization = activeOrganization(c);
 
     const body = readBody(
       await c.req.json(),
@@ -71,14 +73,14 @@ export function notificationRoutes(): Hono<IAuthVars> {
     const kind = readKind(body);
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(notificationChannel)
       .values({
         organizationId: organization.organizationId,
         name,
         kind,
         recipients: JSON.stringify(readRecipients(kind, body, [])),
-        config: encryptSecret(JSON.stringify(readConfig(kind, body, null))),
+        config: await encryptSecret(JSON.stringify(readConfig(kind, body, null))),
         createdAt: now,
         updatedAt: now,
       })
@@ -89,7 +91,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That channel could not be created");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -99,19 +101,22 @@ export function notificationRoutes(): Hono<IAuthVars> {
       targetLabel: created.name,
     });
     const response: INotificationChannelResponse = {
-      notificationChannel: toChannel(created),
+      notificationChannel: await toChannel(created),
     };
     return c.json(response, 201);
   });
 
   routes.patch("/api/notification-channels/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
     await requireOwner(
+      organization.db,
       c.req.raw.headers,
       "Only owners can manage notification channels",
     );
-    const organization = activeOrganization(c);
 
     const existing = await oneRow(
+      organization.db,
       notificationChannel,
       c.req.param("id"),
       organization,
@@ -126,16 +131,16 @@ export function notificationRoutes(): Hono<IAuthVars> {
       "A notification channel is required",
     );
     const name = readString(body, "name", "Name this channel", MAX_NAME);
-    const kept = storedConfig(existing);
+    const kept = await storedConfig(existing);
 
-    const updated = await db
+    const updated = await organization.db
       .update(notificationChannel)
       .set({
         name,
         recipients: JSON.stringify(
           readRecipients(kind, body, JSON.parse(existing.recipients) as string[]),
         ),
-        config: encryptSecret(JSON.stringify(readConfig(kind, body, kept))),
+        config: await encryptSecret(JSON.stringify(readConfig(kind, body, kept))),
         updatedAt: new Date(),
       })
       .where(eq(notificationChannel.id, existing.id))
@@ -146,7 +151,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That channel could not be saved");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -156,19 +161,21 @@ export function notificationRoutes(): Hono<IAuthVars> {
       targetLabel: row.name,
     });
     const response: INotificationChannelResponse = {
-      notificationChannel: toChannel(row),
+      notificationChannel: await toChannel(row),
     };
     return c.json(response);
   });
 
   routes.delete("/api/notification-channels/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
     await requireOwner(
+      organization.db,
       c.req.raw.headers,
       "Only owners can manage notification channels",
     );
-    const organization = activeOrganization(c);
 
-    const removed = await db
+    const removed = await organization.db
       .delete(notificationChannel)
       .where(
         and(
@@ -182,7 +189,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That channel does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -205,8 +212,10 @@ function readKind(body: Record<string, unknown>): NotificationKind {
   return kind;
 }
 
-function storedConfig(row: NotificationChannelRow): INotificationConfig {
-  return JSON.parse(decryptSecret(row.config)) as INotificationConfig;
+async function storedConfig(
+  row: NotificationChannelRow,
+): Promise<INotificationConfig> {
+  return JSON.parse(await decryptSecret(row.config)) as INotificationConfig;
 }
 
 function readConfig(
@@ -387,13 +396,15 @@ function missing(message: string): never {
   throw new BadRequestException(message);
 }
 
-function toChannel(row: NotificationChannelRow): INotificationChannel {
+async function toChannel(
+  row: NotificationChannelRow,
+): Promise<INotificationChannel> {
   return {
     id: row.id,
     name: row.name,
     kind: row.kind as NotificationKind,
     recipients: JSON.parse(row.recipients) as string[],
-    config: viewOf(storedConfig(row)),
+    config: viewOf(await storedConfig(row)),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

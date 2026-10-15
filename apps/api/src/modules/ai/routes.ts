@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import {
+  schema,
+  type AiProviderRow,
+  type DataSourceRow,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -20,11 +25,24 @@ import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { recordAudit, auditActor } from "../audit";
 import { encryptSecret } from "../data-source/secret";
-import { savedConnection } from "../data-source/connection";
-import { introspectPostgres } from "../schema/postgres";
+import { storedFromRow } from "../data-source/connection";
+import {
+  canBeAsked,
+  engineOf,
+  type IEngineSpec,
+  type QueryLanguage,
+} from "../data-source/contracts";
+import { introspectSchema } from "../schema/introspect";
 import { AI_PROVIDERS, providerSpec } from "./catalog";
-import { schemaContext } from "./context";
+import { quickwitContext, redisContext, schemaContext } from "./context";
 import { readStatement, streamQuery } from "./generate";
+import {
+  mongoInstructions,
+  queryInstructions,
+  quickwitInstructions,
+  redisInstructions,
+  routeInstructions,
+} from "./instructions";
 import { chosenProvider } from "./provider";
 import { listModels, suggestModels } from "./models";
 import type {
@@ -48,9 +66,9 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/ai/providers", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(c.req.raw.headers);
+    await requireOwner(organization.db, c.req.raw.headers);
 
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(aiProvider)
       .where(organization.where(aiProvider.organizationId))
@@ -74,7 +92,7 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/ai/providers", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(c.req.raw.headers);
+    await requireOwner(organization.db, c.req.raw.headers);
 
     const payload = readBody(await c.req.json(), "A provider is required");
     const name = readString(payload, "name", "Give the provider a name", MAX_NAME);
@@ -97,7 +115,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    const [row] = await db.transaction(async (tx) => {
+    const [row] = await organization.db.transaction(async (tx) => {
       if (isDefault) {
         await tx
           .update(aiProvider)
@@ -112,7 +130,7 @@ export function aiRoutes(): Hono<IAuthVars> {
           provider,
           model,
           baseUrl,
-          apiKey: encryptSecret(apiKey),
+          apiKey: await encryptSecret(apiKey),
           isDefault,
           createdAt: now,
           updatedAt: now,
@@ -136,7 +154,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     };
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -152,14 +170,14 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.delete("/api/ai/providers/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(c.req.raw.headers);
+    await requireOwner(organization.db, c.req.raw.headers);
 
-    const found = await oneRow(aiProvider, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, aiProvider, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That provider does not exist");
     }
 
-    const removed = await db
+    const removed = await organization.db
       .delete(aiProvider)
       .where(
         and(
@@ -170,11 +188,11 @@ export function aiRoutes(): Hono<IAuthVars> {
       .returning({ id: aiProvider.id });
 
     if (removed.length > 0 && found.isDefault) {
-      await promoteAnother(organization.organizationId);
+      await promoteAnother(organization.db, organization.organizationId);
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -190,9 +208,9 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/ai/providers/:id/models", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(c.req.raw.headers);
+    await requireOwner(organization.db, c.req.raw.headers);
 
-    const found = await oneRow(aiProvider, c.req.param("id"), organization);
+    const found = await oneRow(organization.db, aiProvider, c.req.param("id"), organization);
     if (found === undefined) {
       throw new NotFoundException("That provider does not exist");
     }
@@ -206,6 +224,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     }
     if (listing.kind === "unsupported") {
       const suggestions = await suggestModels(
+        organization.db,
         organization.organizationId,
         found.provider,
       );
@@ -220,7 +239,7 @@ export function aiRoutes(): Hono<IAuthVars> {
   routes.post("/api/ai/ask", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "query", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "query", "create"))) {
       throw new ForbiddenException("Only owners and editors can ask questions");
     }
 
@@ -231,24 +250,33 @@ export function aiRoutes(): Hono<IAuthVars> {
       "Ask the question in words",
       MAX_QUESTION,
     );
-    const dataSourceId = readString(
-      payload,
-      "dataSourceId",
-      "Choose the data source to ask about",
-      64,
-    );
 
-    const source = await oneRow(dataSource, dataSourceId, organization);
-    if (source === undefined) {
+    // Asking every source is the default; a picker narrows the question to the
+    // ones it is actually about.
+    const wanted = optionalIdList(payload, "dataSourceIds");
+    const owned = await organization.db
+      .select()
+      .from(dataSource)
+      .where(organization.where(dataSource.organizationId))
+      .orderBy(dataSource.createdAt);
+
+    const scoped =
+      wanted.length === 0
+        ? owned
+        : owned.filter((candidate) => wanted.includes(candidate.id));
+    if (wanted.length > 0 && scoped.length !== wanted.length) {
       throw new NotFoundException("That data source does not exist");
     }
-    if (source.kind !== "postgres") {
+
+    const askable = scoped.filter(canBeAsked);
+    if (askable.length === 0) {
       throw new BadRequestException(
-        `Asking questions is only available for postgres, not ${source.kind}`,
+        "None of those sources can be asked about — a command or search source has no queryable structure",
       );
     }
 
     const chosen = await chosenProvider(
+      organization.db,
       organization.organizationId,
       payload.providerId,
     );
@@ -257,6 +285,19 @@ export function aiRoutes(): Hono<IAuthVars> {
         "No AI provider is set up for this organization yet",
       );
     }
+
+    const source =
+      askable.length === 1
+        ? askable[0]!
+        : await routeToSource(chosen, question, askable);
+
+    const style = askStyle(engineOf(source));
+    if (style === null) {
+      throw new BadRequestException(
+        `Asking questions is not available for ${engineOf(source).name}`,
+      );
+    }
+    const { instructions, language } = style;
 
     const startedAt = Date.now();
 
@@ -273,8 +314,16 @@ export function aiRoutes(): Hono<IAuthVars> {
       let answer = "";
       let problem: string | null = null;
       try {
-        const described = await introspectPostgres(savedConnection(source));
-        const context = schemaContext({ sourceId: source.id, ...described });
+        const stored = await storedFromRow(source);
+        const context =
+          language === "search"
+            ? await quickwitContext(stored)
+            : language === "command"
+              ? await redisContext(stored)
+            : schemaContext({
+                sourceId: source.id,
+                ...(await introspectSchema(stored, source.readOnly)),
+              });
 
         await stream.writeSSE({
           event: "status",
@@ -283,7 +332,7 @@ export function aiRoutes(): Hono<IAuthVars> {
           }),
         });
 
-        for await (const chunk of streamQuery(chosen, question, context)) {
+        for await (const chunk of streamQuery(chosen, question, context, instructions)) {
           answer += chunk;
           await stream.writeSSE({
             event: "delta",
@@ -296,15 +345,18 @@ export function aiRoutes(): Hono<IAuthVars> {
           "That source could not be read, or the provider could not be reached. Check the source and the key.";
       }
 
-      const finished = readStatement(answer);
+      const finished = readStatement(answer, language);
       if (problem === null && answer.trim() === "") {
         problem =
           "That provider returned nothing. Check the key, the model id, and the base URL.";
       }
       const sql = problem === null ? finished.sql : null;
+      const pipeline = problem === null ? finished.pipeline : null;
+      const command = problem === null ? finished.command : null;
+      const search = problem === null ? finished.search : null;
       const durationMs = Date.now() - startedAt;
 
-      const inserted = await db
+      const inserted = await organization.db
         .insert(aiChat)
         .values({
           organizationId: organization.organizationId,
@@ -312,7 +364,16 @@ export function aiRoutes(): Hono<IAuthVars> {
           providerName: chosen.name,
           model: chosen.model,
           question,
-          sql,
+          // One column holds whichever statement the engine runs: SQL, a Redis
+          // command, or the JSON of an aggregation pipeline.
+          sql:
+            sql ??
+            command ??
+            (search === null
+              ? pipeline === null
+                ? null
+                : JSON.stringify(pipeline)
+              : JSON.stringify(search)),
           problem,
           durationMs,
           createdAt: new Date(),
@@ -321,8 +382,14 @@ export function aiRoutes(): Hono<IAuthVars> {
 
       const body: IGenerateQueryResponse = {
         chatId: inserted[0]!.id,
+        dataSourceId: source.id,
+        dataSourceName: source.name,
+        language,
         sql,
-        answered: sql !== null,
+        pipeline,
+        command,
+        search,
+        answered: finished.outcome === "answered",
         providerName: chosen.name,
         model: chosen.model,
         durationMs,
@@ -333,11 +400,14 @@ export function aiRoutes(): Hono<IAuthVars> {
           event: "problem",
           data: JSON.stringify({ message: problem }),
         });
-      } else if (sql === null) {
+      } else if (finished.outcome !== "answered") {
         await stream.writeSSE({
           event: "problem",
           data: JSON.stringify({
-            message: "That question could not be answered from this schema.",
+            message:
+              finished.outcome === "declined"
+                ? "That question could not be answered from this schema."
+                : "That answer came back in a shape I could not read. Ask again, or write the statement yourself.",
           }),
         });
       }
@@ -349,13 +419,104 @@ export function aiRoutes(): Hono<IAuthVars> {
   return routes;
 }
 
-async function requireOwner(headers: Headers): Promise<void> {
-  if (!(await can(headers, "invitation", "create"))) {
+/**
+ * The ids a request narrowed a question to. Absent, null, or an empty list all
+ * mean the same thing: search every source the organization owns.
+ */
+function optionalIdList(
+  payload: Record<string, unknown>,
+  field: string,
+): string[] {
+  const value = payload[field];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  for (const entry of value) {
+    if (typeof entry !== "string" || entry.length === 0 || entry.length > 64) {
+      throw new BadRequestException("That data source id is not valid");
+    }
+  }
+  return value as string[];
+}
+
+/**
+ * How a source is asked about: the instructions the model is given, and the
+ * language the answer comes back in.
+ *
+ * Answered per language rather than by trying an instruction set and catching
+ * the refusal, so a source the app cannot ask about says so here rather than
+ * being discovered at the point of asking. SQL is the one language whose
+ * instructions depend on the engine, so it takes the dialect; every other
+ * language is written the same whichever engine speaks it.
+ */
+function askStyle(engine: IEngineSpec): {
+  instructions: string;
+  language: QueryLanguage;
+} | null {
+  switch (engine.queryLanguage) {
+    case "pipeline":
+      return { instructions: mongoInstructions, language: "pipeline" };
+    case "command":
+      return { instructions: redisInstructions, language: "command" };
+    case "search":
+      return { instructions: quickwitInstructions, language: "search" };
+    case "sql":
+      return engine.sqlDialect === null
+        ? null
+        : { instructions: queryInstructions(engine.sqlDialect), language: "sql" };
+    case null:
+      return null;
+  }
+}
+
+/**
+ * Ask which of several sources answers the question. Only the name and database
+ * are sent: reading every candidate's structure would cost a round trip each,
+ * and the second pass reads the winner properly anyway.
+ */
+async function routeToSource(
+  provider: AiProviderRow,
+  question: string,
+  candidates: DataSourceRow[],
+): Promise<DataSourceRow> {
+  const catalogue = candidates
+    .map((candidate) => {
+      const engine = engineOf(candidate);
+      const target = candidate.database === null ? "" : `, database ${candidate.database}`;
+      return `${candidate.id} — ${candidate.name} (${engine.name}${target})`;
+    })
+    .join("\n");
+
+  let answer = "";
+  for await (const chunk of streamQuery(
+    provider,
+    question,
+    `${routeInstructions}${catalogue}\n`,
+    routeInstructions,
+  )) {
+    answer += chunk;
+  }
+
+  const picked = answer.trim().replace(/[^A-Za-z0-9-]/g, "");
+  const match = candidates.find((candidate) => candidate.id === picked);
+  if (match === undefined) {
+    throw new BadRequestException(
+      "That question could not be matched to one of your data sources — pick a single source to ask about",
+    );
+  }
+  return match;
+}
+
+async function requireOwner(db: HeptadecDatabase, headers: Headers): Promise<void> {
+  if (!(await can(db, headers, "invitation", "create"))) {
     throw new ForbiddenException("Only owners can manage AI providers");
   }
 }
 
-async function promoteAnother(organizationId: string): Promise<void> {
+async function promoteAnother(
+  db: HeptadecDatabase,
+  organizationId: string,
+): Promise<void> {
   const next = await db
     .select({ id: aiProvider.id })
     .from(aiProvider)

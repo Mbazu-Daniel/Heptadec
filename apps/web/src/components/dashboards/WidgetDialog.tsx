@@ -201,7 +201,7 @@ export function WidgetDialog({
               ))}
             </select>
             {visible.length === 0 && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 No saved queries on this dashboard's sources yet. Write one
                 under Data Sources, or ask the AI.
               </p>
@@ -210,7 +210,7 @@ export function WidgetDialog({
 
           {columns === null ? (
             savedQueryId === "" ? null : (
-              <p className="font-mono text-[10px] text-muted-foreground">
+              <p className="font-mono text-[11px] text-muted-foreground">
                 Reading the query's columns…
               </p>
             )
@@ -288,7 +288,6 @@ export function WidgetDialog({
           <Button
             onClick={() => void save()}
             disabled={saving || !ready}
-            className="border-transparent bg-cyan text-black hover:bg-cyan/85 hover:text-black"
           >
             {saving ? "Saving…" : widget === null ? "Add chart" : "Save chart"}
           </Button>

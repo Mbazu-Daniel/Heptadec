@@ -1,13 +1,31 @@
-import { z } from "zod";
+import {
+  z,
+} from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db, schema } from "@heptadec/db";
-import { oneRow } from "../../common/session/current-organization";
+import {
+  schema,
+} from "@heptadec/db";
+import {
+  oneRow,
+} from "../../common/session/current-organization";
 import type { IOrganizationScope } from "../../common/session/current-organization";
-import { ENGINE_SPECS, type DataSourceKind } from "../data-source/contracts";
-import { savedConnection, storedFromRow } from "../data-source/connection";
-import { introspectPostgres } from "../schema/postgres";
-import { runPostgresQuery } from "../query/postgres";
-import { MCP_PERMISSION_RESOURCE } from "./capabilities";
+import {
+  ENGINE_SPECS,
+  canUseTooling,
+  kindOf,
+} from "../data-source/contracts";
+import {
+  savedConnection,
+} from "../data-source/connection";
+import {
+  introspectPostgres,
+} from "../schema/postgres";
+import {
+  runPostgresQuery,
+} from "../query/postgres";
+import {
+  MCP_PERMISSION_RESOURCE,
+} from "./capabilities";
 
 const { dataSource } = schema;
 
@@ -46,20 +64,20 @@ export function registerTools(
       {
         title: "Describe a data source",
         description:
-          "Read the tables, columns, and relationships of one Postgres data source.",
+          "Read the tables, columns, and relationships of one data source the app can describe.",
         inputSchema: {
           dataSourceId: z.string().min(1),
         },
       },
       async ({ dataSourceId }) => {
-        const source = await oneRow(dataSource, dataSourceId, organization);
+        const source = await oneRow(organization.db, dataSource, dataSourceId, organization);
         if (source === undefined) {
           return refused(`No data source ${dataSourceId} here`);
         }
-        if (source.kind !== "postgres") {
-          return refused(`Reading structure needs postgres, not ${source.kind}`);
+        if (!canUseTooling(source)) {
+          return refused(`Reading structure is not available for ${kindOf(source)} yet`);
         }
-        const described = await introspectPostgres(savedConnection(source));
+        const described = await introspectPostgres(await savedConnection(source));
         return answered(described);
       },
     );
@@ -71,26 +89,26 @@ export function registerTools(
       {
         title: "Run a query",
         description:
-          "Run one read-only SQL statement against a Postgres data source and get the rows back.",
+          "Run one read-only SQL statement against a data source the app can query this way and get the rows back.",
         inputSchema: {
           dataSourceId: z.string().min(1),
           sql: z.string().min(1),
         },
       },
       async ({ dataSourceId, sql }) => {
-        const source = await oneRow(dataSource, dataSourceId, organization);
+        const source = await oneRow(organization.db, dataSource, dataSourceId, organization);
         if (source === undefined) {
           return refused(`No data source ${dataSourceId} here`);
         }
-        if (source.kind !== "postgres") {
-          return refused(`Queries here need postgres, not ${source.kind}`);
+        if (!canUseTooling(source)) {
+          return refused(`Queries are not available for ${kindOf(source)} yet`);
         }
         if (!source.readOnly) {
           return refused(
             "That data source is writable, so this token will not query it",
           );
         }
-        const grid = await runPostgresQuery(savedConnection(source), sql);
+        const grid = await runPostgresQuery(await savedConnection(source), sql);
         return answered({
           columns: grid.columns,
           columnTypes: grid.columnTypes,
@@ -108,7 +126,7 @@ export function registerTools(
       {
         title: "Preview a data source",
         description:
-          "Return the first rows of one table in a Postgres data source, for finding out what is in it.",
+          "Return the first rows of one table in a data source the app can describe, for finding out what is in it.",
         inputSchema: {
           dataSourceId: z.string().min(1),
           table: z.string().min(1),
@@ -116,12 +134,12 @@ export function registerTools(
         },
       },
       async ({ dataSourceId, table, limit }) => {
-        const source = await oneRow(dataSource, dataSourceId, organization);
+        const source = await oneRow(organization.db, dataSource, dataSourceId, organization);
         if (source === undefined) {
           return refused(`No data source ${dataSourceId} here`);
         }
-        if (source.kind !== "postgres") {
-          return refused(`Previewing here needs postgres, not ${source.kind}`);
+        if (!canUseTooling(source)) {
+          return refused(`Previewing is not available for ${kindOf(source)} yet`);
         }
         if (!source.readOnly) {
           return refused(
@@ -129,7 +147,7 @@ export function registerTools(
           );
         }
         const grid = await runPostgresQuery(
-          savedConnection(source),
+          await savedConnection(source),
           `SELECT * FROM ${quoteIdentifier(table)} LIMIT ${limit}`,
         );
         return answered({
@@ -143,13 +161,13 @@ export function registerTools(
 }
 
 async function listDataSources(organization: IOrganizationScope) {
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(dataSource)
     .where(organization.where(dataSource.organizationId))
     .orderBy(dataSource.name);
   return rows.map((row) => {
-    const kind = row.kind as DataSourceKind;
+    const kind = kindOf(row);
     return {
       id: row.id,
       name: row.name,

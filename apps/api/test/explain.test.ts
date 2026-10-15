@@ -1,28 +1,20 @@
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import type { IExplainNode } from "../src/modules/query/contracts";
 
 const { dataSource } = schema;
 
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
-
 async function ownerWithSource(): Promise<{ cookie: string; id: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Explain Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -46,7 +38,7 @@ async function ownerWithSource(): Promise<{ cookie: string; id: string }> {
 }
 
 function explain(cookie: string, id: string, sql: string): Promise<Response> | Response {
-  return app.request(`/api/data-sources/${id}/explain`, {
+  return request(`/api/data-sources/${id}/explain`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -110,7 +102,7 @@ it("refuses a statement that is not one statement", async () => {
 it("404s an explanation for a source in another organization", async () => {
   const { id } = await ownerWithSource();
   const stranger = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Other Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });

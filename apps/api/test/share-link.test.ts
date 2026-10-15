@@ -1,19 +1,11 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { dataSource, shareLink, widget } = schema;
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
@@ -40,7 +32,7 @@ async function regionCounts(): Promise<Array<{ label: string; value: number }>> 
 
 async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Share Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -54,7 +46,7 @@ async function ownerWithChart(): Promise<{
 }> {
   const { cookie, orgId } = await ownerWithOrg();
 
-  const source = await app.request("/api/data-sources", {
+  const source = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -74,14 +66,14 @@ async function ownerWithChart(): Promise<{
     .select()
     .from(dataSource)
     .where(eq(dataSource.organizationId, orgId));
-  const saved = await app.request(`/api/data-sources/${sourceRows[0]!.id}/saved-queries`, {
+  const saved = await request(`/api/data-sources/${sourceRows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
   });
   const { savedQuery } = (await saved.json()) as { savedQuery: { id: string } };
 
-  const dash = await app.request("/api/dashboards", {
+  const dash = await request("/api/dashboards", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -91,7 +83,7 @@ async function ownerWithChart(): Promise<{
   });
   const { dashboard } = (await dash.json()) as { dashboard: { id: string } };
 
-  const chart = await app.request(`/api/dashboards/${dashboard.id}/widgets`, {
+  const chart = await request(`/api/dashboards/${dashboard.id}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -112,7 +104,7 @@ async function createLink(
   dashboardId: string,
   body: unknown = {},
 ): Promise<{ token: string; id: string }> {
-  const res = await app.request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -129,7 +121,7 @@ function shareLinkRow(dashboardId: string) {
 let clientSeq = 0;
 
 function publicGet(token: string): Promise<Response> | Response {
-  return app.request(`/api/share/${token}`, {
+  return request(`/api/share/${token}`, {
     headers: { "x-forwarded-for": `10.0.0.${++clientSeq}` },
   });
 }
@@ -181,7 +173,7 @@ it("404s a revoked link", async () => {
   const { cookie, dashboardId } = await ownerWithChart();
   const { token, id } = await createLink(cookie, dashboardId);
 
-  const revoked = await app.request(`/api/share-links/${id}`, {
+  const revoked = await request(`/api/share-links/${id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -208,7 +200,7 @@ it("404s an expired link", async () => {
 it("refuses an expiry it cannot honour", async () => {
   const { cookie, dashboardId } = await ownerWithChart();
 
-  const res = await app.request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ expiresInDays: 400 }),
@@ -222,18 +214,18 @@ it("404s share-link management from another organization", async () => {
   const { id } = await createLink(cookie, dashboardId);
 
   const stranger = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Stranger Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
   expect(org.id).not.toBe("");
 
-  const list = await app.request(`/api/dashboards/${dashboardId}/share-links`, {
+  const list = await request(`/api/dashboards/${dashboardId}/share-links`, {
     headers: { cookie: stranger.cookie },
   });
   expect(list.status).toBe(404);
 
-  const revoke = await app.request(`/api/share-links/${id}`, {
+  const revoke = await request(`/api/share-links/${id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
@@ -245,16 +237,16 @@ it("refuses a viewer who cannot share a dashboard", async () => {
   const { cookie, orgId, dashboardId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
-  await auth.api.addMember({
+  await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId: orgId },
   });
-  await app.request("/api/organization/switch", {
+  await request("/api/organization/switch", {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: orgId }),
   });
 
-  const res = await app.request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({}),
@@ -268,7 +260,7 @@ it("rate limits the public view", async () => {
   const { token } = await createLink(cookie, dashboardId);
   let throttled = false;
   for (let attempt = 0; attempt < 60 && !throttled; attempt++) {
-    const res = await app.request(`/api/share/${token}`, {
+    const res = await request(`/api/share/${token}`, {
       headers: { "x-forwarded-for": "10.9.9.9" },
     });
     if (res.status === 429) {
@@ -289,7 +281,7 @@ it("refreshes the snapshot from the database behind it", async () => {
     await client.query(
       "INSERT INTO events(id,event_name,region) VALUES ('refresh-probe','checkout','us-east-1')",
     );
-    const refreshed = await app.request(`/api/share-links/${id}/refresh`, {
+    const refreshed = await request(`/api/share-links/${id}/refresh`, {
       method: "POST",
       headers: { cookie },
     });

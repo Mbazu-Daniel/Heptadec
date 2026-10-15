@@ -1,6 +1,5 @@
-import nodemailer from "nodemailer";
 import type { AlertRuleRow, NotificationChannelRow } from "@heptadec/db";
-import { db, schema } from "@heptadec/db";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "../data-source/secret";
 import type {
@@ -16,6 +15,7 @@ const DELIVERY_TIMEOUT_MS = 10_000;
 const RESEND_URL = "https://api.resend.com/emails";
 
 export async function deliverBreach(
+  db: HeptadecDatabase,
   rule: AlertRuleRow,
   message: string,
 ): Promise<void> {
@@ -26,6 +26,7 @@ export async function deliverBreach(
 
   if (channels.length === 0) {
     await log(
+      db,
       rule,
       "none",
       "skipped",
@@ -42,7 +43,7 @@ export async function deliverBreach(
       `Heptadec alert: ${rule.name}`,
       message,
     );
-    await log(rule, kind, failure === null ? "sent" : "failed", message, failure);
+    await log(db, rule, kind, failure === null ? "sent" : "failed", message, failure);
   }
 }
 
@@ -52,7 +53,7 @@ async function sendToChannel(
   message: string,
 ): Promise<string | null> {
   try {
-    const config = JSON.parse(decryptSecret(channel.config)) as INotificationConfig;
+    const config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
     return await post(config, JSON.parse(channel.recipients) as string[], subject, message);
   } catch {
     return "The channel could not be reached";
@@ -77,7 +78,10 @@ async function post(
       if (recipients.length === 0) {
         return "No recipient is set on this channel";
       }
-      const transporter = nodemailer.createTransport({
+      // nodemailer speaks SMTP over a socket, which Workers cannot open. It is
+      // loaded only here so the runtime never evaluates it at startup.
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.default.createTransport({
         host: config.smtpHost,
         port: config.smtpPort,
         secure: config.smtpPort === 465,
@@ -130,6 +134,7 @@ async function postJson(
 }
 
 async function log(
+  db: HeptadecDatabase,
   rule: AlertRuleRow,
   channel: AlertDeliveryChannel,
   status: AlertDeliveryStatus,

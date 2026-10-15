@@ -48,7 +48,7 @@ export function ConnectionMethod({
             className="rounded-none font-mono"
             spellCheck={false}
           />
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[11px] text-muted-foreground">
             Starts with {spec.schemes.join(" or ")}. The password you paste here is
             encrypted the same way a typed one is.
           </span>
@@ -67,6 +67,7 @@ const EXAMPLES: Record<DataSourceKind, string> = {
   quickwit: "https://host:7280",
   libsql: "libsql://host",
   sqlite: "/data/analytics.db",
+  mongodb: "mongodb://user:password@host:27017/telemetry",
 };
 
 function exampleFor(kind: DataSourceKind): string {

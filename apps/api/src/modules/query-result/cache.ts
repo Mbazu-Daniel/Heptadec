@@ -1,5 +1,13 @@
-import { and, desc, eq, lt } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import {
+  and,
+  desc,
+  eq,
+  lt,
+} from "drizzle-orm";
+import {
+  schema,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   BadRequestException,
   NotFoundException,
@@ -8,12 +16,16 @@ import {
   oneRow,
   type IOrganizationScope,
 } from "../../common/session/current-organization";
-import { savedConnection } from "../data-source/connection";
 import {
-  ENGINE_SPECS,
-  type DataSourceKind,
+  storedFromRow,
+} from "../data-source/connection";
+import {
+  canBeSaved,
+  engineOf,
 } from "../data-source/contracts";
-import { runPostgresQuery } from "../query/postgres";
+import {
+  runSqlQuery,
+} from "../query/sql";
 import type { IQueryResponse } from "../query/contracts";
 import type { ICachedResult } from "./contracts";
 
@@ -26,30 +38,35 @@ export async function materializeResult(
   organization: IOrganizationScope,
   ttlSeconds: number = DEFAULT_TTL_SECONDS,
 ): Promise<IQueryResponse> {
-  const query = await oneRow(savedQuery, queryId, organization);
+  const query = await oneRow(organization.db, savedQuery, queryId, organization);
   if (query === undefined) {
     throw new NotFoundException("That saved query does not exist");
   }
 
-  const source = await oneRow(dataSource, query.dataSourceId, organization);
+  const source = await oneRow(organization.db, dataSource, query.dataSourceId, organization);
   if (source === undefined) {
     throw new NotFoundException("That data source does not exist");
   }
-  const engine = ENGINE_SPECS[source.kind as DataSourceKind];
-  if (engine.queryLanguage !== "sql") {
+  const engine = engineOf(source);
+  if (!canBeSaved(source)) {
     throw new BadRequestException(
       `${engine.name} sources cannot answer saved queries yet`,
     );
   }
 
-  const grid = await runPostgresQuery(savedConnection(source), query.sql);
+  const grid = await runSqlQuery(
+    await storedFromRow(source),
+    query.sql,
+    source.readOnly,
+  );
 
-  await cacheResult(query.organizationId, query.id, grid, ttlSeconds);
+  await cacheResult(organization.db, query.organizationId, query.id, grid, ttlSeconds);
 
   return grid;
 }
 
 export async function cacheResult(
+  db: HeptadecDatabase,
   organizationId: string,
   savedQueryId: string,
   grid: IQueryResponse,
@@ -75,7 +92,7 @@ export async function cachedResult(
   queryId: string,
   organization: IOrganizationScope,
 ): Promise<ICachedResult | null> {
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(queryResult)
     .where(

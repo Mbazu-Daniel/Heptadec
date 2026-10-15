@@ -1,33 +1,42 @@
 import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
-import { auth, type AuthSession } from "../config/better-auth";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { authFor, type AuthSession } from "../config/better-auth";
 import { UnauthorizedException } from "../exceptions";
 import {
   currentOrganizationId,
   type IOrganizationScope,
 } from "../session/current-organization";
 
-const { member } = schema;
-
 export interface IAuthVars {
   Variables: {
+    db: HeptadecDatabase;
     session: AuthSession | null;
     organization: IOrganizationScope | null;
   };
+  Bindings: {
+    db: HeptadecDatabase;
+    // Absent when a deployment binds no R2 bucket: image storage is optional
+    // and the image routes report it as unconfigured rather than failing.
+    images?: R2Bucket;
+  };
 }
 
+const { member } = schema;
+
 export const requireSession = createMiddleware<IAuthVars>(async (c, next) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  const db = c.get("db");
+  const session = await authFor(db).api.getSession({ headers: c.req.raw.headers });
   c.set("session", session);
   if (!session) {
     throw new UnauthorizedException();
   }
-  c.set("organization", await liveOrganization(session));
+  c.set("organization", await liveOrganization(db, session));
   await next();
 });
 
 async function liveOrganization(
+  db: HeptadecDatabase,
   session: NonNullable<AuthSession>,
 ): Promise<IOrganizationScope | null> {
   const organizationId = currentOrganizationId(session);
@@ -47,5 +56,5 @@ async function liveOrganization(
   if (rows.length === 0) {
     return null;
   }
-  return { organizationId, where: (column) => eq(column, organizationId) };
+  return { organizationId, db, where: (column) => eq(column, organizationId) };
 }

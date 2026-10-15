@@ -1,11 +1,22 @@
-import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import {
+  Hono,
+} from "hono";
+import {
+  and,
+  eq,
+} from "drizzle-orm";
+import {
+  schema,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
-import { readBody, readOptionalString, readString } from "../../common/http/body";
+import {
+  readBody,
+  readOptionalString,
+  readString,
+} from "../../common/http/body";
 import {
   activeOrganization,
   oneRow,
@@ -15,15 +26,26 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
-import { can } from "../rbac/authorize";
-import { recordAudit, auditActor } from "../audit";
 import {
-  ENGINE_SPECS,
-  type DataSourceKind,
+  can,
+} from "../rbac/authorize";
+import {
+  recordAudit,
+  auditActor,
+} from "../audit";
+import {
+  canBeSaved,
+  engineOf,
 } from "../data-source/contracts";
-import { DEFAULT_TTL_SECONDS } from "../query-result/cache";
-import { isTimezone } from "./cron";
-import { nextRunFor } from "./runner";
+import {
+  DEFAULT_TTL_SECONDS,
+} from "../query-result/cache";
+import {
+  isTimezone,
+} from "./cron";
+import {
+  nextRunFor,
+} from "./runner";
 import {
   DEFAULT_TIMEZONE,
   MAX_TTL_SECONDS,
@@ -65,7 +87,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
   routes.get("/api/scheduled-jobs", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select({
         job: scheduledJob,
         savedQueryName: savedQuery.name,
@@ -84,23 +106,23 @@ export function schedulerRoutes(): Hono<IAuthVars> {
   routes.post("/api/scheduled-jobs", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "schedule", "create"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "create"))) {
       throw new ForbiddenException("Only owners and editors can schedule queries");
     }
 
     const body = readBody(await c.req.json(), "A schedule is required");
     const request = readCreateRequest(body);
 
-    const query = await oneRow(savedQuery, request.savedQueryId, organization);
+    const query = await oneRow(organization.db, savedQuery, request.savedQueryId, organization);
     if (query === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    const source = await oneRow(dataSource, query.dataSourceId, organization);
+    const source = await oneRow(organization.db, dataSource, query.dataSourceId, organization);
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
-    const engine = ENGINE_SPECS[source.kind as DataSourceKind];
-    if (engine.queryLanguage !== "sql") {
+    const engine = engineOf(source);
+    if (!canBeSaved(source)) {
       throw new BadRequestException(
         `${engine.name} sources cannot be scheduled`,
       );
@@ -110,7 +132,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     }
 
     const now = new Date();
-    const inserted = await db
+    const inserted = await organization.db
       .insert(scheduledJob)
       .values({
         organizationId: organization.organizationId,
@@ -134,7 +156,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     }
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -152,11 +174,11 @@ export function schedulerRoutes(): Hono<IAuthVars> {
   routes.delete("/api/scheduled-jobs/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "schedule", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "delete"))) {
       throw new ForbiddenException("Only owners and editors can remove schedules");
     }
 
-    const removed = await db
+    const removed = await organization.db
       .delete(scheduledJob)
       .where(
         and(
@@ -170,7 +192,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule does not exist");
     }
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,

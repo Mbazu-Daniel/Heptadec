@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, eq, sql } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -12,7 +12,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
-import { auth } from "../../common/config/better-auth";
+import { authFor } from "../../common/config/better-auth";
 import { isRole, type Role } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
 import { can } from "../rbac/authorize";
@@ -30,7 +30,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select({
         displayName: member.displayName,
         role: member.role,
@@ -71,7 +71,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     }
     const displayName = trimmed.length === 0 ? null : trimmed;
 
-    const updated = await db
+    const updated = await organization.db
       .update(member)
       .set({ displayName })
       .where(
@@ -98,7 +98,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
 
-    const rows = await db
+    const rows = await organization.db
       .select({
         id: member.id,
         userId: member.userId,
@@ -129,7 +129,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.patch("/api/organization/members/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "member", "update"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "member", "update"))) {
       throw new ForbiddenException("Only an owner can change a role");
     }
 
@@ -139,7 +139,7 @@ export function memberRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That role does not exist");
     }
 
-    await auth.api.updateMemberRole({
+    await authFor(organization.db).api.updateMemberRole({
       body: {
         memberId: c.req.param("id"),
         role,
@@ -149,7 +149,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     });
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,
@@ -165,11 +165,11 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.delete("/api/organization/members/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(c.req.raw.headers, "member", "delete"))) {
+    if (!(await can(organization.db, c.req.raw.headers, "member", "delete"))) {
       throw new ForbiddenException("Only an owner can remove a member");
     }
 
-    await auth.api.removeMember({
+    await authFor(organization.db).api.removeMember({
       body: {
         memberIdOrEmail: c.req.param("id"),
         organizationId: organization.organizationId,
@@ -178,7 +178,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     });
 
     const actor = auditActor(c);
-    await recordAudit({
+    await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
       actorLabel: actor.label,

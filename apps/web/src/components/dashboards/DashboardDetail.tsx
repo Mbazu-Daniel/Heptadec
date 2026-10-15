@@ -111,7 +111,7 @@ export function DashboardDetail({
             {dashboard.sources.map((source) => (
               <span
                 key={source.dataSourceId}
-                className="rounded-md border px-2 py-0.5 text-[10px] text-muted-foreground"
+                className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground"
                 title={`Draws from ${source.name}`}
               >
                 {source.name}
@@ -119,7 +119,7 @@ export function DashboardDetail({
             ))}
           </span>
         )}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {dashboard === null ? "" : `${dashboard.widgets.length} charts`}
         </span>
         <Button
@@ -134,7 +134,7 @@ export function DashboardDetail({
         <Button
           onClick={() => setAdding(true)}
           disabled={dashboard === null}
-          className="h-7 gap-1.5 border-transparent bg-cyan px-3 text-xs font-semibold text-black hover:bg-cyan/85 hover:text-black"
+          className="h-7 gap-1.5 px-3 text-xs"
         >
           <IconPlayerPlay size={13} />
           Add chart

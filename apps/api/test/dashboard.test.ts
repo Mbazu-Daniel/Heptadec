@@ -1,18 +1,10 @@
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { schema } from "@heptadec/db";
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { dashboard, dataSource, queryResult, savedQuery, widget } = schema;
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
 
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
@@ -39,7 +31,7 @@ async function regionCounts(): Promise<Array<{ label: string; value: number }>> 
 
 async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await auth.api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Charts Org", slug: uniqueSlug() },
     headers: { cookie },
   });
@@ -53,7 +45,7 @@ async function ownerWithSource(): Promise<{
 }> {
   const { cookie, orgId } = await ownerWithOrg();
 
-  const res = await app.request("/api/data-sources", {
+  const res = await request("/api/data-sources", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -81,7 +73,7 @@ async function createDashboard(
   name: string,
   dataSourceIds: string[],
 ): Promise<string> {
-  const res = await app.request("/api/dashboards", {
+  const res = await request("/api/dashboards", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, dataSourceIds }),
@@ -92,7 +84,7 @@ async function createDashboard(
 }
 
 async function saveRegionCounts(cookie: string, sourceId: string): Promise<string> {
-  const res = await app.request(`/api/data-sources/${sourceId}/saved-queries`, {
+  const res = await request(`/api/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
@@ -107,7 +99,7 @@ async function chartIt(
   dashboardId: string,
   fields: Record<string, unknown>,
 ): Promise<Response> {
-  return app.request(`/api/dashboards/${dashboardId}/widgets`, {
+  return request(`/api/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(fields),
@@ -164,7 +156,7 @@ it("plots a chart from the cached result of its last run", async () => {
     valueColumn: "events",
   });
   const { widget: placed } = (await created.json()) as { widget: { id: string } };
-  const cold = await app.request(`/api/widgets/${placed.id}/data`, {
+  const cold = await request(`/api/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(cold.status).toBe(200);
@@ -175,7 +167,7 @@ it("plots a chart from the cached result of its last run", async () => {
   };
   expect(coldBody.points).toEqual([]);
   expect(coldBody.ranAt).toBeNull();
-  const refreshed = await app.request(`/api/widgets/${placed.id}/refresh`, {
+  const refreshed = await request(`/api/widgets/${placed.id}/refresh`, {
     method: "POST",
     headers: { cookie },
   });
@@ -189,7 +181,7 @@ it("plots a chart from the cached result of its last run", async () => {
   const grid = JSON.parse(cache[0]!.payload) as { rowCount: number };
   expect(grid.rowCount).toBeGreaterThan(0);
 
-  const res = await app.request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(res.status).toBe(200);
@@ -221,13 +213,13 @@ it("refuses to plot a column that does not hold numbers", async () => {
     valueColumn: "region",
   });
   const { widget: placed } = (await created.json()) as { widget: { id: string } };
-  const refreshed = await app.request(`/api/widgets/${placed.id}/refresh`, {
+  const refreshed = await request(`/api/widgets/${placed.id}/refresh`, {
     method: "POST",
     headers: { cookie },
   });
   expect(refreshed.status).toBe(400);
 
-  const res = await app.request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(res.status).toBe(400);
@@ -247,13 +239,13 @@ it("404s a chart that belongs to another organization", async () => {
   const { widget: placed } = (await created.json()) as { widget: { id: string } };
 
   const stranger = await signUp(uniqueEmail());
-  const strangerOrg = await auth.api.createOrganization({
+  const strangerOrg = await authFor(db).api.createOrganization({
     body: { name: "Stranger Org", slug: uniqueSlug() },
     headers: { cookie: stranger.cookie },
   });
   expect(strangerOrg.id).not.toBe("");
 
-  const res = await app.request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/widgets/${placed.id}/data`, {
     headers: { cookie: stranger.cookie },
   });
   expect(res.status).toBe(404);
@@ -271,7 +263,7 @@ it("deletes the charts that read a saved query when it goes", async () => {
     valueColumn: "events",
   });
 
-  const res = await app.request(`/api/saved-queries/${savedQueryId}`, {
+  const res = await request(`/api/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });

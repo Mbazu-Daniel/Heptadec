@@ -188,7 +188,7 @@ export function WorkspaceFooter({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-6 py-2.5 text-[10px] text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-6 py-2.5 text-[11px] text-muted-foreground">
       <div className="flex flex-wrap items-center gap-4">{legend}</div>
       {trailing ? <div className="ml-auto tabular-nums">{trailing}</div> : null}
     </div>

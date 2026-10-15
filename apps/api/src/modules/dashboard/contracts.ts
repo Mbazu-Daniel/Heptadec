@@ -1,3 +1,5 @@
+import type { DataSourceKind } from "../data-source/contracts";
+
 export type ChartType = "bar" | "line" | "pie";
 
 export interface IDashboard {
@@ -10,7 +12,11 @@ export interface IDashboard {
 export interface IDashboardSource {
   dataSourceId: string;
   name: string;
-  kind: string;
+  kind: DataSourceKind;
+  /** Whether the app's tooling covers this source, which is what a dashboard
+   * needs to be described from. Said here by the server rather than worked out
+   * by the client from the kind, which is how the offer and the gate drift. */
+  tooling: boolean;
 }
 
 export interface IWidget {

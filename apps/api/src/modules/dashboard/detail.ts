@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { db, schema } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import { BadRequestException, NotFoundException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";
+import { canUseTooling, kindOf } from "../data-source/contracts";
 import type {
   ChartType,
   IDashboard,
@@ -41,7 +42,7 @@ export async function readDashboardSources(
   dashboardId: string,
   organization: IOrganizationScope,
 ): Promise<IDashboardSource[]> {
-  return db
+  const rows = await organization.db
     .select({
       dataSourceId: dataSource.id,
       name: dataSource.name,
@@ -57,13 +58,22 @@ export async function readDashboardSources(
       ),
     )
     .orderBy(dataSource.name);
+
+  // The rows carry an engine as text; each is asked what it can be used for, so
+  // the dashboard's own sources are typed and carry the answer with them.
+  return rows.map((row) => ({
+    dataSourceId: row.dataSourceId,
+    name: row.name,
+    kind: kindOf(row),
+    tooling: canUseTooling(row),
+  }));
 }
 
 export async function readWidgets(
   dashboardId: string,
   organization: IOrganizationScope,
 ): Promise<IWidget[]> {
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(widget)
     .where(
@@ -96,7 +106,7 @@ export async function ownSources(
     throw new BadRequestException("Connect at least one data source");
   }
 
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(dataSource)
     .where(
@@ -119,7 +129,7 @@ export async function replaceDashboardSources(
 ): Promise<void> {
   const sources = await ownSources(dataSourceIds, organization);
 
-  await db
+  await organization.db
     .delete(dashboardDataSource)
     .where(
       and(
@@ -129,7 +139,7 @@ export async function replaceDashboardSources(
     );
 
   const now = new Date();
-  await db.insert(dashboardDataSource).values(
+  await organization.db.insert(dashboardDataSource).values(
     sources.map((source) => ({
       organizationId: organization.organizationId,
       dashboardId,

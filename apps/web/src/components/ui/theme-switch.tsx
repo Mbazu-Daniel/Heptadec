@@ -80,7 +80,7 @@ export function ThemeSwitch({
             />
             <span
               aria-hidden="true"
-              className="grid size-4 place-items-center rounded-full border border-dashed border-muted-foreground text-[10px] leading-none text-muted-foreground"
+              className="grid size-4 place-items-center rounded-full border border-dashed border-muted-foreground text-[11px] leading-none text-muted-foreground"
               style={
                 accent !== null && !PRESETS.includes(accent)
                   ? {

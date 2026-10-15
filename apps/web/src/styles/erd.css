@@ -1,45 +1,41 @@
-/* The entity diagram. React Flow's own stylesheet is imported by the canvas;
-   everything here is the look the diagram is meant to have. */
-
 .erd {
-  --erd-card: #0b1119;
-  --erd-header: #0e1620;
-  --erd-pane: #05080c;
-  --erd-border: #1b2430;
-  --erd-dot: #22303f;
-  --erd-accent: var(--accent-override, #22d3ee);
-  --erd-text: #e9f2f6;
-  --erd-subtle: #93a3b0;
-  --erd-dim: #6b7a88;
-  --erd-edge: #3a4a5c;
-  --erd-labelbg: #0b1119;
-  --erd-row-hover: rgb(233 242 246 / 0.04);
-  --erd-control-hover: rgb(233 242 246 / 0.08);
-  --erd-minimap-node: #1b2430;
-  --erd-mask: rgb(5 8 12 / 0.7);
-  --erd-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+  --erd-card: #0a0a0a;
+  --erd-header: #141414;
+  --erd-pane: #000000;
+  --erd-border: #2e2e2e;
+  --erd-dot: #333333;
+  --erd-accent: var(--cyan);
+  --erd-text: #ffffff;
+  --erd-subtle: #a3a3a3;
+  --erd-dim: #737373;
+  --erd-edge: #4d4d4d;
+  --erd-labelbg: #0a0a0a;
+  --erd-row-hover: rgb(255 255 255 / 0.05);
+  --erd-control-hover: rgb(255 255 255 / 0.09);
+  --erd-minimap-node: #2e2e2e;
+  --erd-mask: rgb(0 0 0 / 0.7);
+  --erd-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
 }
 
 html[data-theme="light"] .erd {
   --erd-card: #ffffff;
-  --erd-header: #f2f5f7;
-  --erd-pane: #e8edf1;
-  --erd-border: #d5dde4;
-  --erd-dot: #b9c6d1;
-  --erd-accent: var(--accent-override, #0e7490);
-  --erd-text: #0c1520;
-  --erd-subtle: #5b6b78;
-  --erd-dim: #8296a3;
-  --erd-edge: #8fa2b0;
+  --erd-header: #f5f5f5;
+  --erd-pane: #fafafa;
+  --erd-border: #d4d4d4;
+  --erd-dot: #b3b3b3;
+  --erd-accent: var(--cyan);
+  --erd-text: #000000;
+  --erd-subtle: #525252;
+  --erd-dim: #737373;
+  --erd-edge: #8a8a8a;
   --erd-labelbg: #ffffff;
-  --erd-row-hover: rgb(12 21 32 / 0.05);
-  --erd-control-hover: rgb(12 21 32 / 0.07);
-  --erd-minimap-node: #c9d4dc;
+  --erd-row-hover: rgb(0 0 0 / 0.05);
+  --erd-control-hover: rgb(0 0 0 / 0.07);
+  --erd-minimap-node: #d4d4d4;
   --erd-mask: rgb(255 255 255 / 0.7);
-  --erd-shadow: 0 4px 16px rgb(12 21 32 / 0.12);
+  --erd-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
 }
 
-/* The canvas sits on a fine dot grid so the cards read as movable objects. */
 .erd .react-flow__renderer,
 .erd .react-flow__pane {
   background-color: var(--erd-pane);
@@ -95,13 +91,13 @@ html[data-theme="light"] .erd {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .erd-card__count {
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--erd-subtle);
 }
 
@@ -114,7 +110,7 @@ html[data-theme="light"] .erd {
 
 .erd-card__tab {
   padding: 0 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--erd-subtle);
   border-bottom: 2px solid transparent;
   cursor: pointer;
@@ -136,16 +132,13 @@ html[data-theme="light"] .erd {
   gap: 8px;
   height: 26px;
   padding: 0 12px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .erd-card__column:hover {
   background: var(--erd-row-hover);
 }
 
-/* A selected card shows every column in the same fixed-height space the
-   layout reserved, scrolling inside it — the card never grows, moves, or
-   overlaps its neighbours. */
 .erd-card__columns {
   overflow: hidden;
 }
@@ -172,7 +165,7 @@ html[data-theme="light"] .erd {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--erd-subtle);
 }
 
@@ -180,7 +173,7 @@ html[data-theme="light"] .erd {
   height: 26px;
   padding: 6px 12px 0;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--erd-subtle);
 }
 
@@ -194,7 +187,7 @@ html[data-theme="light"] .erd {
   white-space: nowrap;
   text-align: left;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--erd-subtle);
   background: none;
   border: 0;
@@ -207,11 +200,10 @@ html[data-theme="light"] .erd {
 }
 
 .erd-card__dependency[data-active="true"] {
-  background: rgb(34 211 238 / 0.12);
+  background: color-mix(in srgb, var(--erd-accent) 14%, transparent);
   color: var(--erd-accent);
 }
 
-/* A foreign-key line is a plain hairline; the label is what says what it joins. */
 .erd .react-flow__edge-path {
   stroke: var(--erd-edge);
   stroke-width: 1.5;
@@ -225,7 +217,7 @@ html[data-theme="light"] .erd {
 .erd .react-flow__edge-text {
   fill: var(--erd-subtle);
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .erd .react-flow__edge-textbg {
@@ -251,9 +243,6 @@ html[data-theme="light"] .erd {
   overflow: hidden;
 }
 
-/* The pill sits bottom-left and the minimap bottom-right. That clears on a wide
-   window and collides on a narrow one, so the minimap is the one that goes:
-   the viewport controls are the only way to get around a wide schema. */
 @media (max-width: 1100px) {
   .erd .react-flow__minimap {
     display: none;
@@ -280,12 +269,10 @@ html[data-theme="light"] .erd {
   width: auto;
   padding: 0 8px;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--erd-subtle);
 }
 
-/* The canvas owns its box: the header, tabs, and footer above and below it
-   stay put while the diagram pans inside. */
 .erd-canvas .react-flow {
   width: 100%;
   height: 100%;
@@ -314,15 +301,13 @@ html[data-theme="light"] .erd {
   stroke: var(--erd-edge);
 }
 
-/* The left-hand structure tree. Children hang off a guide line so the nesting
-   is readable without an indent ruler per row. */
 .erd-tree__row {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--erd-text);
   cursor: pointer;
   user-select: none;
@@ -333,7 +318,7 @@ html[data-theme="light"] .erd {
 }
 
 .erd-tree__row[data-selected="true"] {
-  background: rgb(34 211 238 / 0.12);
+  background: color-mix(in srgb, var(--erd-accent) 14%, transparent);
   color: var(--erd-accent);
 }
 
@@ -359,14 +344,14 @@ html[data-theme="light"] .erd {
 .erd-tree__type {
   flex: none;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--erd-subtle);
 }
 
 .erd-tree__group {
   padding: 6px 8px 2px;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--erd-dim);

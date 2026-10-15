@@ -1,15 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { expect, it } from "vitest";
-import { auth } from "../src/common/config/better-auth";
-import { app, signUp, uniqueEmail, uniqueSlug } from "./helpers";
-
-const TEST_POSTGRES = {
-  host: "127.0.0.1",
-  port: 5434,
-  user: "heptadec",
-  password: "heptadec",
-  database: "heptadec_test",
-};
+import { authFor } from "../src/common/config/better-auth";
+import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const WRITE_SQL =
   "DELETE FROM events WHERE region = 'eu'";
@@ -66,11 +58,11 @@ it("hands back a draft for review and never runs it", async () => {
   const provider = await startProvider();
   try {
     const { cookie } = await signUp(uniqueEmail());
-    await auth.api.createOrganization({
+    await authFor(db).api.createOrganization({
       body: { name: "Ask Org", slug: uniqueSlug() },
       headers: { cookie },
     });
-    const source = await app.request("/api/data-sources", {
+    const source = await request("/api/data-sources", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -87,7 +79,7 @@ it("hands back a draft for review and never runs it", async () => {
     const sourceId = ((await source.json()) as { dataSource: { id: string } })
       .dataSource.id;
 
-    await app.request("/api/ai/providers", {
+    await request("/api/ai/providers", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -99,7 +91,7 @@ it("hands back a draft for review and never runs it", async () => {
       }),
     });
 
-    const asked = await app.request("/api/ai/ask", {
+    const asked = await request("/api/ai/ask", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -135,11 +127,11 @@ it("refuses the draft when the user does run it against a read-only source", asy
   const provider = await startProvider();
   try {
     const { cookie } = await signUp(uniqueEmail());
-    await auth.api.createOrganization({
+    await authFor(db).api.createOrganization({
       body: { name: "Ask Org 2", slug: uniqueSlug() },
       headers: { cookie },
     });
-    const source = await app.request("/api/data-sources", {
+    const source = await request("/api/data-sources", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -156,7 +148,7 @@ it("refuses the draft when the user does run it against a read-only source", asy
     const sourceId = ((await source.json()) as { dataSource: { id: string } })
       .dataSource.id;
 
-    const ran = await app.request(`/api/data-sources/${sourceId}/query`, {
+    const ran = await request(`/api/data-sources/${sourceId}/query`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ sql: WRITE_SQL }),

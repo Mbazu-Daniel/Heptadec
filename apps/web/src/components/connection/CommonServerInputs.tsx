@@ -7,21 +7,32 @@ import { maybeFieldOf, type IBlockProps } from "./fields";
 
 export function CommonServerInputs({
   kind,
+  mode,
   values,
   onChange,
   children,
 }: IBlockProps & { children?: React.ReactNode }) {
   const host = maybeFieldOf(kind, "host");
   const port = maybeFieldOf(kind, "port");
+  const socketPath = maybeFieldOf(kind, "socketPath");
   const username = maybeFieldOf(kind, "username");
   const password = maybeFieldOf(kind, "password");
   const database = maybeFieldOf(kind, "database");
 
   const value = (field: ConnectionFieldKind): string => values[field] ?? "";
 
+  // A socket has no host to reach, so the two are never shown together.
+  const viaSocket = mode === "socket" && socketPath !== null;
+
   return (
     <div className="grid gap-3">
-      {host !== null && port !== null ? (
+      {viaSocket ? (
+        <FieldInput
+          field={socketPath}
+          value={value("socketPath")}
+          onChange={(next) => onChange("socketPath", next)}
+        />
+      ) : host !== null && port !== null ? (
         <div className="grid grid-cols-[3fr_1fr] gap-3">
           <FieldInput
             field={host}

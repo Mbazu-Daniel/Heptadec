@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { db, schema } from "@heptadec/db";
-import { PASSWORD, UUID, app, signUp, uniqueEmail } from "./helpers";
+import { schema } from "@heptadec/db";
+import { PASSWORD, UUID, request, signUp, uniqueEmail, db } from "./helpers";
 
 const { user, account, session } = schema;
 
@@ -23,7 +23,7 @@ it("stores the user, the hashed credential, and the session in the database", as
     .from(account)
     .where(eq(account.userId, created.id));
   expect(accounts).toHaveLength(1);
-  expect(accounts[0]!.password).toMatch(/^\$argon2id\$/);
+  expect(accounts[0]!.password).toMatch(/^\$pbkdf2-sha256\$/);
   expect(accounts[0]!.password).not.toContain(PASSWORD);
 
   const sessions = await db
@@ -39,7 +39,7 @@ it("flips onboarding_completed in the database when onboarding finishes", async 
   const before = await db.select().from(user).where(eq(user.id, created.id));
   expect(before[0]!.onboardingCompleted).toBe(false);
 
-  const res = await app.request("/api/onboarding/complete", {
+  const res = await request("/api/onboarding/complete", {
     method: "POST",
     headers: { cookie },
   });
@@ -52,7 +52,7 @@ it("flips onboarding_completed in the database when onboarding finishes", async 
 it("reports the profile fields the settings page needs", async () => {
   const { user: created, cookie } = await signUp(uniqueEmail());
 
-  const before = await app.request("/api/me", { headers: { cookie } });
+  const before = await request("/api/me", { headers: { cookie } });
   expect((await before.json()) as unknown).toMatchObject({
     user: {
       id: created.id,
@@ -65,7 +65,7 @@ it("reports the profile fields the settings page needs", async () => {
     .delete(account)
     .where(and(eq(account.userId, created.id), eq(account.providerId, "credential")));
 
-  const after = await app.request("/api/me", { headers: { cookie } });
+  const after = await request("/api/me", { headers: { cookie } });
   expect(((await after.json()) as { user: { hasPassword: boolean } }).user.hasPassword).toBe(false);
 });
 
@@ -73,7 +73,7 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
   const { user: created, cookie } = await signUp(uniqueEmail());
   const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
 
-  const saved = await app.request("/api/auth/update-user", {
+  const saved = await request("/api/auth/update-user", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: picture }),
@@ -83,6 +83,6 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
   const rows = await db.select().from(user).where(eq(user.id, created.id));
   expect(rows[0]!.image).toBe(picture);
 
-  const me = await app.request("/api/me", { headers: { cookie } });
+  const me = await request("/api/me", { headers: { cookie } });
   expect(((await me.json()) as { user: { image: string } }).user.image).toBe(picture);
 });

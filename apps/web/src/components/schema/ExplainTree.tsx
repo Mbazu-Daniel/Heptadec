@@ -16,7 +16,7 @@ export function ExplainTree({ plan }: { plan: IExplainNode }) {
           Estimated work: {plan.totalCost.toFixed(2)}.
         </p>
         {scan === null ? null : (
-          <p className="text-[11px] leading-4 text-muted-foreground">
+          <p className="text-[12px] leading-4 text-muted-foreground">
             No index is used on {scan.relationName ?? "one table"}, so this
             reads every row of it. That is fine on a small table and gets
             slower as it grows — an index, or a narrower WHERE clause,
@@ -33,18 +33,18 @@ function rows(node: IExplainNode, depth: number, path: string): ReactNode[] {
   const words = describeNode(node);
   return [
     <div key={path} className="flex flex-wrap items-baseline gap-x-2">
-      <span style={{ paddingLeft: depth * 14 }} className="font-mono text-[11px]">
+      <span style={{ paddingLeft: depth * 14 }} className="font-mono text-[12px]">
         <span className="text-fg">{node.nodeType}</span>
         {node.relationName === null ? null : (
           <span className="text-cyan"> on {node.relationName}</span>
         )}
       </span>
       {words === null ? null : (
-        <span className="text-[11px] leading-4 text-muted-foreground">
+        <span className="text-[12px] leading-4 text-muted-foreground">
           {words}
         </span>
       )}
-      <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
+      <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
         cost {node.totalCost.toFixed(2)}
       </span>
     </div>,

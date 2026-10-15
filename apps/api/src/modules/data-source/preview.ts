@@ -1,17 +1,30 @@
-import { createConnection } from "mysql2/promise";
-import { createClient as createRedisClient } from "redis";
-import { createClient as createClickhouseClient } from "@clickhouse/client";
-import { createClient as createLibsqlClient } from "@libsql/client";
-import { DatabaseSync } from "node:sqlite";
 import {
   asRelational,
   databaseName,
-  endpointAddress,
-  tcpAddress,
   type IStoredConnection,
 } from "./connection";
-import { jsonValue } from "../../common/http/json-value";
-import { postgresClient } from "./postgres-client";
+import {
+  quickwitIndexes,
+  quickwitSearch,
+} from "./quickwit-client";
+import {
+  MAX_SCAN_KEYS,
+  MAX_VALUE_CHARS,
+  SAFE_IDENTIFIER,
+  STATEMENT_TIMEOUT_MS,
+  assertIdentifier,
+  clickhouseClient,
+  libsqlClientFor,
+  openMongo,
+  openMysql,
+  quoteMysql,
+  quotePostgres,
+  redisClient,
+  toRows,
+} from "./clients";
+import {
+  postgresClient,
+} from "./postgres-client";
 import type { DataSourceKind } from "./contracts";
 import type { IPreviewObject, IPreviewResponse } from "./contracts";
 
@@ -19,35 +32,7 @@ export const PREVIEW_DEFAULT_LIMIT = 50;
 
 export const PREVIEW_MAX_LIMIT = 100;
 
-const STATEMENT_TIMEOUT_MS = 15000;
-
 const MAX_LIMIT = 100;
-
-const MAX_SCAN_KEYS = 500;
-
-const MAX_VALUE_CHARS = 100_000;
-
-const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function assertIdentifier(value: string): void {
-  if (!SAFE_IDENTIFIER.test(value)) {
-    throw new Error(`Rejected identifier: ${value}`);
-  }
-}
-
-function quotePostgres(value: string): string {
-  assertIdentifier(value);
-  return `"${value}"`;
-}
-
-function quoteMysql(value: string): string {
-  assertIdentifier(value);
-  return `\`${value}\``;
-}
-
-function toRows(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return rows.map((row) => jsonValue(row) as Record<string, unknown>);
-}
 
 async function listPostgresTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
   const client = postgresClient(asRelational(connection, true), "heptadec-preview");
@@ -89,31 +74,8 @@ async function previewPostgresTable(
   }
 }
 
-function mysqlOptions(connection: IStoredConnection) {
-  const address =
-    connection.socketPath === null
-      ? tcpAddress(connection)
-      : { socketPath: connection.socketPath };
-  return {
-    ...address,
-    database: databaseName(connection),
-    user: connection.username ?? "",
-    password: connection.password ?? undefined,
-    ...(connection.clientCert === null
-      ? {}
-      : {
-          ssl: {
-            ca: connection.caCert ?? undefined,
-            cert: connection.clientCert,
-            key: connection.clientKey ?? undefined,
-          },
-        }),
-    connectTimeout: STATEMENT_TIMEOUT_MS,
-  };
-}
-
 async function listMysqlTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
-  const client = await createConnection(mysqlOptions(connection));
+  const client = await openMysql(connection);
   try {
     const [rows] = await client.query(
       "SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
@@ -132,7 +94,7 @@ async function previewMysqlTable(
   table: string,
   limit: number,
 ): Promise<IPreviewResponse> {
-  const client = await createConnection(mysqlOptions(connection));
+  const client = await openMysql(connection);
   try {
     const [rows] = await client.query(
       `SELECT * FROM ${quoteMysql(table)} LIMIT ${limit}`,
@@ -149,18 +111,17 @@ async function previewMysqlTable(
 }
 
 async function listSqliteTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
-  const database = new DatabaseSync(databaseName(connection), { readOnly: true });
+  const client = libsqlClientFor(connection);
   try {
-    const rows = database
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all() as Array<{ name: string }>;
-    return rows
-      .filter((row) => SAFE_IDENTIFIER.test(row.name))
-      .map((row) => ({ name: row.name, type: "table" }));
+    const result = await client.execute(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    );
+    return result.rows
+      .map((row) => String((row as Record<string, unknown>).name ?? ""))
+      .filter((name) => SAFE_IDENTIFIER.test(name))
+      .map((name) => ({ name, type: "table" as const }));
   } finally {
-    database.close();
+    client.close();
   }
 }
 
@@ -170,25 +131,25 @@ async function previewSqliteTable(
   limit: number,
 ): Promise<IPreviewResponse> {
   assertIdentifier(table);
-  const database = new DatabaseSync(databaseName(connection), { readOnly: true });
+  const client = libsqlClientFor(connection);
   try {
-    const rows = toRows(
-      database
-        .prepare(`SELECT * FROM "${table}" LIMIT ?`)
-        .all(limit) as Array<Record<string, unknown>>,
-    );
+    const result = await client.execute({
+      sql: `SELECT * FROM "${table}" LIMIT ?`,
+      args: [limit],
+    });
+    const rows = toRows(result.rows as Array<Record<string, unknown>>);
     return {
-      columns: rows.length > 0 ? Object.keys(rows[0]!) : [],
+      columns: result.columns,
       rows,
       truncated: rows.length >= limit,
     };
   } finally {
-    database.close();
+    client.close();
   }
 }
 
 async function listLibsqlTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
-  const client = createLibsqlClient(libsqlOptions(connection));
+  const client = libsqlClientFor(connection);
   try {
     const result = await client.execute(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -208,7 +169,7 @@ async function previewLibsqlTable(
   limit: number,
 ): Promise<IPreviewResponse> {
   assertIdentifier(table);
-  const client = createLibsqlClient(libsqlOptions(connection));
+  const client = libsqlClientFor(connection);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const run = client.execute({
@@ -231,44 +192,6 @@ async function previewLibsqlTable(
     }
     client.close();
   }
-}
-
-function libsqlOptions(connection: IStoredConnection) {
-  const { url, token } = endpointAddress(connection);
-  return { url, ...(token === null ? {} : { authToken: token }) };
-}
-
-function clickhouseTls(connection: IStoredConnection): {
-  ca_cert: Buffer;
-  cert?: Buffer;
-  key?: Buffer;
-} {
-  return {
-    ca_cert: Buffer.from(connection.caCert ?? ""),
-    ...(connection.clientCert === null || connection.clientKey === null
-      ? {}
-      : {
-          cert: Buffer.from(connection.clientCert),
-          key: Buffer.from(connection.clientKey),
-        }),
-  };
-}
-
-function clickhouseClient(connection: IStoredConnection, limit: number) {
-  const overTls = connection.connectionMode === "tls";
-  const address = tcpAddress(connection);
-  return createClickhouseClient({
-    url: `${overTls ? "https" : "http"}://${address.host}:${address.port}`,
-    username: connection.username ?? undefined,
-    password: connection.password ?? undefined,
-    database: connection.database ?? undefined,
-    ...(overTls ? { tls: clickhouseTls(connection) } : {}),
-    clickhouse_settings: {
-      readonly: "1",
-      max_execution_time: Math.ceil(STATEMENT_TIMEOUT_MS / 1000),
-      max_result_rows: String(limit),
-    },
-  });
 }
 
 async function listClickhouseTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
@@ -394,33 +317,9 @@ async function previewRedisKey(
   }
 }
 
-async function redisClient(connection: IStoredConnection) {
-  const { host, port } = tcpAddress(connection);
-  const username = connection.username;
-  const auth = connection.password
-    ? `${username ? encodeURIComponent(username) : ""}:${encodeURIComponent(connection.password)}@`
-    : username
-      ? `${encodeURIComponent(username)}@`
-      : "";
-  const scheme = connection.connectionMode === "tls" ? "rediss" : "redis";
-  const database =
-    connection.database === null || connection.database === ""
-      ? ""
-      : `/${encodeURIComponent(connection.database)}`;
-  const client = createRedisClient({
-    url: `${scheme}://${auth}${host}:${port}${database}`,
-    socket: { connectTimeout: STATEMENT_TIMEOUT_MS },
-  });
-  await client.connect();
-  return client;
-}
-
 async function listQuickwitIndexes(connection: IStoredConnection): Promise<IPreviewObject[]> {
-  const { url, token } = endpointAddress(connection);
-  const indexes = (await quickwitFetch(url, token, "/api/v1/indexes")) as Array<{
-    index_config: { index_id: string };
-  }>;
-  return indexes.map((index) => ({ name: index.index_config.index_id, type: "index" as const }));
+  const indexes = await quickwitIndexes(connection);
+  return indexes.map((name) => ({ name, type: "index" as const }));
 }
 
 async function previewQuickwitIndex(
@@ -429,38 +328,50 @@ async function previewQuickwitIndex(
   query: string,
   limit: number,
 ): Promise<IPreviewResponse> {
-  const { url, token } = endpointAddress(connection);
-  const body = (await quickwitFetch(url, token, `/api/v1/${encodeURIComponent(index)}/search`, {
-    method: "POST",
-    body: JSON.stringify({ query, max_hits: limit }),
-  })) as { hits: Array<{ _source: Record<string, unknown> }> };
-  const rows = toRows(body.hits.map((hit) => hit._source));
+  const search = await quickwitSearch(connection, index, query, limit);
+  const rows = toRows(search.documents);
   const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
-  return { columns, rows, truncated: rows.length >= limit };
+  return { columns, rows, truncated: search.truncated };
 }
 
-async function quickwitFetch(
-  endpoint: string,
-  token: string | null,
-  path: string,
-  init?: RequestInit,
-): Promise<unknown> {
-  const headers = new Headers(init?.headers);
-  if (!headers.has("content-type")) {
-    headers.set("content-type", "application/json");
+
+async function listMongoCollections(
+  connection: IStoredConnection,
+): Promise<IPreviewObject[]> {
+  const client = openMongo(connection);
+  try {
+    const found = await client
+      .db(databaseName(connection))
+      .listCollections(undefined, { nameOnly: true })
+      .toArray();
+    return found
+      .map((entry) => entry.name)
+      .filter((name) => name.length > 0 && !name.startsWith("system."))
+      .sort()
+      .map((name) => ({ name, type: "collection" as const }));
+  } finally {
+    await client.close().catch(() => undefined);
   }
-  if (token !== null) {
-    headers.set("authorization", `Bearer ${token}`);
+}
+
+async function previewMongoCollection(
+  connection: IStoredConnection,
+  name: string,
+  limit: number,
+): Promise<IPreviewResponse> {
+  const client = openMongo(connection);
+  try {
+    const documents = await client
+      .db(databaseName(connection))
+      .collection(name)
+      .find({}, { limit: limit + 1 })
+      .toArray();
+    const rows = toRows(documents.slice(0, limit).map((document) => document as Record<string, unknown>));
+    const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    return { columns, rows, truncated: documents.length > limit };
+  } finally {
+    await client.close().catch(() => undefined);
   }
-  const response = await fetch(`${endpoint.replace(/\/$/, "")}${path}`, {
-    ...init,
-    headers,
-    signal: AbortSignal.timeout(STATEMENT_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`Quickwit answered ${response.status}`);
-  }
-  return (await response.json()) as unknown;
 }
 
 interface IBrowser {
@@ -488,6 +399,7 @@ const BROWSERS: Record<DataSourceKind, IBrowser> = {
   sqlite: { list: listSqliteTables, preview: named(previewSqliteTable) },
   libsql: { list: listLibsqlTables, preview: named(previewLibsqlTable) },
   clickhouse: { list: listClickhouseTables, preview: named(previewClickhouseTable) },
+  mongodb: { list: listMongoCollections, preview: named(previewMongoCollection) },
   redis: { list: listRedisKeys, preview: named(previewRedisKey) },
   quickwit: {
     list: listQuickwitIndexes,

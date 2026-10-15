@@ -138,6 +138,34 @@ ensure_secret() {
 ensure_secret BETTER_AUTH_SECRET "${BETTER_AUTH_SECRET:-$(random_secret)}"
 ensure_secret HEPTADEC_SECRET_KEY "${HEPTADEC_SECRET_KEY:-$(random_secret)}"
 
+# The R2 access key signs an upload for the browser to PUT straight to the
+# bucket. Without it the deployment serves images but cannot replace them, so
+# this is part of provisioning rather than an optional extra.
+if [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
+  ensure_secret R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+  ensure_secret R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+  if [ -n "${R2_SESSION_TOKEN:-}" ]; then
+    ensure_secret R2_SESSION_TOKEN "$R2_SESSION_TOKEN"
+  fi
+else
+  echo "R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not set:"
+  echo "  uploads will report image storage as unconfigured (reads still work)"
+  echo "  create a key at Cloudflare -> R2 -> Manage R2 -> API Tokens, then:"
+  echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
+fi
+
+# Images are read from the bucket's public URL, which is a property of the bucket
+# and not of this deployment, so it is checked rather than configured here.
+public_id="$(grep -oE '"R2PublicId"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
+if [ -n "$public_id" ] && [ "$public_id" != "PASTE_YOUR_R2_PUBLIC_ID_HERE" ]; then
+  echo "Reading images from https://pub-$public_id.r2.dev"
+  echo "  if avatars 404, public access is off on the bucket:"
+  echo "      cf r2 buckets domains managed update $BUCKET_NAME --enabled true"
+else
+  echo "R2PublicId not set: images will be proxied through the API instead,"
+  echo "  which works but costs a request per image."
+fi
+
 say "6/7 Applying database migrations"
 "${WRANGLER[@]}" d1 migrations apply "$D1_NAME" --remote
 

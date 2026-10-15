@@ -5,7 +5,7 @@ import { authClient } from "../auth";
 import {
   deleteOrganization,
   messageFor,
-  uploadOrganizationLogo,
+  uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
 import { Avatar } from "./ui/feedback";
@@ -29,7 +29,7 @@ export function OrganizationSettings({
   const isOwner = membership.role === "owner";
   const [name, setName] = useState(membership.organization.name);
   const [slug, setSlug] = useState(membership.organization.slug);
-  const [logo, setLogo] = useState<string | null>(membership.organization.logo);
+  const [logo, setLogo] = useState<string | null>(membership.organization.logoUrl);
   const [erasing, setErasing] = useState(false);
   const [typedSlug, setTypedSlug] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -42,8 +42,12 @@ export function OrganizationSettings({
   useEffect(() => {
     setName(membership.organization.name);
     setSlug(membership.organization.slug);
-    setLogo(membership.organization.logo);
-  }, [membership.organization.name, membership.organization.slug, membership.organization.logo]);
+    setLogo(membership.organization.logoUrl);
+  }, [
+    membership.organization.name,
+    membership.organization.slug,
+    membership.organization.logoUrl,
+  ]);
 
   function start(): void {
     setBusy(true);
@@ -59,7 +63,7 @@ export function OrganizationSettings({
         setError("Pick an image under 8 MB.");
         return;
       }
-      const { path } = await uploadOrganizationLogo(picture);
+      const path = await uploadImage("logo", picture);
       const result = await authClient.organization.update({
         data: { logo: path },
       });

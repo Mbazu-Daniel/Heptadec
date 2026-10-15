@@ -258,6 +258,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                         >
                           <Avatar
                             name={member.displayName ?? member.name}
+                            image={member.image}
                             className="size-5 text-[11px]"
                           />
                           <span className="truncate">

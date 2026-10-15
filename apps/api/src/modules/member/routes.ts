@@ -10,11 +10,12 @@ import { activeOrganization } from "../../common/session/current-organization";
 import {
   BadRequestException,
   ForbiddenException,
-  NotFoundException,
 } from "../../common/exceptions";
 import { authFor } from "../../common/config/better-auth";
-import { isRole, type Role } from "../rbac/permissions";
+import { isRole } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
+import { avatarKeyPrefixFor } from "../images/contracts";
+import { mediaUrl, publicBaseFrom } from "../images/urls";
 import { can } from "../rbac/authorize";
 import { recordAudit, auditActor } from "../audit";
 import type { IMemberProfileResponse, IMembersResponse } from "./contracts";
@@ -29,10 +30,12 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/member", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const rows = await organization.db
       .select({
         displayName: member.displayName,
+        image: member.image,
         role: member.role,
       })
       .from(member)
@@ -50,6 +53,7 @@ export function memberRoutes(): Hono<IAuthVars> {
 
     const body: IMemberProfileResponse = {
       displayName: rows[0]!.displayName ?? null,
+      image: mediaUrl(rows[0]!.image, base),
       role: roleOf(rows[0]!.role),
       organizationId: organization.organizationId,
     };
@@ -59,6 +63,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.patch("/api/organization/member", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const payload = readBody(await c.req.json(), "A display name is required");
     const raw = payload.displayName;
@@ -80,7 +85,11 @@ export function memberRoutes(): Hono<IAuthVars> {
           organization.where(member.organizationId),
         ),
       )
-      .returning({ displayName: member.displayName, role: member.role });
+      .returning({
+        displayName: member.displayName,
+        image: member.image,
+        role: member.role,
+      });
 
     if (updated.length === 0) {
       throw new ForbiddenException("You are not a member of that organization");
@@ -88,6 +97,56 @@ export function memberRoutes(): Hono<IAuthVars> {
 
     const body: IMemberProfileResponse = {
       displayName: updated[0]!.displayName ?? null,
+      image: mediaUrl(updated[0]!.image, base),
+      role: roleOf(updated[0]!.role),
+      organizationId: organization.organizationId,
+    };
+    return c.json(body);
+  });
+
+  routes.patch("/api/organization/member/image", requireSession, async (c) => {
+    const session = c.get("session")!;
+    const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
+
+    const payload = readBody(await c.req.json(), "That image could not be saved");
+    const raw = payload.image;
+    if (raw !== null && typeof raw !== "string") {
+      throw new BadRequestException("The image must be text or nothing");
+    }
+    const image = raw === null || raw === "" ? null : raw;
+    if (
+      image !== null &&
+      !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
+    ) {
+      // Not an empty-fallback guard but a real one: the only writer of this
+      // column is the upload flow, and an arbitrary URL here would be an image
+      // this server never checked the type of.
+      throw new BadRequestException("That image did not come from this organization");
+    }
+
+    const updated = await organization.db
+      .update(member)
+      .set({ image })
+      .where(
+        and(
+          eq(member.userId, session.user.id),
+          organization.where(member.organizationId),
+        ),
+      )
+      .returning({
+        displayName: member.displayName,
+        image: member.image,
+        role: member.role,
+      });
+
+    if (updated.length === 0) {
+      throw new ForbiddenException("You are not a member of that organization");
+    }
+
+    const body: IMemberProfileResponse = {
+      displayName: updated[0]!.displayName ?? null,
+      image: mediaUrl(updated[0]!.image, base),
       role: roleOf(updated[0]!.role),
       organizationId: organization.organizationId,
     };
@@ -97,6 +156,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/members", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const rows = await organization.db
       .select({
@@ -105,6 +165,7 @@ export function memberRoutes(): Hono<IAuthVars> {
         name: user.name,
         email: user.email,
         displayName: member.displayName,
+        image: member.image,
         role: member.role,
       })
       .from(member)
@@ -119,6 +180,7 @@ export function memberRoutes(): Hono<IAuthVars> {
         name: row.name,
         email: row.email,
         displayName: row.displayName,
+        image: mediaUrl(row.image, base),
         role: roleOf(row.role),
         isYou: row.userId === session.user.id,
       })),

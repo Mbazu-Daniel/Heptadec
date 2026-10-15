@@ -2,32 +2,31 @@ const AVATAR_PIXELS = 128;
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-export async function readAvatar(file: File): Promise<string | null> {
+/**
+ * The chosen file, cropped square and shrunk to 128 pixels, as the bytes to
+ * upload.
+ *
+ * A Blob, not a data URL. A data URL base64-encodes the file, which is a third
+ * larger, and then the upload encodes it again in JSON and the API decodes it —
+ * so the same pixels travel as text three times over and the Worker holds all
+ * of them in memory. Returning bytes lets the browser PUT them straight to the
+ * bucket.
+ */
+export async function readAvatar(file: File): Promise<Blob | null> {
   if (file.size > MAX_IMAGE_BYTES || !file.type.startsWith("image/")) {
     return null;
   }
 
-  const read = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("unreadable"));
-    reader.readAsDataURL(file);
-  });
-
-  const picture = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const loaded = new Image();
-    loaded.onload = () => resolve(loaded);
-    loaded.onerror = () => reject(new Error("unreadable"));
-    loaded.src = read;
-  });
-
+  const picture = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
   canvas.width = AVATAR_PIXELS;
   canvas.height = AVATAR_PIXELS;
   const context = canvas.getContext("2d");
   if (context === null) {
-    return read;
+    picture.close();
+    return null;
   }
+
   const side = Math.min(picture.width, picture.height);
   context.drawImage(
     picture,
@@ -40,5 +39,8 @@ export async function readAvatar(file: File): Promise<string | null> {
     AVATAR_PIXELS,
     AVATAR_PIXELS,
   );
-  return canvas.toDataURL("image/png");
+  picture.close();
+  return await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/png"),
+  );
 }

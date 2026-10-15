@@ -2,6 +2,9 @@
   "name": "heptadec",
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-10",
+  // The AWS SDK imports node:http for its request handler. Presigning never
+  // sends a request, but the import has to resolve in the Worker bundle.
+  "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }
@@ -29,6 +32,13 @@
     "crons": ["* * * * *"]
   },
   "vars": {
+    "R2BucketName": "heptadec-images",
+    // The bucket's managed public URL. Its subdomain is the bucket id, and
+    // public access has to be switched on for the bucket in the dashboard (or
+    // `cf r2 buckets domains managed update <bucket> --enabled true`).
+    "R2PublicId": "PASTE_YOUR_R2_PUBLIC_ID_HERE",
+    "R2CustomDomain": "",
+    "CLOUDFLARE_ACCOUNT_ID": "PASTE_YOUR_CLOUDFLARE_ACCOUNT_ID_HERE",
     "BETTER_AUTH_URL": "https://your-worker.your-subdomain.workers.dev",
     "WEB_URL": "https://your-worker.your-subdomain.workers.dev"
   }

@@ -1,9 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
-import { PASSWORD, UUID, request, signUp, uniqueEmail, db } from "./helpers";
+import { authFor } from "../src/common/config/better-auth";
+import {
+  PASSWORD,
+  UUID,
+  request,
+  signUp,
+  uniqueEmail,
+  uniqueSlug,
+  db,
+} from "./helpers";
 
-const { user, account, session } = schema;
+const { user, account, session, member } = schema;
 
 it("stores the user, the hashed credential, and the session in the database", async () => {
   const email = uniqueEmail();
@@ -57,8 +66,9 @@ it("reports the profile fields the settings page needs", async () => {
     user: {
       id: created.id,
       hasPassword: true,
-      image: null,
     },
+    displayName: null,
+    image: null,
   });
 
   await db
@@ -70,19 +80,43 @@ it("reports the profile fields the settings page needs", async () => {
 });
 
 it("keeps the picture a member sets, and tells the profile page it is there", async () => {
-  const { user: created, cookie } = await signUp(uniqueEmail());
-  const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+  const email = uniqueEmail();
+  const { cookie } = await signUp(email);
+  const created = await authFor(db).api.createOrganization({
+    body: { name: "Aperture", slug: uniqueSlug() },
+    headers: { cookie },
+  });
+  const organizationId = created.id;
 
-  const saved = await request("/api/auth/update-user", {
-    method: "POST",
+  const [membership] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(eq(member.organizationId, organizationId));
+  const key = `avatars/${organizationId}/${membership!.id}`;
+
+  const saved = await request("/api/organization/member/image", {
+    method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ image: picture }),
+    body: JSON.stringify({ image: key }),
   });
   expect(saved.status).toBe(200);
 
-  const rows = await db.select().from(user).where(eq(user.id, created.id));
-  expect(rows[0]!.image).toBe(picture);
+  const [row] = await db
+    .select({ image: member.image })
+    .from(member)
+    .where(eq(member.organizationId, organizationId));
+  expect(row!.image).toBe(key);
 
+  // The member's avatar and the person's own image are separate facts. Writing
+  // one must not touch the other, so the user's image is still empty afterwards.
   const me = await request("/api/me", { headers: { cookie } });
-  expect(((await me.json()) as { user: { image: string } }).user.image).toBe(picture);
+  const body = (await me.json()) as { image: string | null; user: { image: string | null } };
+  expect(body.image).toBe(`/api/images/${key}`);
+  expect(body.user.image).toBe(null);
+
+  const [person] = await db
+    .select({ image: user.image })
+    .from(user)
+    .where(eq(user.email, email));
+  expect(person!.image ?? null).toBe(null);
 });

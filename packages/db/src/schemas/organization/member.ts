@@ -17,6 +17,7 @@ export const member = sqliteTable(
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
     displayName: text("display_name"),
+    image: text("image"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [

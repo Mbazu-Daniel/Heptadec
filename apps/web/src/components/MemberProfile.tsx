@@ -4,7 +4,8 @@ import {
   fetchMemberProfile,
   messageFor,
   saveMemberDisplayName,
-  uploadAvatar,
+  saveMemberImage,
+  uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
 import type { IMe } from "@heptadec/api/auth-contracts";
@@ -30,7 +31,7 @@ interface IMemberProfileProps {
 }
 
 export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
-  const [image, setImage] = useState<string | null>(me.user.image);
+  const [image, setImage] = useState<string | null>(me.image);
   const [displayName, setDisplayName] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -80,13 +81,8 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
         setError("Pick an image under 8 MB.");
         return;
       }
-      const { path } = await uploadAvatar(picture);
-      const result = await authClient.updateUser({ image: path });
-      if (result.error) {
-        setError(result.error.message ?? "That image was not saved.");
-        return;
-      }
-      setImage(path);
+      const path = await uploadImage("avatar", picture);
+      setImage((await saveMemberImage(path)).image);
       setNotice("Your image is updated.");
       onReload();
     } catch (caught) {
@@ -99,12 +95,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function removeImage(): Promise<void> {
     start();
     try {
-      const result = await authClient.updateUser({ image: null });
-      if (result.error) {
-        setError(result.error.message ?? "That image was not removed.");
-        return;
-      }
-      setImage(null);
+      setImage((await saveMemberImage(null)).image);
       setNotice("Your image is removed.");
       onReload();
     } catch {

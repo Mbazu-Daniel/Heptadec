@@ -15,6 +15,13 @@
       "when": 1791619091971,
       "tag": "0001_curved_amazoness",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792061097075,
+      "tag": "0002_moaning_killraven",
+      "breakpoints": true
     }
   ]
 }

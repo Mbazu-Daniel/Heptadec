@@ -203,3 +203,36 @@ it("keeps the owner in place when members are listed", async () => {
   expect(stillOwner).toHaveLength(1);
   expect((await db.select().from(user)).length).toBeGreaterThan(0);
 });
+
+it("stores an avatar on the membership, not on the person", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+
+  // Signed for the other way round: a path for a different organization, which
+  // is what a client would have to send to point one organization's members at
+  // another's image.
+  const foreign = `/api/images/avatars/00000000-0000-4000-8000-000000000000/${"user_123"}`;
+  const refused = await request("/api/organization/member/image", {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ image: foreign }),
+  });
+  expect(refused.status).toBe(400);
+
+  const path = `/api/images/avatars/${organizationId}/user_123`;
+  const res = await request("/api/organization/member/image", {
+    method: "PATCH",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ image: path }),
+  });
+  expect(res.status).toBe(200);
+
+  // Read the row back rather than trusting the response.
+  const [row] = await db
+    .select({ image: member.image, userId: member.userId })
+    .from(member)
+    .where(eq(member.organizationId, organizationId));
+  expect(row!.image).toBe(path);
+
+  const me = await request("/api/me", { headers: { cookie } });
+  expect((await me.json()) as { image: string | null }).toMatchObject({ image: path });
+});

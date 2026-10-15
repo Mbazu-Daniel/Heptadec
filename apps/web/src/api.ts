@@ -227,6 +227,17 @@ export async function saveMemberDisplayName(
   });
 }
 
+/** The avatar for this membership, not for the person across organizations. */
+export async function saveMemberImage(
+  image: string | null,
+): Promise<IMemberProfileResponse> {
+  return request<IMemberProfileResponse>(
+    "/api/organization/member/image",
+    "PATCH",
+    { image },
+  );
+}
+
 export function fetchInvitation(
   invitationId: string,
 ): Promise<IInvitationPreviewResponse> {

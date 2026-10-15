@@ -52,7 +52,7 @@ export function authRoutes(): Hono<IAuthVars> {
       organizationId === null
         ? Promise.resolve([])
         : db
-            .select({ displayName: member.displayName })
+            .select({ displayName: member.displayName, image: member.image })
             .from(member)
             .where(
               and(
@@ -68,11 +68,11 @@ export function authRoutes(): Hono<IAuthVars> {
         id: session.user.id,
         name: session.user.name,
         email: session.user.email,
-        image: session.user.image ?? null,
         hasPassword: credential.length > 0,
         onboardingCompleted: session.user.onboardingCompleted ?? false,
       },
       displayName: named[0]?.displayName ?? null,
+      image: named[0]?.image ?? null,
     };
     return c.json(body);
   });

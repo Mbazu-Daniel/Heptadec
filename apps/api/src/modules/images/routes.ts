@@ -8,10 +8,11 @@ import {
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
-import type {
-  IImagesConfigResponse,
-  IPresignImageResponse,
-  ImageTarget,
+import {
+  avatarPathFor,
+  type IImagesConfigResponse,
+  type IPresignImageResponse,
+  type ImageTarget,
 } from "./contracts";
 import { presignUpload, type IUploadTarget } from "./presign";
 
@@ -62,7 +63,9 @@ function notConfigured(): BadRequestException {
 
 /** The key an image is stored and read under. Derived, never taken from input. */
 function keyFor(target: ImageTarget, userId: string, organizationId: string): string {
-  return target === "avatar" ? `avatars/${userId}` : `logos/${organizationId}`;
+  return target === "avatar"
+    ? `avatars/${organizationId}/${userId}`
+    : `logos/${organizationId}`;
 }
 
 export function imageRoutes(): Hono<IAuthVars> {
@@ -112,7 +115,7 @@ export function imageRoutes(): Hono<IAuthVars> {
     const upload = await presignUpload({ ...signable, key, contentType });
 
     return c.json<IPresignImageResponse>({
-      path: `${PATH_PREFIX}${key}`,
+      path: avatarPathFor(organization.organizationId, c.get("session")!.user.id),
       uploadUrl: upload.url,
       headers: upload.headers,
     });

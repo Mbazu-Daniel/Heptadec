@@ -19,9 +19,11 @@ export interface IMe {
     id: string;
     name: string;
     email: string;
-    image: string | null;
     hasPassword: boolean;
     onboardingCompleted: boolean;
   };
+  /** Both of these are for the active organization, not for the person: they
+   * live on the member row, so the same user can be different in two of them. */
   displayName: string | null;
+  image: string | null;
 }

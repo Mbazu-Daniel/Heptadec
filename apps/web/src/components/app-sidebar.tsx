@@ -50,7 +50,7 @@ interface IAppSidebarProps {
   onSwitchOrganization: (organizationId: string) => void;
   onCreateOrganization: () => void;
   userName: string;
-  userImage: string | null;
+  image: string | null;
   onOpenProfile: () => void;
   onSignOut: () => Promise<void>;
 }
@@ -89,13 +89,13 @@ function SidebarOrgSwitcher({
 
 function SidebarUserCard({
   userName,
-  userImage,
+  image,
   onOpenProfile,
   onOpenOrganization,
   onSignOut,
 }: {
   userName: string;
-  userImage: string | null;
+  image: string | null;
   onOpenProfile: () => void;
   onOpenOrganization: () => void;
   onSignOut: () => Promise<void>;
@@ -124,7 +124,7 @@ function SidebarUserCard({
   const avatar = (
     <Avatar
       name={userName}
-      image={userImage}
+      image={image}
       className="border-transparent bg-cyan font-bold text-on-accent"
     />
   );
@@ -230,7 +230,7 @@ export function AppSidebar({
   onSwitchOrganization,
   onCreateOrganization,
   userName,
-  userImage,
+  image,
   onOpenProfile,
   onSignOut,
 }: IAppSidebarProps) {
@@ -369,7 +369,7 @@ export function AppSidebar({
       <SidebarFooter>
         <SidebarUserCard
           userName={userName}
-          userImage={userImage}
+          image={image}
           onOpenProfile={onOpenProfile}
           onOpenOrganization={() => onViewChange("organization")}
           onSignOut={onSignOut}

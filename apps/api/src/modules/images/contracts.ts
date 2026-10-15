@@ -1,6 +1,21 @@
 /** Which image an upload is for. Decides the key and who may ask for it. */
 export type ImageTarget = "avatar" | "logo";
 
+/**
+ * Where an organization's member avatars live.
+ *
+ * Scoped by organization as well as by user: an avatar is a property of a
+ * membership, so the same person can have a different one in each organization,
+ * and one organization's image cannot be pointed at another's.
+ */
+export function avatarPathPrefixFor(organizationId: string): string {
+  return `/api/images/avatars/${organizationId}/`;
+}
+
+export function avatarPathFor(organizationId: string, userId: string): string {
+  return `${avatarPathPrefixFor(organizationId)}${userId}`;
+}
+
 export interface IImagesConfigResponse {
   /**
    * Whether this deployment can sign an upload. A bucket binding is not enough:

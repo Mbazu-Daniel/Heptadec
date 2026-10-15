@@ -4,6 +4,7 @@ import {
   fetchMemberProfile,
   messageFor,
   saveMemberDisplayName,
+  saveMemberImage,
   uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
@@ -30,7 +31,7 @@ interface IMemberProfileProps {
 }
 
 export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
-  const [image, setImage] = useState<string | null>(me.user.image);
+  const [image, setImage] = useState<string | null>(me.image);
   const [displayName, setDisplayName] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -81,12 +82,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
         return;
       }
       const path = await uploadImage("avatar", picture);
-      const result = await authClient.updateUser({ image: path });
-      if (result.error) {
-        setError(result.error.message ?? "That image was not saved.");
-        return;
-      }
-      setImage(path);
+      setImage((await saveMemberImage(path)).image);
       setNotice("Your image is updated.");
       onReload();
     } catch (caught) {
@@ -99,12 +95,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function removeImage(): Promise<void> {
     start();
     try {
-      const result = await authClient.updateUser({ image: null });
-      if (result.error) {
-        setError(result.error.message ?? "That image was not removed.");
-        return;
-      }
-      setImage(null);
+      setImage((await saveMemberImage(null)).image);
       setNotice("Your image is removed.");
       onReload();
     } catch {

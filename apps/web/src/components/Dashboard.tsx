@@ -78,7 +78,7 @@ export function Dashboard({
         onSwitchOrganization={onSwitchOrganization}
         onCreateOrganization={onCreateOrganization}
         userName={me.displayName ?? (me.user.name === "" ? me.user.email : me.user.name)}
-        userImage={me.user.image}
+        image={me.image}
         onOpenProfile={onOpenProfile}
         onSignOut={onSignOut}
       />

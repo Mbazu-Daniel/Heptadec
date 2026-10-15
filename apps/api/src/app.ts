@@ -36,7 +36,15 @@ import { memberRoutes } from "./modules/member";
 import { organizationRoutes } from "./modules/organization";
 import { imageRoutes } from "./modules/images";
 
-export function buildApp(): Hono<IAuthVars> {
+// Compression is a deployment concern, not an app concern: Cloudflare's edge
+// already compresses responses, so compressing again in the Worker corrupts
+// every body (gzip inside gzip). Only the Node server, which has no edge in
+// front of it, asks for it.
+export interface IAppOptions {
+  compressResponses: boolean;
+}
+
+export function buildApp(options: IAppOptions): Hono<IAuthVars> {
   const app = new Hono<IAuthVars>();
 
   app.use(logger());
@@ -50,7 +58,9 @@ export function buildApp(): Hono<IAuthVars> {
       },
     }),
   );
-  app.use(compress());
+  if (options.compressResponses) {
+    app.use(compress());
+  }
 
   app.route("/", authRoutes());
   app.route("/", auditRoutes());
@@ -66,7 +76,6 @@ export function buildApp(): Hono<IAuthVars> {
   app.route("/", notificationRoutes());
   app.route("/", organizationRoutes());
   app.route("/", memberRoutes());
-  app.route("/", imageRoutes());
   app.route("/", imageRoutes());
   app.route("/", invitationRoutes());
   app.route("/", mcpRoutes());

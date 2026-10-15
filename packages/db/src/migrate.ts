@@ -1,11 +1,9 @@
-import { join } from "node:path";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { localDatabase, resolveDbUrl } from "./client";
-import { ROOT } from "./env";
 
 const db = localDatabase();
 
-const migrationsFolder = join(ROOT, "packages/db/drizzle");
+const migrationsFolder = new URL("../drizzle/", import.meta.url).pathname;
 
 console.log(`[db] migrating ${resolveDbUrl()}`);
 await migrate(db, { migrationsFolder });

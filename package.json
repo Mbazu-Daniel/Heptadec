@@ -19,7 +19,10 @@
     "app:down": "docker compose -f docker-compose.app.yml down",
     "seed:test": "./scripts/seed-test.sh",
     "db:generate": "pnpm --filter @heptadec/db run generate",
-    "db:migrate": "pnpm --filter @heptadec/db run migrate"
+    "db:migrate": "pnpm --filter @heptadec/db run migrate",
+    "deploy:cloudflare": "./scripts/deploy-cloudflare.sh"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
 }

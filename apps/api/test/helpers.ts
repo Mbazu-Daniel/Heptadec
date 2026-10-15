@@ -1,7 +1,7 @@
 import { localDatabase, type HeptadecDatabase } from "@heptadec/db";
 import { buildApp } from "../src/app";
 
-export const app = buildApp();
+export const app = buildApp({ compressResponses: true });
 
 export const db: HeptadecDatabase = localDatabase();
 

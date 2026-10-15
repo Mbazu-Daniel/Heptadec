@@ -80,17 +80,24 @@ it("reports the profile fields the settings page needs", async () => {
 });
 
 it("keeps the picture a member sets, and tells the profile page it is there", async () => {
-  const { cookie } = await signUp(uniqueEmail());
+  const email = uniqueEmail();
+  const { cookie } = await signUp(email);
   const created = await authFor(db).api.createOrganization({
     body: { name: "Aperture", slug: uniqueSlug() },
     headers: { cookie },
   });
   const organizationId = created.id;
 
+  const [membership] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(eq(member.organizationId, organizationId));
+  const path = `/api/images/avatars/${organizationId}/${membership!.id}`;
+
   const saved = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ image: `/api/images/avatars/${organizationId}/user_1` }),
+    body: JSON.stringify({ image: path }),
   });
   expect(saved.status).toBe(200);
 
@@ -98,10 +105,18 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
     .select({ image: member.image })
     .from(member)
     .where(eq(member.organizationId, organizationId));
-  expect(row!.image).toBe(`/api/images/avatars/${organizationId}/user_1`);
+  expect(row!.image).toBe(path);
 
+  // The member's avatar and the person's own image are separate facts. Writing
+  // one must not touch the other, so the user's image is still empty afterwards.
   const me = await request("/api/me", { headers: { cookie } });
-  expect(((await me.json()) as { image: string | null }).image).toBe(
-    `/api/images/avatars/${organizationId}/user_1`,
-  );
+  const body = (await me.json()) as { image: string | null; user: { image: string | null } };
+  expect(body.image).toBe(path);
+  expect(body.user.image).toBe(null);
+
+  const [person] = await db
+    .select({ image: user.image })
+    .from(user)
+    .where(eq(user.email, email));
+  expect(person!.image ?? null).toBe(null);
 });

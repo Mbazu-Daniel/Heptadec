@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { and, eq } from "drizzle-orm";
+import { schema } from "@heptadec/db";
 import { requireSession, type IAuthVars } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
 import {
@@ -8,13 +10,14 @@ import {
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
-import {
-  avatarPathFor,
-  type IImagesConfigResponse,
-  type IPresignImageResponse,
-  type ImageTarget,
+import type {
+  IImagesConfigResponse,
+  IPresignImageResponse,
+  ImageTarget,
 } from "./contracts";
 import { presignUpload, type IUploadTarget } from "./presign";
+
+const { member } = schema;
 
 // The path the browser reads an object back from. Kept under /api so the
 // Worker answers it instead of handing the request to the static assets.
@@ -62,9 +65,9 @@ function notConfigured(): BadRequestException {
 }
 
 /** The key an image is stored and read under. Derived, never taken from input. */
-function keyFor(target: ImageTarget, userId: string, organizationId: string): string {
+function keyFor(target: ImageTarget, memberId: string, organizationId: string): string {
   return target === "avatar"
-    ? `avatars/${organizationId}/${userId}`
+    ? `avatars/${organizationId}/${memberId}`
     : `logos/${organizationId}`;
 }
 
@@ -111,11 +114,32 @@ export function imageRoutes(): Hono<IAuthVars> {
       throw new ForbiddenException("Only an owner can change the logo");
     }
 
-    const key = keyFor(target, c.get("session")!.user.id, organization.organizationId);
+    // An avatar is keyed by membership, so it needs the member row: the session
+    // says which user, not which membership. A logo is keyed by the
+    // organization, which the session already has.
+    const [membership] =
+      target === "avatar"
+        ? await organization.db
+            .select({ id: member.id })
+            .from(member)
+            .where(
+              and(
+                eq(member.userId, c.get("session")!.user.id),
+                organization.where(member.organizationId),
+              ),
+            )
+            .limit(1)
+        : [{ id: organization.organizationId }];
+    if (membership === undefined) {
+      throw new ForbiddenException("You are not a member of that organization");
+    }
+
+    const key = keyFor(target, membership.id, organization.organizationId);
     const upload = await presignUpload({ ...signable, key, contentType });
 
     return c.json<IPresignImageResponse>({
-      path: avatarPathFor(organization.organizationId, c.get("session")!.user.id),
+      // One rule for both targets: the path is the key under the read prefix.
+      path: `${PATH_PREFIX}${key}`,
       uploadUrl: upload.url,
       headers: upload.headers,
     });

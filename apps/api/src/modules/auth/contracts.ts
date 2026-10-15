@@ -19,11 +19,18 @@ export interface IMe {
     id: string;
     name: string;
     email: string;
+    /**
+     * The person's own image, and the user table's, but nothing in this app
+     * writes it: it belongs to whoever administers the platform, which is not a
+     * thing Heptadec is. Reported so the fact has one reader rather than two
+     * writers that can disagree.
+     */
+    image: string | null;
     hasPassword: boolean;
     onboardingCompleted: boolean;
   };
-  /** Both of these are for the active organization, not for the person: they
-   * live on the member row, so the same user can be different in two of them. */
+  /** The avatar for this membership in this organization, beside the display
+   * name that also lives on the member row. This is the one the app manages. */
   displayName: string | null;
   image: string | null;
 }

@@ -68,6 +68,7 @@ export function authRoutes(): Hono<IAuthVars> {
         id: session.user.id,
         name: session.user.name,
         email: session.user.email,
+        image: session.user.image ?? null,
         hasPassword: credential.length > 0,
         onboardingCompleted: session.user.onboardingCompleted ?? false,
       },

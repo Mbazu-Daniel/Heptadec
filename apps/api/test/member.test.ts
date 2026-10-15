@@ -210,7 +210,7 @@ it("stores an avatar on the membership, not on the person", async () => {
   // Signed for the other way round: a path for a different organization, which
   // is what a client would have to send to point one organization's members at
   // another's image.
-  const foreign = `/api/images/avatars/00000000-0000-4000-8000-000000000000/${"user_123"}`;
+  const foreign = "/api/images/avatars/00000000-0000-4000-8000-000000000000/whatever";
   const refused = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
@@ -218,7 +218,11 @@ it("stores an avatar on the membership, not on the person", async () => {
   });
   expect(refused.status).toBe(400);
 
-  const path = `/api/images/avatars/${organizationId}/user_123`;
+  const [membership] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(eq(member.organizationId, organizationId));
+  const path = `/api/images/avatars/${organizationId}/${membership!.id}`;
   const res = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
@@ -228,7 +232,7 @@ it("stores an avatar on the membership, not on the person", async () => {
 
   // Read the row back rather than trusting the response.
   const [row] = await db
-    .select({ image: member.image, userId: member.userId })
+    .select({ image: member.image })
     .from(member)
     .where(eq(member.organizationId, organizationId));
   expect(row!.image).toBe(path);

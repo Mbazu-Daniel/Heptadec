@@ -1,6 +1,6 @@
 export { imageRoutes } from "./routes";
 
-export { avatarPathFor, avatarPathPrefixFor } from "./contracts";
+export { avatarPathPrefixFor } from "./contracts";
 
 export type {
   IImagesConfigResponse,

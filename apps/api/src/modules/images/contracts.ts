@@ -4,17 +4,16 @@ export type ImageTarget = "avatar" | "logo";
 /**
  * Where an organization's member avatars live.
  *
- * Scoped by organization as well as by user: an avatar is a property of a
- * membership, so the same person can have a different one in each organization,
- * and one organization's image cannot be pointed at another's.
+ * Scoped by organization and by membership. An avatar is a property of the
+ * membership, not of the person: the same person can be different in two
+ * organizations, and one organization's image cannot be pointed at another's.
+ * Keyed by member rather than by user for the same reason — the membership is
+ * what identifies it.
  */
 export function avatarPathPrefixFor(organizationId: string): string {
   return `/api/images/avatars/${organizationId}/`;
 }
 
-export function avatarPathFor(organizationId: string, userId: string): string {
-  return `${avatarPathPrefixFor(organizationId)}${userId}`;
-}
 
 export interface IImagesConfigResponse {
   /**

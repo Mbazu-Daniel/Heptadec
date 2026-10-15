@@ -12,6 +12,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # The token is resolved once here because `secrets` is not an available
+    # context in a step-level `if`, and a workflow that names it there is
+    # rejected outright rather than skipped.
+    env:
+      HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +30,25 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # The Worker is deployed from a laptop, but the schema it reads is not
+      # deployed with it: a merge that adds a migration and a Worker rolled out
+      # before that migration lands is a live Worker querying a column the
+      # database does not have. Migrations are the repository's to keep current,
+      # so they move with it rather than with whoever deploys next.
+      #
+      # Wrangler skips its confirmation prompt when there is no terminal, which
+      # is what a non-interactive step is. Requires CLOUDFLARE_API_TOKEN (D1
+      # edit) and CLOUDFLARE_ACCOUNT_ID as repository secrets; without them
+      # this is skipped rather than failed, and pnpm deploy:cloudflare still
+      # migrates before it deploys.
+      - name: Apply database migrations
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.HAS_CLOUDFLARE_TOKEN == 'true'
+        working-directory: apps/api
+        run: pnpm exec wrangler d1 migrations apply DB --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - run: pnpm typecheck
 

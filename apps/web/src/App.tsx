@@ -18,14 +18,25 @@ import { AuthScreen } from "./components/AuthScreen";
 import { CreateOrganization } from "./components/CreateOrganization";
 import { Dashboard } from "./components/Dashboard";
 import { Landing } from "./components/Landing";
+import { ForgotPassword } from "./components/ForgotPassword";
 import { MemberProfile } from "./components/MemberProfile";
+import { ResetPassword } from "./components/ResetPassword";
 import { NotFound } from "./components/NotFound";
 import { Onboarding } from "./components/Onboarding";
 import { PublicDashboard } from "./components/PublicDashboard";
 
 type Mode = "sign-in" | "sign-up";
 
-const PAGE_ROUTES = ["/", "/signin", "/signup", "/welcome", "/organization", "/profile"];
+const PAGE_ROUTES = [
+  "/",
+  "/signin",
+  "/signup",
+  "/welcome",
+  "/organization",
+  "/profile",
+  "/forgot-password",
+  "/reset-password",
+];
 
 function Loading() {
   return (
@@ -112,6 +123,7 @@ function AuthRoute({ me, orgs, reload }: { me: IMe | null; orgs: IOrganizationsR
       mode={mode}
       onModeChange={(next) => navigate(next === "sign-in" ? "/signin" : "/signup")}
       onAuthed={() => void reload()}
+      onForgotPassword={() => navigate("/forgot-password")}
     />
   );
 }
@@ -221,7 +233,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
 
   const authed = <Navigate to={me ? destinationFor(me, orgs) : "/signin"} replace />;
   const anon = <Navigate to="/signin" replace />;
-
   // Someone who already has an organization lands on the create form only when
   // they asked for it — the sidebar's "+ New organization". Everyone else would
   // otherwise be walked into creating a second one by arriving here twice.
@@ -239,6 +250,22 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
       />
       <Route path="/signin" element={<AuthRoute me={me} orgs={orgs} reload={reload} />} />
       <Route path="/signup" element={<AuthRoute me={me} orgs={orgs} reload={reload} />} />
+      <Route
+        path="/forgot-password"
+        element={
+          me ? (
+            <Navigate to={destinationFor(me, orgs)} replace />
+          ) : (
+            <ForgotPassword onDone={() => navigate("/signin")} />
+          )
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          me ? <Navigate to={destinationFor(me, orgs)} replace /> : <ResetPassword />
+        }
+      />
       <Route
         path="/welcome"
         element={

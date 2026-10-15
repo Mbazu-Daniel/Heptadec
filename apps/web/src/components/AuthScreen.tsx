@@ -25,6 +25,7 @@ interface IAuthScreenProps {
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   onAuthed: () => void;
+  onForgotPassword: () => void;
 }
 
 const PROVIDER_BRANDS: Record<
@@ -37,7 +38,7 @@ const PROVIDER_BRANDS: Record<
 
 function LastUsed() {
   return (
-    <span className="inline-flex h-5 items-center rounded-full border border-(--mk-hairline) px-2 font-mono text-[11px] text-(--mk-fg-muted)">
+    <span className="inline-flex h-5 items-center rounded-full border border-(--mk-hairline) px-2 font-mono text-[12px] text-(--mk-fg-muted)">
       Last used
     </span>
   );
@@ -47,6 +48,7 @@ export function AuthScreen({
   mode,
   onModeChange,
   onAuthed,
+  onForgotPassword,
 }: IAuthScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -188,7 +190,7 @@ export function AuthScreen({
         ) : null}
         <div className="my-6 flex items-center gap-4">
           <span className="h-px flex-1 bg-(--mk-hairline)" />
-          <span className="font-mono text-[12px] text-(--mk-fg-muted)">
+          <span className="font-mono text-[13px] text-(--mk-fg-muted)">
             Or continue with
           </span>
           <span className="h-px flex-1 bg-(--mk-hairline)" />
@@ -243,6 +245,15 @@ export function AuthScreen({
               )}
             </button>
           </div>
+          {mode === "sign-in" ? (
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className={`${AUTH_LINK_BUTTON_CLASSNAME} self-end`}
+            >
+              Forgot password?
+            </button>
+          ) : null}
         </div>
 
         {lastMethod === "email" ? (

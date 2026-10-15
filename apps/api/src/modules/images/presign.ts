@@ -51,6 +51,10 @@ export async function presignUpload(target: IUploadTarget): Promise<IPresignedUp
       Bucket: target.bucket,
       Key: target.key,
       ContentType: target.contentType,
+      // Avatars and logos are shown to whoever can see the page anyway. Public
+      // is what lets the browser load them from the bucket directly rather than
+      // through a Worker invocation per image.
+      ACL: "public-read",
     }),
     {
       expiresIn: PRESIGNED_TTL_SECONDS,

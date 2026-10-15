@@ -210,7 +210,7 @@ it("stores an avatar on the membership, not on the person", async () => {
   // Signed for the other way round: a path for a different organization, which
   // is what a client would have to send to point one organization's members at
   // another's image.
-  const foreign = "/api/images/avatars/00000000-0000-4000-8000-000000000000/whatever";
+  const foreign = "avatars/00000000-0000-4000-8000-000000000000/whatever";
   const refused = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
@@ -222,11 +222,11 @@ it("stores an avatar on the membership, not on the person", async () => {
     .select({ id: member.id })
     .from(member)
     .where(eq(member.organizationId, organizationId));
-  const path = `/api/images/avatars/${organizationId}/${membership!.id}`;
+  const key = `avatars/${organizationId}/${membership!.id}`;
   const res = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ image: path }),
+    body: JSON.stringify({ image: key }),
   });
   expect(res.status).toBe(200);
 
@@ -235,8 +235,12 @@ it("stores an avatar on the membership, not on the person", async () => {
     .select({ image: member.image })
     .from(member)
     .where(eq(member.organizationId, organizationId));
-  expect(row!.image).toBe(path);
+  expect(row!.image).toBe(key);
 
+  // No public base is configured in tests, so the read side falls back to
+  // proxying the key through the API. With one, it is the bucket's base instead.
   const me = await request("/api/me", { headers: { cookie } });
-  expect((await me.json()) as { image: string | null }).toMatchObject({ image: path });
+  expect((await me.json()) as { image: string | null }).toMatchObject({
+    image: `/api/images/${key}`,
+  });
 });

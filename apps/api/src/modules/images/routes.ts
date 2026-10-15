@@ -10,18 +10,17 @@ import {
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
-import type {
-  IImagesConfigResponse,
-  IPresignImageResponse,
-  ImageTarget,
+import {
+  avatarKeyPrefixFor,
+  logoKeyFor,
+  type IImagesConfigResponse,
+  type IPresignImageResponse,
+  type ImageTarget,
 } from "./contracts";
+import { MEDIA_PATH_PREFIX, publicBaseFrom } from "./urls";
 import { presignUpload, type IUploadTarget } from "./presign";
 
 const { member } = schema;
-
-// The path the browser reads an object back from. Kept under /api so the
-// Worker answers it instead of handing the request to the static assets.
-const PATH_PREFIX = "/api/images/";
 
 const KEY_PREFIXES = ["avatars/", "logos/"];
 
@@ -42,18 +41,20 @@ type IBindings = IAuthVars["Bindings"];
  * says so here rather than at the point of upload.
  */
 function signer(env: IBindings): Omit<IUploadTarget, "key" | "contentType"> | null {
-  const { R2BucketName, R2AccountId, R2AccessKeyId, R2SecretAccessKey, R2SessionToken } = env;
+  const { R2BucketName, CLOUDFLARE_ACCOUNT_ID, R2AccessKeyId, R2SecretAccessKey, R2SessionToken } = env;
+  // An unset variable arrives as "" from a .env file and as undefined from a
+  // wrangler var, and both mean the same thing.
   if (
-    R2BucketName === undefined ||
-    R2AccountId === undefined ||
-    R2AccessKeyId === undefined ||
-    R2SecretAccessKey === undefined
+    !R2BucketName ||
+    !CLOUDFLARE_ACCOUNT_ID ||
+    !R2AccessKeyId ||
+    !R2SecretAccessKey
   ) {
     return null;
   }
   return {
     bucket: R2BucketName,
-    accountId: R2AccountId,
+    accountId: CLOUDFLARE_ACCOUNT_ID,
     accessKeyId: R2AccessKeyId,
     secretAccessKey: R2SecretAccessKey,
     sessionToken: R2SessionToken,
@@ -64,11 +65,11 @@ function notConfigured(): BadRequestException {
   return new BadRequestException("Image storage is not configured on this deployment.");
 }
 
-/** The key an image is stored and read under. Derived, never taken from input. */
+/** The key an image is stored under. Derived, never taken from input. */
 function keyFor(target: ImageTarget, memberId: string, organizationId: string): string {
   return target === "avatar"
-    ? `avatars/${organizationId}/${memberId}`
-    : `logos/${organizationId}`;
+    ? `${avatarKeyPrefixFor(organizationId)}${memberId}`
+    : logoKeyFor(organizationId);
 }
 
 export function imageRoutes(): Hono<IAuthVars> {
@@ -76,7 +77,11 @@ export function imageRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/images/config", (c) =>
     c.json<IImagesConfigResponse>({
-      configured: signer(c.env) !== null && c.env.images !== undefined,
+      // Whether an upload can be signed, which is the bucket's settings. It does
+      // not depend on the binding: the Node server has no binding and can still
+      // sign, because the bytes go to the bucket directly either way.
+      configured: signer(c.env) !== null,
+      publicBase: publicBaseFrom(c.env),
     }),
   );
 
@@ -138,15 +143,16 @@ export function imageRoutes(): Hono<IAuthVars> {
     const upload = await presignUpload({ ...signable, key, contentType });
 
     return c.json<IPresignImageResponse>({
-      // One rule for both targets: the path is the key under the read prefix.
-      path: `${PATH_PREFIX}${key}`,
+      key,
       uploadUrl: upload.url,
       headers: upload.headers,
     });
   });
 
+  // Only reached when the deployment has no public base. With one, the browser
+  // loads objects from the bucket directly and this never runs.
   routes.get("/api/images/*", async (c) => {
-    const key = c.req.path.slice(PATH_PREFIX.length);
+    const key = c.req.path.slice(MEDIA_PATH_PREFIX.length);
     const object =
       c.env.images !== undefined && KEY_PREFIXES.some((prefix) => key.startsWith(prefix))
         ? await c.env.images.get(key)

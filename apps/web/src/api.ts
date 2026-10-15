@@ -199,10 +199,7 @@ export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
  * never sees them. What comes back is the path to keep in the database and a URL
  * to PUT the file to.
  */
-export async function uploadImage(
-  target: ImageTarget,
-  picture: Blob,
-): Promise<string> {
+export async function uploadImage(target: ImageTarget, picture: Blob): Promise<string> {
   const signed = await request<IPresignImageResponse>("/api/images/presign", "POST", {
     target,
     contentType: picture.type,
@@ -216,7 +213,7 @@ export async function uploadImage(
   if (!put.ok) {
     throw new Error("That image could not be uploaded.");
   }
-  return signed.path;
+  return signed.key;
 }
 
 export async function saveMemberDisplayName(

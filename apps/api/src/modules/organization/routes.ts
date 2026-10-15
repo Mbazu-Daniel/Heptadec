@@ -15,6 +15,7 @@ import {
 import { can } from "../rbac/authorize";
 import { roleOf } from "../rbac/roles";
 import { activeOrganization } from "../../common/session/current-organization";
+import { mediaUrl, publicBaseFrom } from "../images/urls";
 import type {
   IMembership,
   IOrganizationsResponse,
@@ -60,13 +61,23 @@ export function organizationRoutes(): Hono<IAuthVars> {
       .where(eq(member.userId, session.user.id));
 
     const activeId = currentOrganizationId(session);
+    const base = publicBaseFrom(c.env);
     const organizations: IMembership[] = rows.map((row) => ({
-      organization: { id: row.id, name: row.name, slug: row.slug, logo: row.logo },
+      organization: {
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        logo: row.logo,
+        logoUrl: mediaUrl(row.logo, base),
+      },
       role: roleOf(row.role),
       active: row.id === activeId,
     }));
 
-    const body: IOrganizationsResponse = { organizations, activeOrganizationId: activeId };
+    const body: IOrganizationsResponse = {
+      organizations,
+      activeOrganizationId: activeId,
+    };
     return c.json(body);
   });
 

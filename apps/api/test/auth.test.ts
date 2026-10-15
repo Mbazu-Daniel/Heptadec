@@ -92,12 +92,12 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
     .select({ id: member.id })
     .from(member)
     .where(eq(member.organizationId, organizationId));
-  const path = `/api/images/avatars/${organizationId}/${membership!.id}`;
+  const key = `avatars/${organizationId}/${membership!.id}`;
 
   const saved = await request("/api/organization/member/image", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ image: path }),
+    body: JSON.stringify({ image: key }),
   });
   expect(saved.status).toBe(200);
 
@@ -105,13 +105,13 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
     .select({ image: member.image })
     .from(member)
     .where(eq(member.organizationId, organizationId));
-  expect(row!.image).toBe(path);
+  expect(row!.image).toBe(key);
 
   // The member's avatar and the person's own image are separate facts. Writing
   // one must not touch the other, so the user's image is still empty afterwards.
   const me = await request("/api/me", { headers: { cookie } });
   const body = (await me.json()) as { image: string | null; user: { image: string | null } };
-  expect(body.image).toBe(path);
+  expect(body.image).toBe(`/api/images/${key}`);
   expect(body.user.image).toBe(null);
 
   const [person] = await db

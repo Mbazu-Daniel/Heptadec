@@ -14,6 +14,7 @@ import {
   type ProviderId,
 } from "./contracts";
 import { currentOrganizationId } from "../../common/session/current-organization";
+import { mediaUrl, publicBaseFrom } from "../images/urls";
 
 const { account, member, user } = schema;
 
@@ -68,12 +69,12 @@ export function authRoutes(): Hono<IAuthVars> {
         id: session.user.id,
         name: session.user.name,
         email: session.user.email,
-        image: session.user.image ?? null,
+        image: mediaUrl(session.user.image ?? null, publicBaseFrom(c.env)),
         hasPassword: credential.length > 0,
         onboardingCompleted: session.user.onboardingCompleted ?? false,
       },
       displayName: named[0]?.displayName ?? null,
-      image: named[0]?.image ?? null,
+      image: mediaUrl(named[0]?.image ?? null, publicBaseFrom(c.env)),
     };
     return c.json(body);
   });

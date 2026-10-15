@@ -14,7 +14,8 @@ import {
 import { authFor } from "../../common/config/better-auth";
 import { isRole } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
-import { avatarPathPrefixFor } from "../images/contracts";
+import { avatarKeyPrefixFor } from "../images/contracts";
+import { mediaUrl, publicBaseFrom } from "../images/urls";
 import { can } from "../rbac/authorize";
 import { recordAudit, auditActor } from "../audit";
 import type { IMemberProfileResponse, IMembersResponse } from "./contracts";
@@ -29,6 +30,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/member", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const rows = await organization.db
       .select({
@@ -51,7 +53,7 @@ export function memberRoutes(): Hono<IAuthVars> {
 
     const body: IMemberProfileResponse = {
       displayName: rows[0]!.displayName ?? null,
-      image: rows[0]!.image ?? null,
+      image: mediaUrl(rows[0]!.image, base),
       role: roleOf(rows[0]!.role),
       organizationId: organization.organizationId,
     };
@@ -61,6 +63,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.patch("/api/organization/member", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const payload = readBody(await c.req.json(), "A display name is required");
     const raw = payload.displayName;
@@ -94,7 +97,7 @@ export function memberRoutes(): Hono<IAuthVars> {
 
     const body: IMemberProfileResponse = {
       displayName: updated[0]!.displayName ?? null,
-      image: updated[0]!.image ?? null,
+      image: mediaUrl(updated[0]!.image, base),
       role: roleOf(updated[0]!.role),
       organizationId: organization.organizationId,
     };
@@ -104,6 +107,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.patch("/api/organization/member/image", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const payload = readBody(await c.req.json(), "That image could not be saved");
     const raw = payload.image;
@@ -113,7 +117,7 @@ export function memberRoutes(): Hono<IAuthVars> {
     const image = raw === null || raw === "" ? null : raw;
     if (
       image !== null &&
-      !image.startsWith(avatarPathPrefixFor(organization.organizationId))
+      !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
     ) {
       // Not an empty-fallback guard but a real one: the only writer of this
       // column is the upload flow, and an arbitrary URL here would be an image
@@ -142,7 +146,7 @@ export function memberRoutes(): Hono<IAuthVars> {
 
     const body: IMemberProfileResponse = {
       displayName: updated[0]!.displayName ?? null,
-      image: updated[0]!.image ?? null,
+      image: mediaUrl(updated[0]!.image, base),
       role: roleOf(updated[0]!.role),
       organizationId: organization.organizationId,
     };
@@ -152,6 +156,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/members", requireSession, async (c) => {
     const session = c.get("session")!;
     const organization = activeOrganization(c);
+    const base = publicBaseFrom(c.env);
 
     const rows = await organization.db
       .select({
@@ -175,7 +180,7 @@ export function memberRoutes(): Hono<IAuthVars> {
         name: row.name,
         email: row.email,
         displayName: row.displayName,
-        image: row.image,
+        image: mediaUrl(row.image, base),
         role: roleOf(row.role),
         isYou: row.userId === session.user.id,
       })),

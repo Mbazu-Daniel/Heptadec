@@ -10,18 +10,27 @@ export type ImageTarget = "avatar" | "logo";
  * Keyed by member rather than by user for the same reason — the membership is
  * what identifies it.
  */
-export function avatarPathPrefixFor(organizationId: string): string {
-  return `/api/images/avatars/${organizationId}/`;
+export function avatarKeyPrefixFor(organizationId: string): string {
+  return `avatars/${organizationId}/`;
+}
+
+export function logoKeyFor(organizationId: string): string {
+  return `logos/${organizationId}`;
 }
 
 
 export interface IImagesConfigResponse {
   /**
-   * Whether this deployment can sign an upload. A bucket binding is not enough:
-   * the signature needs the R2 S3 credentials, which are secrets rather than
-   * bindings. Reported so the upload control can say so at the point of use.
+   * Whether this deployment can sign an upload, which needs the R2 S3
+   * credentials as well as the bucket's settings. Reported so the upload control
+   * can say so at the point of use rather than failing afterwards.
    */
   configured: boolean;
+  /**
+   * The bucket's public base, or null. Null means images are proxied through the
+   * Worker instead, which works but costs an invocation per image.
+   */
+  publicBase: string | null;
 }
 
 export interface IPresignImageRequest {
@@ -32,8 +41,9 @@ export interface IPresignImageRequest {
 }
 
 export interface IPresignImageResponse {
-  /** What the database keeps: the path this image is read back from. */
-  path: string;
+  /** What the database keeps. The URL to show it is computed from this on read,
+   * so the base can change without touching a row. */
+  key: string;
   /** PUT the bytes here. They never pass through this app. */
   uploadUrl: string;
   /** Headers the PUT must carry; the content type is part of the signature. */

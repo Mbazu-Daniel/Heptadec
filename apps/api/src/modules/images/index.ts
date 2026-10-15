@@ -1,6 +1,8 @@
 export { imageRoutes } from "./routes";
 
-export { avatarPathPrefixFor } from "./contracts";
+export { avatarKeyPrefixFor, logoKeyFor } from "./contracts";
+
+export { mediaUrl, publicBaseFrom } from "./urls";
 
 export type {
   IImagesConfigResponse,

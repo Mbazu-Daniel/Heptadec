@@ -154,6 +154,18 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
+# Images are read from the bucket's public URL, which is a property of the bucket
+# and not of this deployment, so it is checked rather than configured here.
+public_id="$(grep -oE '"R2PublicId"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
+if [ -n "$public_id" ] && [ "$public_id" != "PASTE_YOUR_R2_PUBLIC_ID_HERE" ]; then
+  echo "Reading images from https://pub-$public_id.r2.dev"
+  echo "  if avatars 404, public access is off on the bucket:"
+  echo "      cf r2 buckets domains managed update $BUCKET_NAME --enabled true"
+else
+  echo "R2PublicId not set: images will be proxied through the API instead,"
+  echo "  which works but costs a request per image."
+fi
+
 say "6/7 Applying database migrations"
 "${WRANGLER[@]}" d1 migrations apply "$D1_NAME" --remote
 

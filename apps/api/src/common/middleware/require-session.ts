@@ -23,11 +23,16 @@ export interface IAuthVars {
     // the account it lives in, plus an R2 access key. Absent means uploads are
     // not offered; reads still work through the bucket binding above.
     R2BucketName?: string;
-    R2AccountId?: string;
+    /** The Cloudflare account, which the R2 S3 endpoint is built from. */
+    CLOUDFLARE_ACCOUNT_ID?: string;
     R2AccessKeyId?: string;
     R2SecretAccessKey?: string;
     /** Only for temporary credentials, which the SDK signs alongside the key. */
     R2SessionToken?: string;
+    // The bucket's public base, so an image is read straight from the edge
+    // instead of through a Worker invocation. Absent falls back to proxying.
+    R2PublicId?: string;
+    R2CustomDomain?: string;
   };
 }
 

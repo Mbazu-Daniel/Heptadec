@@ -1,5 +1,4 @@
 import type { IResultGrid } from "../query/contracts";
-import { BadRequestException } from "../../common/exceptions";
 
 export type ConnectionMode = "tcp" | "tls" | "socket";
 
@@ -438,37 +437,6 @@ export const ENGINE_SPECS = {
   } as const satisfies Record<DataSourceKind, IEngineSpec>;
 
 /**
- * The only place a stored `kind` becomes a typed engine.
- *
- * The column is text with no constraint — `packages/db` is schema-only and
- * must not learn the engine catalog — so every reader used to cast the row
- * itself (`row.kind as DataSourceKind`), making each one a private assertion
- * that the database was telling the truth. An engine the catalog has never
- * heard of is now an error here, once, instead of a lie at every use site.
- */
-export function engineFrom(kind: string): IEngineSpec {
-  const spec: IEngineSpec | undefined = ENGINE_SPECS[kind as DataSourceKind];
-  if (spec === undefined) {
-    throw new BadRequestException(`Unknown data source kind: ${kind}`);
-  }
-  return spec;
-}
-
-/** The engine a stored row is. */
-export function engineOf(row: { kind: string }): IEngineSpec {
-  return engineFrom(row.kind);
-}
-
-/**
- * The kind a stored row is, as a name rather than a spec. The cast is safe
- * because `engineFrom` has already proven the catalog knows this string.
- */
-export function kindOf(row: { kind: string }): DataSourceKind {
-  engineFrom(row.kind);
-  return row.kind as DataSourceKind;
-}
-
-/**
  * The mode a source connects with when the body does not name one. An engine
  * with no mode-dependent fields has no mode at all.
  */
@@ -505,27 +473,6 @@ export function connectionFields(
 export function isPreviewEngine(kind: DataSourceKind): boolean {
   const spec: IEngineSpec = ENGINE_SPECS[kind];
   return spec.preview === true;
-}
-
-/**
- * Whether a source can be put to the AI. A source is asked in a language it
- * names, and a language that exists is one the app can read back; one that does
- * not — an engine with no query language of its own — cannot be asked at all.
- *
- * Takes the row rather than a kind so that a caller never has to cast a stored
- * string on the way to asking a question about it.
- */
-export function canBeAsked(row: { kind: string }): boolean {
-  return engineOf(row).queryLanguage !== null;
-}
-
-/**
- * Whether a source's statements can be kept as a Saved Query, and therefore
- * whether one of them can be put on a Schedule or watched by an Alert Rule.
- */
-export function canBeSaved(row: { kind: string }): boolean {
-  const language = engineOf(row).queryLanguage;
-  return language !== null && LANGUAGES[language].savable;
 }
 
 export const PORT_MIN = 1;
@@ -625,17 +572,4 @@ export interface ITestConnectionResponse {
   ok: boolean;
   total: number;
   sample: string[];
-}
-
-/**
- * Whether the app's own tooling covers a source: whether its structure can be
- * read as tables and typed fields, whether it can be explained, and whether rows
- * can be previewed through the app. Dashboards and the MCP tools are all built on
- * those, so they all read this rather than each deciding for itself.
- *
- * Takes the row for the same reason `canBeAsked` does: a caller holding a stored
- * row should not have to cast it to ask a question about it.
- */
-export function canUseTooling(row: { kind: string }): boolean {
-  return engineOf(row).supportsTooling;
 }

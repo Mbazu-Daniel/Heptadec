@@ -8,14 +8,13 @@ import {
   PORT_MIN,
   connectionFields,
   defaultConnectionMode,
-  engineFrom,
-  kindOf,
   type ConnectionFieldKind,
   type ConnectionMode,
   type DataSourceKind,
   type IConnectionField,
   type IEngineSpec,
 } from "./contracts";
+import { kindOf } from "./engines";
 
 const MAX_NAME = 80;
 
@@ -369,8 +368,7 @@ function readKind(body: Record<string, unknown>): DataSourceKind {
   if (!Object.hasOwn(ENGINE_SPECS, kind)) {
     throw new BadRequestException("Pick a supported database engine");
   }
-  engineFrom(kind);
-  return kind as DataSourceKind;
+  return kindOf({ kind });
 }
 
 /**

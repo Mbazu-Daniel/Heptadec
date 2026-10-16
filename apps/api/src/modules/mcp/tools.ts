@@ -11,9 +11,8 @@ import {
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import {
   ENGINE_SPECS,
-  canUseTooling,
-  kindOf,
 } from "../data-source/contracts";
+import { canUseTooling, kindOf } from "../data-source/engines";
 import {
   savedConnection,
 } from "../data-source/connection";

@@ -16,6 +16,10 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import {
+  driverFailure,
+  logDriverFailure,
+} from "../../common/driver-error";
+import {
   readBody,
   readOptionalString,
   readString,
@@ -209,8 +213,8 @@ function dashboardAiRoutes() {
             }
           }
         } catch (caught) {
-          console.error(`[dashboard] that plan could not be produced:`, caught);
           problem =
+            driverFailure(caught, "produce that plan") ??
             "That source could not be read, or the provider could not be reached. The dashboard is saved with its sources connected.";
         }
 
@@ -294,7 +298,7 @@ function dashboardAiRoutes() {
           );
           proposal = readProposal(answer, question);
         } catch (caught) {
-          console.error(`[dashboard] that request could not be answered:`, caught);
+          logDriverFailure(caught, "answer that request");
         }
 
         if (proposal === null) {

@@ -2,6 +2,7 @@ import type { AlertRuleRow, NotificationChannelRow } from "@heptadec/db";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "../data-source/secret";
+import { driverFailure } from "../../common/driver-error";
 import type {
   INotificationConfig,
   NotificationKind,
@@ -52,11 +53,27 @@ async function sendToChannel(
   subject: string,
   message: string,
 ): Promise<string | null> {
+  let config: INotificationConfig;
+  let recipients: string[];
   try {
-    const config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
-    return await post(config, JSON.parse(channel.recipients) as string[], subject, message);
-  } catch {
-    return "The channel could not be reached";
+    config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
+    recipients = JSON.parse(channel.recipients) as string[];
+  } catch (caught) {
+    // A configuration that will not open is a failure of what was stored, not
+    // of the network, so it says so rather than reading as a channel that could
+    // not be reached, and the driver's own words reach the operator.
+    return (
+      driverFailure(caught, "open that channel's sealed configuration") ??
+      "That channel's configuration could not be read"
+    );
+  }
+  try {
+    return await post(config, recipients, subject, message);
+  } catch (caught) {
+    return (
+      driverFailure(caught, "reach that channel") ??
+      "The channel could not be reached"
+    );
   }
 }
 

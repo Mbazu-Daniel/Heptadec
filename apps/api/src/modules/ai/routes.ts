@@ -21,6 +21,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
@@ -333,8 +334,8 @@ export function aiRoutes(): Hono<IAuthVars> {
           });
         }
       } catch (caught) {
-        console.error(`[ai] that question could not be answered:`, caught);
         problem =
+          driverFailure(caught, "answer that question") ??
           "That source could not be read, or the provider could not be reached. Check the source and the key.";
       }
 

@@ -1,5 +1,6 @@
 import mysql from "mysql2";
 import { BadRequestException } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import {
   clickhouseClient,
   libsqlClientFor,
@@ -168,14 +169,14 @@ function tooManyBytes(rows: Array<Record<string, unknown>>): boolean {
 }
 
 function refused(caught: unknown): BadRequestException {
+  const failure = driverFailure(caught, "run that statement");
+  if (failure !== null) {
+    return new BadRequestException(failure);
+  }
   const message = caught instanceof Error ? caught.message : "";
   if (message.includes("timeout")) {
     return new BadRequestException("That statement took too long and was cancelled");
   }
-  if (message.includes("ECONNREFUSED")) {
-    return new BadRequestException("Nothing is listening on that host and port");
-  }
-  console.error(`[api] that source refused a statement: ${message}`);
   return new BadRequestException(
     "That statement was refused. Check the tables and columns it names exist and that you can read them.",
   );

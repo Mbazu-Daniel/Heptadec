@@ -24,6 +24,7 @@ import {
   BadRequestException,
   BadGatewayException,
 } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import {
   can,
 } from "../rbac/authorize";
@@ -388,17 +389,13 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       readBody(await c.req.json(), "A data source is required"),
     );
 
-    try {
-      const objects = await listObjects(storedFromInput(input));
-      const body: ITestConnectionResponse = {
-        ok: true,
-        total: objects.length,
-        sample: objects.slice(0, 10).map((object) => object.name),
-      };
-      return c.json(body);
-    } catch {
-      throw new BadGatewayException("The database could not be reached");
-    }
+    const objects = await reachable(() => listObjects(storedFromInput(input)));
+    const body: ITestConnectionResponse = {
+      ok: true,
+      total: objects.length,
+      sample: objects.slice(0, 10).map((object) => object.name),
+    };
+    return c.json(body);
   });
 
   return routes;
@@ -407,8 +404,11 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
 async function reachable<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
-  } catch {
-    throw new BadGatewayException("The database could not be reached");
+  } catch (caught) {
+    throw new BadGatewayException(
+      driverFailure(caught, "reach that data source") ??
+        "The database could not be reached",
+    );
   }
 }
 

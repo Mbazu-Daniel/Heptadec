@@ -12,6 +12,7 @@ import {
   quotePostgres,
 } from "../data-source/clients";
 import { BadRequestException } from "../../common/exceptions";
+import { structureFailure } from "../../common/driver-error";
 import { engineFrom, type SqlDialect } from "../data-source/contracts";
 import { introspectPostgres } from "./postgres";
 import type {
@@ -143,7 +144,7 @@ async function introspectMysql(
       introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
-    throw new BadRequestException(readable(caught));
+    throw new BadRequestException(structureFailure(caught));
   } finally {
     await client.end().catch(() => undefined);
   }
@@ -181,7 +182,7 @@ async function introspectClickhouse(
       introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
-    throw new BadRequestException(readable(caught));
+    throw new BadRequestException(structureFailure(caught));
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -259,7 +260,7 @@ async function introspectSqlite(
       introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
-    throw new BadRequestException(readable(caught));
+    throw new BadRequestException(structureFailure(caught));
   } finally {
     client.close();
   }
@@ -319,7 +320,7 @@ async function introspectMongo(connection: IStoredConnection): Promise<Introspec
       introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
-    throw new BadRequestException(readable(caught));
+    throw new BadRequestException(structureFailure(caught));
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -419,30 +420,4 @@ function toKeyRelationship(row: IKeyRow): ISchemaRelationship {
     toTable: row.to_table,
     toColumn: row.to_column,
   };
-}
-
-function readable(caught: unknown): string {
-  const message = caught instanceof Error ? caught.message : "";
-  if (message.includes("ECONNREFUSED")) {
-    return "Nothing is listening on that host and port";
-  }
-  if (message.includes("Server selection timed out")) {
-    return "Nothing is listening on that host and port";
-  }
-  if (message.includes("Access denied")) {
-    return "That username and password were rejected";
-  }
-  if (message.includes("Authentication failed")) {
-    return "That username and password were rejected";
-  }
-  if (message.includes("password authentication failed")) {
-    return "That username and password were rejected";
-  }
-  if (message.includes("does not exist")) {
-    return "That database does not exist";
-  }
-  if (message.includes("timeout")) {
-    return "Reading the structure of that database took too long";
-  }
-  return "That data source's structure could not be read";
 }

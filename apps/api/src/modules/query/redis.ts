@@ -1,5 +1,6 @@
 import { createClient } from "redis";
 import { BadGatewayException, BadRequestException } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IRedisQueryResponse } from "./contracts";
@@ -130,8 +131,11 @@ export async function runRedisQuery(
       truncated: grid.rows.length > rows.length,
       durationMs: Date.now() - startedAt,
     };
-  } catch {
-    throw new BadGatewayException("That Redis command could not be run");
+  } catch (caught) {
+    throw new BadGatewayException(
+      driverFailure(caught, "run that Redis command") ??
+        "That Redis command could not be run",
+    );
   } finally {
     await client.quit().catch(() => undefined);
   }

@@ -5,14 +5,15 @@ import { authFor, type AuthSession } from "../config/better-auth";
 import { UnauthorizedException } from "../exceptions";
 import {
   currentOrganizationId,
-  type IOrganizationScope,
+  organizationScope,
+  type IRequestScope,
 } from "../session/current-organization";
 
 export interface IAuthVars {
   Variables: {
     db: HeptadecDatabase;
     session: AuthSession | null;
-    organization: IOrganizationScope | null;
+    organization: IRequestScope | null;
   };
   Bindings: {
     db: HeptadecDatabase;
@@ -52,13 +53,18 @@ export const requireSession = createMiddleware<IAuthVars>(async (c, next) => {
 async function liveOrganization(
   db: HeptadecDatabase,
   session: NonNullable<AuthSession>,
-): Promise<IOrganizationScope | null> {
+): Promise<IRequestScope | null> {
   const organizationId = currentOrganizationId(session);
   if (organizationId === null) {
     return null;
   }
   const rows = await db
-    .select({ id: member.id })
+    .select({
+      id: member.id,
+      role: member.role,
+      displayName: member.displayName,
+      image: member.image,
+    })
     .from(member)
     .where(
       and(
@@ -67,8 +73,9 @@ async function liveOrganization(
       ),
     )
     .limit(1);
-  if (rows.length === 0) {
+  const caller = rows[0];
+  if (caller === undefined) {
     return null;
   }
-  return { organizationId, db, where: (column) => eq(column, organizationId) };
+  return { ...organizationScope(db, organizationId), caller };
 }

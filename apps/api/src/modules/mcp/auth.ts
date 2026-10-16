@@ -2,7 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import { UnauthorizedException } from "../../common/exceptions";
-import type { IOrganizationScope } from "../../common/session/current-organization";
+import {
+  organizationScope,
+  type IOrganizationScope,
+} from "../../common/session/current-organization";
 import { isBetterAuthError } from "../../common/exceptions/from-better-auth";
 import { MCP_CONFIG_ID } from "./capabilities";
 
@@ -60,11 +63,9 @@ export async function authenticateMcpKey(
   }
 
   return {
+    ...organizationScope(db, organizationId),
     keyId: key.id,
-    organizationId,
-    db,
     permissions: key.permissions,
-    where: (column) => eq(column, organizationId),
   };
 }
 

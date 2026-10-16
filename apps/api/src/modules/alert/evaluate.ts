@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import type { AlertRuleRow } from "@heptadec/db";
+import type { IOrganizationScope } from "../../common/session/current-organization";
 import type { AlertOperator } from "./contracts";
 import { breachMessage, breaches } from "./contracts";
 import { deliverBreach } from "./deliver";
@@ -10,18 +11,17 @@ import type { IQueryResponse } from "../query/contracts";
 const { alertRule } = schema;
 
 export async function checkAlerts(
-  db: HeptadecDatabase,
   queryId: string,
-  organizationId: string,
+  organization: IOrganizationScope,
   grid: IQueryResponse,
 ): Promise<void> {
-  const rules = await db
+  const rules = await organization.db
     .select()
     .from(alertRule)
     .where(
       and(
         eq(alertRule.savedQueryId, queryId),
-        eq(alertRule.organizationId, organizationId),
+        organization.where(alertRule.organizationId),
       ),
     );
 
@@ -31,7 +31,7 @@ export async function checkAlerts(
     if (fired === 0) {
       continue;
     }
-    await deliverBreach(db, rule, breachMessage(rule, operator, grid, fired));
+    await deliverBreach(organization.db, rule, breachMessage(rule, operator, grid, fired));
   }
 }
 

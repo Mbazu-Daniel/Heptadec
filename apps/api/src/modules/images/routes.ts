@@ -1,15 +1,12 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
 import { requireSession, type IAuthVars } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
 import {
   BadRequestException,
-  ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
-import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import {
   avatarKeyPrefixFor,
   logoKeyFor,
@@ -19,8 +16,6 @@ import {
 } from "./contracts";
 import { MEDIA_PATH_PREFIX, publicBaseFrom } from "./urls";
 import { presignUpload, type IUploadTarget } from "./presign";
-
-const { member } = schema;
 
 const KEY_PREFIXES = ["avatars/", "logos/"];
 
@@ -112,34 +107,16 @@ export function imageRoutes(): Hono<IAuthVars> {
     }
 
     const organization = activeOrganization(c);
-    if (
-      target === "logo" &&
-      !(await can(organization.db, c.req.raw.headers, "organization", "update"))
-    ) {
-      throw new ForbiddenException("Only an owner can change the logo");
+    if (target === "logo") {
+      requireOwner(c, "Only an owner can change the logo");
     }
 
-    // An avatar is keyed by membership, so it needs the member row: the session
-    // says which user, not which membership. A logo is keyed by the
-    // organization, which the session already has.
-    const [membership] =
-      target === "avatar"
-        ? await organization.db
-            .select({ id: member.id })
-            .from(member)
-            .where(
-              and(
-                eq(member.userId, c.get("session")!.user.id),
-                organization.where(member.organizationId),
-              ),
-            )
-            .limit(1)
-        : [{ id: organization.organizationId }];
-    if (membership === undefined) {
-      throw new ForbiddenException("You are not a member of that organization");
-    }
+    // An avatar is keyed by membership, and the request's scope already carries
+    // the caller's membership row. A logo is keyed by the organization.
+    const membershipId =
+      target === "avatar" ? organization.caller.id : organization.organizationId;
 
-    const key = keyFor(target, membership.id, organization.organizationId);
+    const key = keyFor(target, membershipId, organization.organizationId);
     const upload = await presignUpload({ ...signable, key, contentType });
 
     return c.json<IPresignImageResponse>({

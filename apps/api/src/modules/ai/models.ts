@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { schema } from "@heptadec/db";
 import type { AiProviderRow } from "@heptadec/db";
+import type { IOrganizationScope } from "../../common/session/current-organization";
 import { decryptSecret } from "../data-source/secret";
 import { providerSpec } from "./catalog";
 
@@ -84,16 +85,15 @@ export async function listModels(row: AiProviderRow): Promise<ModelListing> {
 }
 
 export async function suggestModels(
-  db: HeptadecDatabase,
-  organizationId: string,
+  organization: IOrganizationScope,
   providerId: string,
 ): Promise<IModel[]> {
-  const rows = await db
+  const rows = await organization.db
     .select({ model: aiProvider.model })
     .from(aiProvider)
     .where(
       and(
-        eq(aiProvider.organizationId, organizationId),
+        organization.where(aiProvider.organizationId),
         eq(aiProvider.provider, providerId),
       ),
     )

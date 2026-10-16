@@ -12,7 +12,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from "../../common/exceptions";
-import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import { roleOf } from "../rbac/roles";
 import { activeOrganization } from "../../common/session/current-organization";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
@@ -116,9 +116,7 @@ export function organizationRoutes(): Hono<IAuthVars> {
   routes.post("/api/organization/delete", requireSession, async (c) => {
     const scope = activeOrganization(c);
 
-    if (!(await can(scope.db, c.req.raw.headers, "organization", "delete"))) {
-      throw new ForbiddenException("Only an owner can delete an organization");
-    }
+    requireOwner(c, "Only an owner can delete an organization");
 
     const body = readBody(await c.req.json(), "Type the organization slug to confirm");
     const slug = readString(body, "slug", "Type the organization slug to confirm", MAX_SLUG);

@@ -161,12 +161,8 @@ function SidebarUserCard({
           Organization settings
         </button>
         <div className="mx-2 my-1 border-t border-border" />
-        <div
-          role="group"
-          aria-label="Theme"
-          className="flex items-center gap-1 px-2.5 py-2"
-        >
-          <ThemeSwitch stretchModes />
+        <div className="px-2.5 py-2">
+          <ThemeSwitch stretchModes stacked />
         </div>
         <div className="mx-2 my-1 border-t border-border" />
         <button

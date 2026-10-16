@@ -179,6 +179,40 @@ async function ruleIdOf(savedQueryId: string): Promise<string> {
   return rows[0]!.id;
 }
 
+it("stores an edited alert rule in the row it came from", async () => {
+  const { cookie, savedQueryId } = await ownerWithChart();
+  const created = await rule(cookie, {
+    savedQueryId,
+    name: "Busy regions",
+    column: "events",
+    operator: ">=",
+    threshold: 1,
+  });
+  expect(created.status).toBe(201);
+  const { alertRule: made } = (await created.json()) as {
+    alertRule: { id: string };
+  };
+
+  const res = await request(`/api/alert-rules/${made.id}`, {
+    method: "PUT",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Tightened",
+      column: "larger",
+      operator: "<",
+      threshold: 3,
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await db.select().from(alertRule).where(eq(alertRule.id, made.id));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.name).toBe("Tightened");
+  expect(rows[0]!.column).toBe("larger");
+  expect(rows[0]!.operator).toBe("<");
+  expect(rows[0]!.threshold).toBe(3);
+});
+
 it("fires a breached threshold and reaches every channel that is connected", async () => {
   const receiver = await startReceiver();
   try {

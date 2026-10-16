@@ -63,6 +63,68 @@ export function buildCron(when: IWhen): string {
   return `${time} ${when.dayOfMonth} * *`;
 }
 
+/**
+ * The IWhen a cron written by buildCron came from, so an edit dialog opens
+ * with the schedule it is editing. Returns null for anything this app does
+ * not build (a hand-written step, both a day of month and a weekday set) —
+ * the dialog then opens on the default form rather than a wrong guess.
+ */
+export function parseWhen(cron: string): IWhen | null {
+  const parts = fields(cron);
+  if (parts === null) {
+    return null;
+  }
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+
+  if (hour === "*") {
+    if (dayOfMonth !== "*" || month !== "*" || dayOfWeek !== "*") {
+      return null;
+    }
+    const at = minuteOf(minute);
+    return at === null ? null : { ...DEFAULT_WHEN, repeat: "hourly", minute: at };
+  }
+
+  const time = clock(minute, hour);
+  if (time === null || month !== "*") {
+    return null;
+  }
+  const [atHour, atMinute] = time.split(":");
+  if (dayOfMonth === "*" && dayOfWeek === "*") {
+    return {
+      ...DEFAULT_WHEN,
+      repeat: "daily",
+      hour: atHour!,
+      minute: atMinute!,
+    };
+  }
+  if (dayOfMonth === "*") {
+    return {
+      ...DEFAULT_WHEN,
+      repeat: "weekly",
+      // Cron allows 7 for Sunday; the weekday select here names it 0.
+      weekday: dayOfWeek === "7" ? "0" : dayOfWeek!,
+      hour: atHour!,
+      minute: atMinute!,
+    };
+  }
+  if (dayOfWeek === "*") {
+    return {
+      ...DEFAULT_WHEN,
+      repeat: "monthly",
+      dayOfMonth: dayOfMonth!,
+      hour: atHour!,
+      minute: atMinute!,
+    };
+  }
+  return null;
+}
+
 const FIELD = /^\S+$/;
 
 function fields(cron: string): string[] | null {

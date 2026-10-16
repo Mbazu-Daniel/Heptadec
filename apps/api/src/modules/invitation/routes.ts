@@ -10,12 +10,11 @@ import { readBody, readString } from "../../common/http/body";
 import { activeOrganization } from "../../common/session/current-organization";
 import {
   BadRequestException,
-  ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
 import { isRole, type Role } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
-import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import { recordAudit, auditActor } from "../audit";
 import type {
   IAcceptInvitationResponse,
@@ -66,9 +65,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
   routes.get("/api/organization/invitations", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(organization.db, c.req.raw.headers, "invitation", "create"))) {
-      throw new ForbiddenException("Only an owner can see invitations");
-    }
+    requireOwner(c, "Only an owner can see invitations");
 
     const rows = await organization.db
       .select({
@@ -153,9 +150,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
     }
     const role: Role = roleValue;
 
-    if (!(await can(organization.db, c.req.raw.headers, "invitation", "create"))) {
-      throw new ForbiddenException("Only an owner can invite members");
-    }
+    requireOwner(c, "Only an owner can invite members");
 
     await authFor(c.get("db")).api.createInvitation({
       body: { email, role, organizationId: organization.organizationId },
@@ -180,9 +175,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
   routes.delete("/api/organization/invitations/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(organization.db, c.req.raw.headers, "invitation", "cancel"))) {
-      throw new ForbiddenException("Only an owner can cancel an invitation");
-    }
+    requireOwner(c, "Only an owner can cancel an invitation");
     const invitationId = c.req.param("id");
     const owned = await organization.db
       .select({ id: invitation.id })

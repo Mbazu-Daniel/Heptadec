@@ -9,12 +9,11 @@ import type { IOrganizationScope } from "../../common/session/current-organizati
 import { authFor } from "../../common/config/better-auth";
 import {
   BadRequestException,
-  ForbiddenException,
   NotFoundException,
   TooManyRequestsException,
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
-import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import { recordAudit, auditActor } from "../audit";
 import { authenticateMcpKey } from "./auth";
 import {
@@ -67,9 +66,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/mcp-tokens", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "create"))) {
-      throw new ForbiddenException("Only owners can create MCP tokens");
-    }
+    requireOwner(c, "Only owners can create MCP tokens");
 
     const raw = readBody(await c.req.json(), "A name is required");
     const name = readString(raw, "name", "A name is required");
@@ -110,9 +107,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/mcp-tokens", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "read"))) {
-      throw new ForbiddenException("Only owners can see MCP tokens");
-    }
+    requireOwner(c, "Only owners can see MCP tokens");
 
     const result = await authFor(organization.db).api.listApiKeys({
       query: {
@@ -129,9 +124,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
 
   routes.delete("/api/mcp-tokens/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    if (!(await can(organization.db, c.req.raw.headers, "apiKey", "delete"))) {
-      throw new ForbiddenException("Only owners can revoke MCP tokens");
-    }
+    requireOwner(c, "Only owners can revoke MCP tokens");
 
     const result = await authFor(organization.db).api.updateApiKey({
       body: {

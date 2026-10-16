@@ -54,7 +54,7 @@ export async function readDashboardSources(
       and(
         eq(dashboardDataSource.dashboardId, dashboardId),
         organization.where(dashboardDataSource.organizationId),
-        eq(dataSource.organizationId, organization.organizationId),
+        organization.where(dataSource.organizationId),
       ),
     )
     .orderBy(dataSource.name);
@@ -112,7 +112,7 @@ export async function ownSources(
     .where(
       and(
         inArray(dataSource.id, wanted),
-        eq(dataSource.organizationId, organization.organizationId),
+        organization.where(dataSource.organizationId),
       ),
     );
 

@@ -13,10 +13,9 @@ import {
   type IProvidersResponse,
   type ProviderId,
 } from "./contracts";
-import { currentOrganizationId } from "../../common/session/current-organization";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
 
-const { account, member, user } = schema;
+const { account, user } = schema;
 
 function enabledProviders(db: IAuthVars["Bindings"]["db"]): IProvider[] {
   const enabled = Object.keys(
@@ -39,30 +38,16 @@ export function authRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/me", requireSession, async (c) => {
     const session = c.get("session")!;
+    const organization = c.get("organization");
     const db = c.get("db");
-    const organizationId = currentOrganizationId(session);
 
-    const [credential, named] = await Promise.all([
-      db
-        .select({ id: account.id })
-        .from(account)
-        .where(
-          and(eq(account.userId, session.user.id), eq(account.providerId, "credential")),
-        )
-        .limit(1),
-      organizationId === null
-        ? Promise.resolve([])
-        : db
-            .select({ displayName: member.displayName, image: member.image })
-            .from(member)
-            .where(
-              and(
-                eq(member.userId, session.user.id),
-                eq(member.organizationId, organizationId),
-              ),
-            )
-            .limit(1),
-    ]);
+    const credential = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(
+        and(eq(account.userId, session.user.id), eq(account.providerId, "credential")),
+      )
+      .limit(1);
 
     const body: IMe = {
       user: {
@@ -73,8 +58,8 @@ export function authRoutes(): Hono<IAuthVars> {
         hasPassword: credential.length > 0,
         onboardingCompleted: session.user.onboardingCompleted ?? false,
       },
-      displayName: named[0]?.displayName ?? null,
-      image: mediaUrl(named[0]?.image ?? null, publicBaseFrom(c.env)),
+      displayName: organization?.caller.displayName ?? null,
+      image: mediaUrl(organization?.caller.image ?? null, publicBaseFrom(c.env)),
     };
     return c.json(body);
   });

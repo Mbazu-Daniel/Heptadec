@@ -44,10 +44,7 @@ export function schemaRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That data source does not exist");
     }
 
-    const introspected = await introspectSchema(
-      await storedFromRow(source),
-      source.readOnly,
-    );
+    const introspected = await introspectSchema(await storedFromRow(source));
     const body: ISchemaResponse = { sourceId: source.id, ...introspected };
     return c.json(body);
   });

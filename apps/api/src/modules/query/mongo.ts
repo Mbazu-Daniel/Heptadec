@@ -58,9 +58,8 @@ export function readMongoPipeline(value: unknown): IMongoPipeline {
 export async function runMongoQuery(
   connection: IStoredConnection,
   pipeline: IMongoPipeline,
-  readOnly: boolean,
 ): Promise<IQueryResponse> {
-  if (readOnly) {
+  if (connection.readOnly) {
     for (const stage of pipeline.pipeline) {
       const name = Object.keys(stage)[0] ?? "";
       if (WRITING_STAGES.includes(name)) {

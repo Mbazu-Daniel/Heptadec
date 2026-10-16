@@ -26,11 +26,7 @@ export type RunResult = IQueryResponse | IRedisQueryResponse;
  * to reach and what to do with what it finds.
  */
 export interface ILanguageRunner {
-  run(
-    connection: IStoredConnection,
-    body: unknown,
-    readOnly: boolean,
-  ): Promise<RunResult>;
+  run(connection: IStoredConnection, body: unknown): Promise<RunResult>;
 }
 
 /**
@@ -40,11 +36,10 @@ export interface ILanguageRunner {
  */
 const RUNNERS = {
   sql: {
-    run: (connection, body, readOnly) =>
+    run: (connection, body) =>
       runSqlQuery(
         connection,
         readString(readBody(body, "A statement is required"), "sql", "A statement is required"),
-        readOnly,
       ),
   },
   command: {
@@ -55,11 +50,10 @@ const RUNNERS = {
       ),
   },
   pipeline: {
-    run: (connection, body, readOnly) =>
+    run: (connection, body) =>
       runMongoQuery(
         connection,
         readMongoPipeline(readBody(body, "A pipeline is required").mongo),
-        readOnly,
       ),
   },
   search: {

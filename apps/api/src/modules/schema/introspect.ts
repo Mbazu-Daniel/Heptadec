@@ -28,11 +28,10 @@ const MAX_TABLES = 500;
 // Quickwit have no tables to read, so they never reach here.
 export async function introspectSchema(
   connection: IStoredConnection,
-  readOnly: boolean,
 ): Promise<Introspected> {
   switch (connection.kind) {
     case "postgres":
-      return introspectPostgres(asRelational(connection, readOnly));
+      return introspectPostgres(asRelational(connection));
     case "mysql":
     case "mariadb":
       return introspectMysql(connection);
@@ -113,16 +112,16 @@ const MYSQL_INDEXES = `
 async function introspectMysql(
   connection: IStoredConnection,
 ): Promise<Introspected> {
-  const relational = asRelational(connection, true);
+  const database = databaseName(connection);
   const client = await openMysql(connection);
   try {
-    const columns = (await client.query(MYSQL_COLUMNS, [relational.database]))[0] as IColumnRow[];
-    const keys = (await client.query(MYSQL_FOREIGN_KEYS, [relational.database]))[0] as IKeyRow[];
-    const indexes = (await client.query(MYSQL_INDEXES, [relational.database]))[0] as IIndexRow[];
+    const columns = (await client.query(MYSQL_COLUMNS, [database]))[0] as IColumnRow[];
+    const keys = (await client.query(MYSQL_FOREIGN_KEYS, [database]))[0] as IKeyRow[];
+    const indexes = (await client.query(MYSQL_INDEXES, [database]))[0] as IIndexRow[];
 
     return {
-      database: relational.database,
-      schemaName: relational.database,
+      database,
+      schemaName: database,
       tables: assemble(columns, indexes),
       relationships: keys.map(toKeyRelationship),
       introspectedAt: new Date().toISOString(),

@@ -38,7 +38,6 @@ export function queryRoutes(): Hono<IAuthVars> {
     const body = await runner.run(
       await storedFromRow(source),
       await c.req.json(),
-      source.readOnly,
     );
     return c.json(body);
   });

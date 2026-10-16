@@ -54,11 +54,7 @@ export async function materializeResult(
     );
   }
 
-  const grid = await runSqlQuery(
-    await storedFromRow(source),
-    query.sql,
-    source.readOnly,
-  );
+  const grid = await runSqlQuery(await storedFromRow(source), query.sql);
 
   await cacheResult(organization.db, query.organizationId, query.id, grid, ttlSeconds);
 

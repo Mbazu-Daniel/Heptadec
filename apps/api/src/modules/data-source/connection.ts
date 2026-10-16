@@ -545,6 +545,13 @@ function storedMode(value: string | null): ConnectionMode | null {
 
 export interface IStoredConnection {
   kind: DataSourceKind;
+  /**
+   * The source's own read-only setting. A field rather than a parameter so that
+   * no caller can reach a driver without it: it used to be threaded positionally
+   * through the runner, the introspector and the relational view, and a caller
+   * that omitted it ran without the floor.
+   */
+  readOnly: boolean;
   connectionMode: ConnectionMode | null;
   host: string | null;
   port: number | null;
@@ -565,6 +572,7 @@ export async function storedFromRow(
 ): Promise<IStoredConnection> {
   return {
     kind: kindOf(row),
+    readOnly: row.readOnly,
     connectionMode: storedMode(row.connectionMode),
     host: row.host,
     port: row.port,
@@ -584,6 +592,7 @@ export async function storedFromRow(
 export function storedFromInput(input: IConnectionInput): IStoredConnection {
   return {
     kind: input.kind,
+    readOnly: input.readOnly,
     connectionMode: input.connectionMode,
     host: input.host,
     port: input.port,
@@ -657,13 +666,10 @@ export interface ISavedConnection {
 export async function savedConnection(
   row: DataSourceRow,
 ): Promise<ISavedConnection> {
-  return asRelational(await storedFromRow(row), row.readOnly);
+  return asRelational(await storedFromRow(row));
 }
 
-export function asRelational(
-  stored: IStoredConnection,
-  readOnly: boolean,
-): ISavedConnection {
+export function asRelational(stored: IStoredConnection): ISavedConnection {
   const viaSocket = stored.connectionMode === "socket";
 
   if (stored.database === null) {
@@ -689,6 +695,6 @@ export function asRelational(
     caCert: stored.caCert,
     clientCert: stored.clientCert,
     clientKey: stored.clientKey,
-    readOnly,
+    readOnly: stored.readOnly,
   };
 }

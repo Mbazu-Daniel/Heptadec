@@ -23,14 +23,13 @@ const MYSQL_TYPE_NAMES = new Map<number, string>(
 export async function runSqlQuery(
   connection: IStoredConnection,
   sql: string,
-  readOnly: boolean,
   refine: IQueryRefine | null = null,
 ): Promise<IQueryResponse> {
   const statement = sql.trim().replace(/;+\s*$/, "");
   if (statement.length === 0) {
     throw new BadRequestException("Write a statement to run");
   }
-  if (readOnly) {
+  if (connection.readOnly) {
     assertSqlReads(statement, "run");
   }
   const dialect = dialectOf(connection.kind);
@@ -43,7 +42,7 @@ export async function runSqlQuery(
 
   switch (connection.kind) {
     case "postgres":
-      return runPostgresQuery(asRelational(connection, readOnly), composed);
+      return runPostgresQuery(asRelational(connection), composed);
     case "mysql":
     case "mariadb":
       return runMysqlStatement(connection, composed);

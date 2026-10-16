@@ -311,7 +311,7 @@ export function aiRoutes(): Hono<IAuthVars> {
                 ? await redisContext(stored)
               : schemaContext({
                   sourceId: source.id,
-                  ...(await introspectSchema(stored, source.readOnly)),
+                  ...(await introspectSchema(stored)),
                 });
 
           await turn.status(`Asking ${chosen.name} (${chosen.model})…`);

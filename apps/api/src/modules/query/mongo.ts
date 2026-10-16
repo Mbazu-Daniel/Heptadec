@@ -49,9 +49,8 @@ export function readMongoPipeline(value: unknown): IMongoPipeline {
 export async function runMongoQuery(
   connection: IStoredConnection,
   pipeline: IMongoPipeline,
-  readOnly: boolean,
 ): Promise<IQueryResponse> {
-  if (readOnly) {
+  if (connection.readOnly) {
     assertMongoReads(pipeline);
   }
 

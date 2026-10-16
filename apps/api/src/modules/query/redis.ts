@@ -80,13 +80,12 @@ function toGrid(result: unknown): {
 export async function runRedisQuery(
   source: IStoredConnection,
   command: string,
-  readOnly: boolean,
 ): Promise<IRedisQueryResponse> {
   const trimmed = command.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS) {
     throw new BadRequestException("A Redis command is required");
   }
-  assertRedisReads(trimmed, readOnly);
+  assertRedisReads(trimmed, source.readOnly);
   const tokens = tokenize(trimmed);
 
   const client = createClient({ url: redisUrl(source) });

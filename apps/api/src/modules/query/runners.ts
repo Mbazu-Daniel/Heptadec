@@ -12,39 +12,32 @@ import { readSearchStatement, runSearchQuery } from "./quickwit";
 export type RunResult = IQueryResponse | IRedisQueryResponse;
 
 export interface ILanguageRunner {
-  run(
-    connection: IStoredConnection,
-    body: unknown,
-    readOnly: boolean,
-  ): Promise<RunResult>;
+  run(connection: IStoredConnection, body: unknown): Promise<RunResult>;
 }
 
 const RUNNERS = {
   sql: {
-    run: (connection, body, readOnly) => {
+    run: (connection, body) => {
       const request = readBody(body, "A statement is required");
       return runSqlQuery(
         connection,
         readString(request, "sql", "A statement is required"),
-        readOnly,
         readQueryRefine(request),
       );
     },
   },
   command: {
-    run: (connection, body, readOnly) =>
+    run: (connection, body) =>
       runRedisQuery(
         connection,
         readString(readBody(body, "A command is required"), "command", "A Redis command is required"),
-        readOnly,
       ),
   },
   pipeline: {
-    run: (connection, body, readOnly) =>
+    run: (connection, body) =>
       runMongoQuery(
         connection,
         readMongoPipeline(readBody(body, "A pipeline is required").mongo),
-        readOnly,
       ),
   },
   search: {

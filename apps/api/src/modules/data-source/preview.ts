@@ -35,7 +35,11 @@ export const PREVIEW_MAX_LIMIT = 100;
 const MAX_LIMIT = 100;
 
 async function listPostgresTables(connection: IStoredConnection): Promise<IPreviewObject[]> {
-  const client = postgresClient(asRelational(connection, true), "heptadec-preview");
+  // A preview is a read, so the floor is on whatever the source's own setting says.
+  const client = postgresClient(
+    asRelational({ ...connection, readOnly: true }),
+    "heptadec-preview",
+  );
   await client.connect();
   try {
     const result = await client.query(
@@ -56,7 +60,11 @@ async function previewPostgresTable(
   table: string,
   limit: number,
 ): Promise<IPreviewResponse> {
-  const client = postgresClient(asRelational(connection, true), "heptadec-preview");
+  // A preview is a read, so the floor is on whatever the source's own setting says.
+  const client = postgresClient(
+    asRelational({ ...connection, readOnly: true }),
+    "heptadec-preview",
+  );
   await client.connect();
   try {
     const result = await client.query(

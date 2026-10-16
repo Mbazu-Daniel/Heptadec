@@ -11,42 +11,66 @@ const PRESETS = ["#fa8200", "#a78bfa", "#34d399", "#60a5fa"];
 export function ThemeSwitch({
   showAccent = true,
   stretchModes = false,
+  stacked = false,
 }: {
   showAccent?: boolean;
   stretchModes?: boolean;
+  stacked?: boolean;
 }) {
   const [theme, setTheme] = useTheme();
   const [accent, setAccent] = useAccent();
   const stretch = stretchModes ? " flex-1" : "";
 
-  const modes = (
-    <>
-      {(
-        [
-          { id: "system", icon: IconDeviceDesktop },
-          { id: "light", icon: IconSun },
-          { id: "dark", icon: IconMoon },
-        ] as const
-      ).map((entry) => (
-        <button
-          key={entry.id}
-          type="button"
-          title={entry.id[0]!.toUpperCase() + entry.id.slice(1)}
-          aria-pressed={theme === entry.id}
-          onClick={() => setTheme(entry.id)}
-          className={
-            theme === entry.id
-              ? `grid size-8 place-items-center rounded-lg bg-cyan/15 text-fg${stretch}`
-              : `grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-fg${stretch}`
-          }
-        >
-          <entry.icon size={15} />
-        </button>
-      ))}
-    </>
-  );
+  const modeButtons = (
+    [
+      { id: "system", icon: IconDeviceDesktop },
+      { id: "light", icon: IconSun },
+      { id: "dark", icon: IconMoon },
+    ] as const
+  ).map((entry) => (
+    <button
+      key={entry.id}
+      type="button"
+      title={entry.id[0]!.toUpperCase() + entry.id.slice(1)}
+      aria-pressed={theme === entry.id}
+      onClick={() => setTheme(entry.id)}
+      className={
+        theme === entry.id
+          ? `grid size-8 place-items-center rounded-lg bg-cyan/15 text-fg${stretch}`
+          : `grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-fg${stretch}`
+      }
+    >
+      <entry.icon size={15} />
+    </button>
+  ));
 
-  const accents = (
+  if (stacked && showAccent) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1">{modeButtons}</div>
+        <div className="flex items-center gap-1">{accentRow(accent, setAccent)}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div role="group" aria-label="Theme" className="flex items-center gap-1">
+      {modeButtons}
+      {showAccent ? (
+        <>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+          {accentRow(accent, setAccent)}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function accentRow(
+  accent: string | null,
+  setAccent: (value: string | null) => void,
+) {
+  return (
     <>
       {PRESETS.map((preset) => (
         <button
@@ -108,32 +132,5 @@ export function ThemeSwitch({
         </button>
       ) : null}
     </>
-  );
-
-  if (!showAccent) {
-    return (
-      <div role="group" aria-label="Theme" className="flex items-center gap-1">
-        {modes}
-      </div>
-    );
-  }
-
-  // Mode buttons plus the accent swatches are wider than one row of the
-  // sidebar menu, so the menu stacks them instead of spilling the swatches.
-  if (stretchModes) {
-    return (
-      <div role="group" aria-label="Theme" className="flex flex-col gap-1">
-        <div className="flex items-center gap-1">{modes}</div>
-        <div className="flex items-center gap-1">{accents}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div role="group" aria-label="Theme" className="flex items-center gap-1">
-      {modes}
-      <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-      {accents}
-    </div>
   );
 }

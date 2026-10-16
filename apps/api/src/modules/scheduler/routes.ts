@@ -171,6 +171,95 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     return c.json(response, 201);
   });
 
+  routes.put("/api/scheduled-jobs/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "update"))) {
+      throw new ForbiddenException("Only owners and editors can change schedules");
+    }
+
+    const found = await oneRow(organization.db, scheduledJob, c.req.param("id"), organization);
+    if (found === undefined) {
+      throw new NotFoundException("That schedule does not exist");
+    }
+    const query = await oneRow(organization.db, savedQuery, found.savedQueryId, organization);
+    if (query === undefined) {
+      throw new NotFoundException("That saved query does not exist");
+    }
+
+    const body = readBody(await c.req.json(), "A schedule change is required");
+    // A replacement, not a diff: the reader validates every field the same way
+    // creation does, so no edit can leave the schedule half-configured.
+    const name = readString(body, "name", "Give the schedule a name", MAX_NAME);
+    const cron = readString(body, "cron", "Write a five-field schedule", MAX_CRON);
+    const timezone =
+      readOptionalString(body, "timezone", "Pick a timezone", MAX_TIMEZONE) ??
+      DEFAULT_TIMEZONE;
+    if (!isTimezone(timezone)) {
+      throw new BadRequestException("That timezone is not an IANA zone");
+    }
+    const ttl = body.ttlSeconds;
+    if (
+      ttl !== undefined &&
+      ttl !== null &&
+      (typeof ttl !== "number" ||
+        !Number.isInteger(ttl) ||
+        ttl < MIN_TTL_SECONDS ||
+        ttl > MAX_TTL_SECONDS)
+    ) {
+      throw new BadRequestException(
+        `The freshness window must be between ${MIN_TTL_SECONDS} and ${MAX_TTL_SECONDS} seconds`,
+      );
+    }
+    const ttlSeconds = typeof ttl === "number" ? ttl : DEFAULT_TTL_SECONDS;
+
+    const now = new Date();
+    // nextRunAt answers to the schedule, so an edited cron or zone retires the
+    // previously computed slot. Computing it inside the same object literal as
+    // the write keeps an unreadable edit from touching the stored row.
+    const updated = await organization.db
+      .update(scheduledJob)
+      .set({
+        name,
+        cron,
+        timezone,
+        ttlSeconds,
+        nextRunAt: nextRunFor(
+          { cron, timezone, organizationId: organization.organizationId },
+          now,
+        ),
+        leaseUntil: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(scheduledJob.id, found.id),
+          organization.where(scheduledJob.organizationId),
+        ),
+      )
+      .returning();
+
+    const edited = updated[0];
+    if (edited === undefined) {
+      throw new NotFoundException("That schedule could not be changed");
+    }
+
+    const actor = auditActor(c);
+    await recordAudit(organization.db, {
+      organizationId: organization.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      event: "scheduled_job.updated",
+      targetKind: "scheduled_job",
+      targetId: edited.id,
+      targetLabel: edited.name,
+    });
+    const response: IScheduledJobResponse = {
+      scheduledJob: toScheduledJob(edited, query.name),
+    };
+    return c.json(response);
+  });
+
   routes.delete("/api/scheduled-jobs/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 

@@ -84,6 +84,7 @@ import type {
   IAlertRuleListResponse,
   IAlertRuleResponse,
   ICreateAlertRuleRequest,
+  IUpdateAlertRuleRequest,
 } from "@heptadec/api/alert-contracts";
 import type {
   INotificationChannel,
@@ -95,6 +96,7 @@ import type {
   ICreateScheduledJobRequest,
   IScheduledJobListResponse,
   IScheduledJobResponse,
+  IUpdateScheduledJobRequest,
 } from "@heptadec/api/scheduler-contracts";
 import type {
   ICreateShareLinkRequest,
@@ -598,6 +600,13 @@ export function createScheduledJob(
   return request<IScheduledJobResponse>("/api/scheduled-jobs", "POST", input);
 }
 
+export function updateScheduledJob(
+  id: string,
+  input: IUpdateScheduledJobRequest,
+): Promise<IScheduledJobResponse> {
+  return request<IScheduledJobResponse>(`/api/scheduled-jobs/${id}`, "PUT", input);
+}
+
 export function deleteScheduledJob(id: string): Promise<void> {
   return request(`/api/scheduled-jobs/${id}`, "DELETE");
 }
@@ -610,6 +619,13 @@ export function createAlertRule(
   input: ICreateAlertRuleRequest,
 ): Promise<IAlertRuleResponse> {
   return request<IAlertRuleResponse>("/api/alert-rules", "POST", input);
+}
+
+export function updateAlertRule(
+  id: string,
+  input: IUpdateAlertRuleRequest,
+): Promise<IAlertRuleResponse> {
+  return request<IAlertRuleResponse>(`/api/alert-rules/${id}`, "PUT", input);
 }
 
 export function deleteAlertRule(id: string): Promise<void> {

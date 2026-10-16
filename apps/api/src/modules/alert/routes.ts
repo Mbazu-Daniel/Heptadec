@@ -170,6 +170,82 @@ export function alertRoutes(): Hono<IAuthVars> {
     return c.json(response, 201);
   });
 
+  routes.put("/api/alert-rules/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "update"))) {
+      throw new ForbiddenException("Only owners and editors can change alert rules");
+    }
+
+    const found = await oneRow(organization.db, alertRule, c.req.param("id"), organization);
+    if (found === undefined) {
+      throw new NotFoundException("That alert rule does not exist");
+    }
+
+    const body = readBody(await c.req.json(), "An alert change is required");
+    // A replacement, not a diff: the reader validates every field the same way
+    // creation does, so no edit can leave the watch half-configured.
+    const name = readString(body, "name", "Give the alert a name", MAX_NAME);
+    const column = readString(body, "column", "Pick the column to watch", MAX_COLUMN);
+    const operatorValue = readString(body, "operator", "Pick an operator", 8);
+    if (!isAlertOperator(operatorValue)) {
+      throw new BadRequestException("Pick one of >, >=, <, <= or =");
+    }
+    const threshold = body.threshold;
+    if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
+      throw new BadRequestException("The threshold must be a number");
+    }
+
+    const now = new Date();
+    const updated = await organization.db
+      .update(alertRule)
+      .set({
+        name,
+        column,
+        operator: operatorValue,
+        threshold,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(alertRule.id, found.id),
+          organization.where(alertRule.organizationId),
+        ),
+      )
+      .returning();
+
+    const edited = updated[0];
+    if (edited === undefined) {
+      throw new NotFoundException("That alert rule could not be changed");
+    }
+    const actor = auditActor(c);
+    await recordAudit(organization.db, {
+      organizationId: organization.organizationId,
+      actorId: actor.id,
+      actorLabel: actor.label,
+      event: "alert_rule.updated",
+      targetKind: "alert_rule",
+      targetId: edited.id,
+      targetLabel: edited.name,
+    });
+
+    const running = await organization.db
+      .select({ id: scheduledJob.id })
+      .from(scheduledJob)
+      .where(
+        and(
+          eq(scheduledJob.savedQueryId, found.savedQueryId),
+          organization.where(scheduledJob.organizationId),
+        ),
+      )
+      .limit(1);
+
+    const response: IAlertRuleResponse = {
+      alertRule: toAlertRule(edited, running.length > 0),
+    };
+    return c.json(response);
+  });
+
   routes.delete("/api/alert-rules/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 

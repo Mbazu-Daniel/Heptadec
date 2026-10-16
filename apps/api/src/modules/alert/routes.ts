@@ -20,12 +20,14 @@ import { recordAudit, auditActor } from "../audit";
 import {
   isAlertOperator,
   type AlertOperator,
-  type IAlertDelivery,
   type IAlertDeliveryListResponse,
   type IAlertRule,
   type IAlertRuleListResponse,
   type IAlertRuleResponse,
 } from "./contracts";
+import { checkRunAlerts } from "./evaluate";
+import { toAlertDelivery } from "./deliver";
+import { DEFAULT_TTL_SECONDS } from "../query-result/cache";
 
 const { alertDelivery, alertRule, savedQuery, scheduledJob } = schema;
 
@@ -55,18 +57,6 @@ function toAlertRule(
     scheduled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-function toAlertDelivery(row: typeof alertDelivery.$inferSelect): IAlertDelivery {
-  return {
-    id: row.id,
-    alertRuleId: row.alertRuleId,
-    channel: row.channel as IAlertDelivery["channel"],
-    status: row.status as IAlertDelivery["status"],
-    message: row.message,
-    error: row.error,
-    createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -214,6 +204,39 @@ export function alertRoutes(): Hono<IAuthVars> {
 
     const body: IAlertDeliveryListResponse = {
       alertDeliveries: rows.map(toAlertDelivery),
+    };
+    return c.json(body);
+  });
+
+  /**
+   * A check, on demand, of the alerts watching one saved query — the same
+   * operation a due job does about them, so a breach reaching every channel is
+   * something the app can be asked for rather than only something a tick can
+   * produce. Answers with the deliveries this run wrote.
+   */
+  routes.post("/api/saved-queries/:id/alert-checks", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+
+    if (!(await can(organization.db, c.req.raw.headers, "schedule", "create"))) {
+      throw new ForbiddenException("Only owners and editors can check a query's alerts");
+    }
+
+    const query = await oneRow(
+      organization.db,
+      savedQuery,
+      c.req.param("id"),
+      organization,
+    );
+    if (query === undefined) {
+      throw new NotFoundException("That saved query does not exist");
+    }
+
+    const body: IAlertDeliveryListResponse = {
+      alertDeliveries: await checkRunAlerts(
+        query.id,
+        organization,
+        DEFAULT_TTL_SECONDS,
+      ),
     };
     return c.json(body);
   });

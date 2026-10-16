@@ -5,7 +5,7 @@ import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import { runDueJobs, startScheduler } from "../src/modules/scheduler";
 
-const { dataSource, queryResult, savedQuery, scheduledJob } = schema;
+const { alertDelivery, dataSource, queryResult, savedQuery, scheduledJob } = schema;
 
 const createdJobs: string[] = [];
 
@@ -202,6 +202,42 @@ it("runs a due job on the timer and populates the cache", async () => {
   expect(after!.lastRunAt).not.toBeNull();
   expect(after!.leaseUntil).toBeNull();
   expect(after!.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+});
+
+it("evaluates the alert rules watching a query when its job runs", async () => {
+  const { cookie, savedQueryId } = await ownerWithQuery();
+  const made = await request("/api/alert-rules", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      savedQueryId,
+      name: "Busy regions",
+      column: "events",
+      operator: ">=",
+      threshold: 1,
+    }),
+  });
+  expect(made.status).toBe(201);
+  const { alertRule: placed } = (await made.json()) as {
+    alertRule: { id: string };
+  };
+
+  const id = await createSchedule(cookie, savedQueryId, { cron: "* * * * *" });
+  await db
+    .update(scheduledJob)
+    .set({ nextRunAt: new Date(Date.now() - 60_000) })
+    .where(eq(scheduledJob.id, id));
+
+  await runDueJobs(db, new Date());
+
+  // Nothing is connected to receive it, so the breach is recorded rather than
+  // sent — which is the whole of what a run does about alerts.
+  const rows = await db
+    .select()
+    .from(alertDelivery)
+    .where(eq(alertDelivery.alertRuleId, placed.id));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.status).toBe("skipped");
 });
 
 it("skips a job another runner holds, and runs it once the lease is clear", async () => {

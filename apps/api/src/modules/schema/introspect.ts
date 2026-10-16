@@ -12,6 +12,7 @@ import {
   quotePostgres,
 } from "../data-source/clients";
 import { BadRequestException } from "../../common/exceptions";
+import { engineFrom, type SqlDialect } from "../data-source/contracts";
 import { introspectPostgres } from "./postgres";
 import type {
   ISchemaColumn,
@@ -24,29 +25,44 @@ type Introspected = Omit<ISchemaResponse, "sourceId">;
 
 const MAX_TABLES = 500;
 
-// Reads the structure of whichever engine the source points at. Redis and
-// Quickwit have no tables to read, so they never reach here.
+type SqlIntrospector = (
+  connection: IStoredConnection,
+) => Promise<Introspected>;
+
+/**
+ * Which dialect reads a structure, not which engine asked for it: MariaDB
+ * reports as MySQL and libsql as SQLite, so an engine inherits its reader by
+ * naming a dialect in the catalog rather than by being listed here.
+ *
+ * Keyed by the dialect union, so a dialect added later stops compiling until
+ * its reader exists, instead of reaching a throwing default at runtime.
+ */
+const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
+  postgres: (connection) => introspectPostgres(asRelational(connection)),
+  mysql: introspectMysql,
+  clickhouse: introspectClickhouse,
+  sqlite: introspectSqlite,
+};
+
+// Reads the structure of whichever engine the source points at. Which reader to
+// use follows from the language and the dialect the catalog says the source
+// speaks, so an engine that names SQL and a dialect is read without this file
+// having heard of it. A pipeline source is MongoDB, which is where its
+// documents come from. Redis and Quickwit have no tables to read, so they are
+// refused.
 export async function introspectSchema(
   connection: IStoredConnection,
 ): Promise<Introspected> {
-  switch (connection.kind) {
-    case "postgres":
-      return introspectPostgres(asRelational(connection));
-    case "mysql":
-    case "mariadb":
-      return introspectMysql(connection);
-    case "clickhouse":
-      return introspectClickhouse(connection);
-    case "sqlite":
-    case "libsql":
-      return introspectSqlite(connection);
-    case "mongodb":
-      return introspectMongo(connection);
-    default:
-      throw new BadRequestException(
-        `Reading a table structure is not available for ${connection.kind} sources`,
-      );
+  const engine = engineFrom(connection.kind);
+  if (engine.sqlDialect !== null) {
+    return SQL_INTROSPECTORS[engine.sqlDialect](connection);
   }
+  if (engine.queryLanguage === "pipeline") {
+    return introspectMongo(connection);
+  }
+  throw new BadRequestException(
+    `Reading a table structure is not available for ${connection.kind} sources`,
+  );
 }
 
 // Every engine below reports its catalogue in the shape assemble() expects,

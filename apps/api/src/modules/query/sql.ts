@@ -8,9 +8,10 @@ import {
 } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
+import { engineFrom, type SqlDialect } from "../data-source/contracts";
 import { runPostgresQuery } from "./postgres";
 import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
-import { composeStatement, dialectOf } from "./compose";
+import { composeStatement } from "./compose";
 import { assertSqlReads } from "./read-policy";
 import type { IQueryRefine, IQueryResponse } from "./contracts";
 
@@ -19,6 +20,27 @@ const MYSQL_TYPE_NAMES = new Map<number, string>(
     .filter(([key]) => Number.isInteger(Number(key)))
     .map(([key, name]) => [Number(key), String(name)]),
 );
+
+type SqlRunner = (
+  connection: IStoredConnection,
+  statement: string,
+) => Promise<IQueryResponse>;
+
+/**
+ * Which dialect runs a statement, not which engine asked for it: MariaDB speaks
+ * MySQL and libsql speaks SQLite, so an engine inherits its runner by naming a
+ * dialect in the catalog rather than by being listed here.
+ *
+ * Keyed by the dialect union, so a dialect added later stops compiling until
+ * its runner exists, instead of reaching a throwing default at runtime.
+ */
+const SQL_RUNNERS: Record<SqlDialect, SqlRunner> = {
+  postgres: (connection, statement) =>
+    runPostgresQuery(asRelational(connection), statement),
+  mysql: runMysqlStatement,
+  clickhouse: runClickhouseStatement,
+  sqlite: runSqliteStatement,
+};
 
 export async function runSqlQuery(
   connection: IStoredConnection,
@@ -32,30 +54,14 @@ export async function runSqlQuery(
   if (connection.readOnly) {
     assertSqlReads(statement, "run");
   }
-  const dialect = dialectOf(connection.kind);
+  const dialect = engineFrom(connection.kind).sqlDialect;
   if (dialect === null) {
     throw new BadRequestException(
       "Running statements on that kind of source is not available yet",
     );
   }
   const composed = composeStatement(statement, refine, dialect);
-
-  switch (connection.kind) {
-    case "postgres":
-      return runPostgresQuery(asRelational(connection), composed);
-    case "mysql":
-    case "mariadb":
-      return runMysqlStatement(connection, composed);
-    case "clickhouse":
-      return runClickhouseStatement(connection, composed);
-    case "sqlite":
-    case "libsql":
-      return runSqliteStatement(connection, composed);
-    default:
-      throw new BadRequestException(
-        "Running statements on that kind of source is not available yet",
-      );
-  }
+  return SQL_RUNNERS[dialect](connection, composed);
 }
 
 async function runMysqlStatement(

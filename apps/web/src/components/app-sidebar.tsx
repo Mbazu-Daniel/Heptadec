@@ -140,7 +140,7 @@ function SidebarUserCard({
       <div
         role="menu"
         aria-label="Account"
-        className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-border bg-card p-1.5 shadow-xl"
+        className="absolute bottom-full left-0 z-50 mb-2 w-64 rounded-xl border border-border bg-card p-1.5 shadow-xl"
       >
         <button
           type="button"

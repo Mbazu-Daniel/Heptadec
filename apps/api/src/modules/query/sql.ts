@@ -9,7 +9,8 @@ import {
 } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
-import { engineFrom, type SqlDialect } from "../data-source/contracts";
+import { engineFrom } from "../data-source/engines";
+import type { SqlDialect } from "../data-source/contracts";
 import { runPostgresQuery } from "./postgres";
 import type { IQueryResponse } from "./contracts";
 

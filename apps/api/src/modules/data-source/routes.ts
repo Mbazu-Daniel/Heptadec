@@ -41,10 +41,7 @@ import {
   storedFromInput,
   storedFromRow,
 } from "./connection";
-import {
-  engineOf,
-  kindOf,
-} from "./contracts";
+import { engineFrom, engineOf, kindOf } from "./engines";
 import {
   PREVIEW_DEFAULT_LIMIT,
   PREVIEW_MAX_LIMIT,
@@ -52,7 +49,6 @@ import {
   previewObject,
 } from "./preview";
 import {
-  engineFrom,
   type ConnectionMode,
   type DataSourceKind,
   type ICreateDataSourceResponse,

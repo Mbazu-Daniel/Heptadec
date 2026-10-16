@@ -29,11 +29,10 @@ import { recordAudit, auditActor } from "../audit";
 import { encryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import {
-  canBeAsked,
-  engineOf,
   type IEngineSpec,
   type QueryLanguage,
 } from "../data-source/contracts";
+import { canBeAsked, engineOf } from "../data-source/engines";
 import { introspectSchema } from "../schema/introspect";
 import { AI_PROVIDERS, providerSpec } from "./catalog";
 import { quickwitContext, redisContext, schemaContext } from "./context";

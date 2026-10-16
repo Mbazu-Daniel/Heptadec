@@ -28,7 +28,7 @@ import {
 } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { savedConnection } from "../data-source/connection";
-import { canUseTooling } from "../data-source/contracts";
+import { canUseTooling } from "../data-source/engines";
 import { introspectPostgres } from "../schema/postgres";
 import { runPostgresQuery } from "../query/postgres";
 import type { IQueryResponse } from "../query/contracts";

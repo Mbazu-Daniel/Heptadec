@@ -13,7 +13,8 @@ import {
 } from "../data-source/clients";
 import { BadRequestException } from "../../common/exceptions";
 import { structureFailure } from "../../common/driver-error";
-import { engineFrom, type SqlDialect } from "../data-source/contracts";
+import { engineFrom } from "../data-source/engines";
+import type { SqlDialect } from "../data-source/contracts";
 import { introspectPostgres } from "./postgres";
 import type {
   ISchemaColumn,

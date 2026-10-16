@@ -1,8 +1,7 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { organizationScope } from "../../common/session/current-organization";
-import { checkAlerts } from "../alert/evaluate";
-import { materializeResult } from "../query-result/cache";
+import { checkRunAlerts } from "../alert/evaluate";
 import { nextRunAfter, parseCron } from "./cron";
 
 const { scheduledJob } = schema;
@@ -51,8 +50,7 @@ async function runOne(
   const organization = organizationScope(db, job.organizationId);
 
   try {
-    const grid = await materializeResult(job.savedQueryId, organization, job.ttlSeconds);
-    await checkAlerts(job.savedQueryId, organization, grid);
+    await checkRunAlerts(job.savedQueryId, organization, job.ttlSeconds);
   } catch (caught) {
     console.error(`[scheduler] job ${job.id} (${job.name}) failed:`, caught);
   }

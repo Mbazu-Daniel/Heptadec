@@ -17,9 +17,9 @@ export interface IAlertRule {
   operator: AlertOperator;
   threshold: number;
   /**
-   * Whether any scheduled job runs this rule's query. An alert is only ever
-   * evaluated as a side effect of a scheduled run, so an unscheduled one sits
-   * there looking configured and never delivers.
+   * Whether a scheduled job runs this rule's query. A rule with no schedule
+   * never fires on its own: it is only ever evaluated when someone asks for a
+   * check, so it sits there looking live and delivers nothing by itself.
    */
   scheduled: boolean;
   createdAt: string;

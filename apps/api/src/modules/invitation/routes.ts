@@ -119,7 +119,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c, row.organizationId);
     await recordAudit(c.get("db"), {
       organizationId: row.organizationId,
       actorId: actor.id,
@@ -200,7 +200,7 @@ export function invitationRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

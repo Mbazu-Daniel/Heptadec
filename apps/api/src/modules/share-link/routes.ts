@@ -229,7 +229,7 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That share link could not be created");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -274,7 +274,7 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That share link does not exist");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -299,7 +299,7 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     }
 
     await organization.db.delete(shareLink).where(eq(shareLink.id, found.id));
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

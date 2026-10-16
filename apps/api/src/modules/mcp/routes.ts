@@ -93,7 +93,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
       token: created.key,
     };
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -146,7 +146,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That MCP token does not exist");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

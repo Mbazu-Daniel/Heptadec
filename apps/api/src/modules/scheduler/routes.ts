@@ -155,7 +155,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule could not be created");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -191,7 +191,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     if (removed.length === 0) {
       throw new NotFoundException("That schedule does not exist");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

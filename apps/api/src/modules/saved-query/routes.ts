@@ -134,7 +134,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That saved query could not be created");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -251,7 +251,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -320,7 +320,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
         ),
       );
     await organization.db.delete(savedQuery).where(eq(savedQuery.id, existing.id));
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -406,7 +406,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

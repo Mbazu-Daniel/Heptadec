@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { schema } from "@heptadec/db";
 import {
   requireSession,
@@ -7,16 +7,13 @@ import {
 } from "../../common/middleware/require-session";
 import { readBody, readString } from "../../common/http/body";
 import { activeOrganization } from "../../common/session/current-organization";
-import {
-  BadRequestException,
-  ForbiddenException,
-} from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions";
 import { authFor } from "../../common/config/better-auth";
 import { isRole } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
 import { avatarKeyPrefixFor } from "../images/contracts";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
-import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import { recordAudit, auditActor } from "../audit";
 import type { IMemberProfileResponse, IMembersResponse } from "./contracts";
 
@@ -28,40 +25,19 @@ export function memberRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
 
   routes.get("/api/organization/member", requireSession, async (c) => {
-    const session = c.get("session")!;
     const organization = activeOrganization(c);
     const base = publicBaseFrom(c.env);
 
-    const rows = await organization.db
-      .select({
-        displayName: member.displayName,
-        image: member.image,
-        role: member.role,
-      })
-      .from(member)
-      .where(
-        and(
-          eq(member.userId, session.user.id),
-          organization.where(member.organizationId),
-        ),
-      )
-      .limit(1);
-
-    if (rows.length === 0) {
-      throw new ForbiddenException("You are not a member of that organization");
-    }
-
     const body: IMemberProfileResponse = {
-      displayName: rows[0]!.displayName ?? null,
-      image: mediaUrl(rows[0]!.image, base),
-      role: roleOf(rows[0]!.role),
+      displayName: organization.caller.displayName,
+      image: mediaUrl(organization.caller.image, base),
+      role: roleOf(organization.caller.role),
       organizationId: organization.organizationId,
     };
     return c.json(body);
   });
 
   routes.patch("/api/organization/member", requireSession, async (c) => {
-    const session = c.get("session")!;
     const organization = activeOrganization(c);
     const base = publicBaseFrom(c.env);
 
@@ -76,36 +52,21 @@ export function memberRoutes(): Hono<IAuthVars> {
     }
     const displayName = trimmed.length === 0 ? null : trimmed;
 
-    const updated = await organization.db
+    await organization.db
       .update(member)
       .set({ displayName })
-      .where(
-        and(
-          eq(member.userId, session.user.id),
-          organization.where(member.organizationId),
-        ),
-      )
-      .returning({
-        displayName: member.displayName,
-        image: member.image,
-        role: member.role,
-      });
-
-    if (updated.length === 0) {
-      throw new ForbiddenException("You are not a member of that organization");
-    }
+      .where(eq(member.id, organization.caller.id));
 
     const body: IMemberProfileResponse = {
-      displayName: updated[0]!.displayName ?? null,
-      image: mediaUrl(updated[0]!.image, base),
-      role: roleOf(updated[0]!.role),
+      displayName,
+      image: mediaUrl(organization.caller.image, base),
+      role: roleOf(organization.caller.role),
       organizationId: organization.organizationId,
     };
     return c.json(body);
   });
 
   routes.patch("/api/organization/member/image", requireSession, async (c) => {
-    const session = c.get("session")!;
     const organization = activeOrganization(c);
     const base = publicBaseFrom(c.env);
 
@@ -125,29 +86,15 @@ export function memberRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That image did not come from this organization");
     }
 
-    const updated = await organization.db
+    await organization.db
       .update(member)
       .set({ image })
-      .where(
-        and(
-          eq(member.userId, session.user.id),
-          organization.where(member.organizationId),
-        ),
-      )
-      .returning({
-        displayName: member.displayName,
-        image: member.image,
-        role: member.role,
-      });
-
-    if (updated.length === 0) {
-      throw new ForbiddenException("You are not a member of that organization");
-    }
+      .where(eq(member.id, organization.caller.id));
 
     const body: IMemberProfileResponse = {
-      displayName: updated[0]!.displayName ?? null,
-      image: mediaUrl(updated[0]!.image, base),
-      role: roleOf(updated[0]!.role),
+      displayName: organization.caller.displayName,
+      image: mediaUrl(image, base),
+      role: roleOf(organization.caller.role),
       organizationId: organization.organizationId,
     };
     return c.json(body);
@@ -191,9 +138,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.patch("/api/organization/members/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(organization.db, c.req.raw.headers, "member", "update"))) {
-      throw new ForbiddenException("Only an owner can change a role");
-    }
+    requireOwner(c, "Only an owner can change a role");
 
     const payload = readBody(await c.req.json(), "A role is required");
     const role = readString(payload, "role", "A role is required");
@@ -227,9 +172,7 @@ export function memberRoutes(): Hono<IAuthVars> {
   routes.delete("/api/organization/members/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    if (!(await can(organization.db, c.req.raw.headers, "member", "delete"))) {
-      throw new ForbiddenException("Only an owner can remove a member");
-    }
+    requireOwner(c, "Only an owner can remove a member");
 
     await authFor(organization.db).api.removeMember({
       body: {

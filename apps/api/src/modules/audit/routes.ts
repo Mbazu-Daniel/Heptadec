@@ -43,11 +43,7 @@ export function auditRoutes(): Hono<IAuthVars> {
   routes.get("/api/audit-logs", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    await requireOwner(
-      organization.db,
-      c.req.raw.headers,
-      "Only owners can see the audit log",
-    );
+    requireOwner(c, "Only owners can see the audit log");
 
     const event = c.req.query("event");
     if (event !== undefined && event !== "" && !isAuditEvent(event)) {

@@ -125,11 +125,7 @@ function dashboardAiRoutes() {
     };
 
     const sources = await ownSources(request.dataSourceIds, organization);
-    const provider = await chosenProvider(
-      organization.db,
-      organization.organizationId,
-      payload.providerId,
-    );
+    const provider = await chosenProvider(organization, payload.providerId);
     if (provider === null) {
       throw new BadRequestException(
         "No AI provider is set up for this organization yet",
@@ -255,11 +251,7 @@ function dashboardAiRoutes() {
       "Say what you want changed",
       MAX_QUESTION,
     );
-    const provider = await chosenProvider(
-      organization.db,
-      organization.organizationId,
-      payload.providerId,
-    );
+    const provider = await chosenProvider(organization, payload.providerId);
     if (provider === null) {
       throw new BadRequestException(
         "No AI provider is set up for this organization yet",

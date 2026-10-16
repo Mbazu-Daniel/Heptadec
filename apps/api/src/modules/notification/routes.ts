@@ -59,11 +59,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
   routes.post("/api/notification-channels", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    await requireOwner(
-      organization.db,
-      c.req.raw.headers,
-      "Only owners can manage notification channels",
-    );
+    requireOwner(c, "Only owners can manage notification channels");
 
     const body = readBody(
       await c.req.json(),
@@ -109,11 +105,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
   routes.patch("/api/notification-channels/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    await requireOwner(
-      organization.db,
-      c.req.raw.headers,
-      "Only owners can manage notification channels",
-    );
+    requireOwner(c, "Only owners can manage notification channels");
 
     const existing = await oneRow(
       organization.db,
@@ -169,11 +161,7 @@ export function notificationRoutes(): Hono<IAuthVars> {
   routes.delete("/api/notification-channels/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
-    await requireOwner(
-      organization.db,
-      c.req.raw.headers,
-      "Only owners can manage notification channels",
-    );
+    requireOwner(c, "Only owners can manage notification channels");
 
     const removed = await organization.db
       .delete(notificationChannel)

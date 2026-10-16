@@ -1,7 +1,6 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
-import type { Column } from "drizzle-orm";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
-import type { IOrganizationScope } from "../../common/session/current-organization";
+import { organizationScope } from "../../common/session/current-organization";
 import { checkAlerts } from "../alert/evaluate";
 import { entitlementFor, type IEntitlement } from "../billing/entitlement";
 import { materializeResult } from "../query-result/cache";
@@ -52,16 +51,12 @@ async function runOne(
   now: Date,
   entitlement: IEntitlement,
 ): Promise<void> {
-  const organization: IOrganizationScope = {
-    organizationId: job.organizationId,
-    db,
-    where: (column: Column) => eq(column, job.organizationId),
-  };
+  const organization = organizationScope(db, job.organizationId);
 
   try {
     if (entitlement.entitled) {
       const grid = await materializeResult(job.savedQueryId, organization, job.ttlSeconds);
-      await checkAlerts(db, job.savedQueryId, job.organizationId, grid);
+      await checkAlerts(job.savedQueryId, organization, grid);
     }
   } catch (caught) {
     console.error(`[scheduler] job ${job.id} (${job.name}) failed:`, caught);

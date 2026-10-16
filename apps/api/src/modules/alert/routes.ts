@@ -143,7 +143,7 @@ export function alertRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That alert rule could not be created");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -190,7 +190,7 @@ export function alertRoutes(): Hono<IAuthVars> {
         ),
       );
     await organization.db.delete(alertRule).where(eq(alertRule.id, found.id));
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

@@ -8,6 +8,7 @@ import {
 } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
+import { engineFrom, type SqlDialect } from "../data-source/contracts";
 import { runPostgresQuery } from "./postgres";
 import type { IQueryResponse } from "./contracts";
 
@@ -23,6 +24,27 @@ const MYSQL_TYPE_NAMES = new Map<number, string>(
     .map(([key, name]) => [Number(key), String(name)]),
 );
 
+type SqlRunner = (
+  connection: IStoredConnection,
+  statement: string,
+) => Promise<IQueryResponse>;
+
+/**
+ * Which dialect runs a statement, not which engine asked for it: MariaDB speaks
+ * MySQL and libsql speaks SQLite, so an engine inherits its runner by naming a
+ * dialect in the catalog rather than by being listed here.
+ *
+ * Keyed by the dialect union, so a dialect added later stops compiling until
+ * its runner exists, instead of reaching a throwing default at runtime.
+ */
+const SQL_RUNNERS: Record<SqlDialect, SqlRunner> = {
+  postgres: (connection, statement) =>
+    runPostgresQuery(asRelational(connection), statement),
+  mysql: runMysqlStatement,
+  clickhouse: runClickhouseStatement,
+  sqlite: runSqliteStatement,
+};
+
 export async function runSqlQuery(
   connection: IStoredConnection,
   sql: string,
@@ -31,26 +53,16 @@ export async function runSqlQuery(
   if (statement.length === 0) {
     throw new BadRequestException("Write a statement to run");
   }
-  if (connection.readOnly && connection.kind !== "postgres") {
+  const dialect = engineFrom(connection.kind).sqlDialect;
+  if (dialect === null) {
+    throw new BadRequestException(
+      "Running statements on that kind of source is not available yet",
+    );
+  }
+  if (connection.readOnly && dialect !== "postgres") {
     assertReadOnly(statement);
   }
-
-  switch (connection.kind) {
-    case "postgres":
-      return runPostgresQuery(asRelational(connection), statement);
-    case "mysql":
-    case "mariadb":
-      return runMysqlStatement(connection, statement);
-    case "clickhouse":
-      return runClickhouseStatement(connection, statement);
-    case "sqlite":
-    case "libsql":
-      return runSqliteStatement(connection, statement);
-    default:
-      throw new BadRequestException(
-        "Running statements on that kind of source is not available yet",
-      );
-  }
+  return SQL_RUNNERS[dialect](connection, statement);
 }
 
 function assertReadOnly(statement: string): void {

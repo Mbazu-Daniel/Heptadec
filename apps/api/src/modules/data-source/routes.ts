@@ -51,6 +51,7 @@ import {
   previewObject,
 } from "./preview";
 import {
+  engineFrom,
   type ConnectionMode,
   type DataSourceKind,
   type ICreateDataSourceResponse,
@@ -433,8 +434,8 @@ function readPreviewQuery(value: unknown, kind: DataSourceKind): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 500) {
     throw new BadRequestException("The search text is invalid");
   }
-  if (kind !== "quickwit") {
-    throw new BadRequestException("Only Quickwit searches take a query");
+  if (engineFrom(kind).queryLanguage !== "search") {
+    throw new BadRequestException("Only search sources take a query");
   }
   return value;
 }

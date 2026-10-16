@@ -159,7 +159,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const body: ICreateDataSourceResponse = {
       dataSource: toIDataSource(rows[0]!),
     };
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -241,7 +241,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const body: IUpdateDataSourceResponse = {
       dataSource: toIDataSource(updated[0]!),
     };
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -277,7 +277,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That data source does not exist");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

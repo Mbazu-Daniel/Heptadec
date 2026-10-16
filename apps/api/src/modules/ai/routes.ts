@@ -153,7 +153,7 @@ export function aiRoutes(): Hono<IAuthVars> {
       createdAt: row.createdAt.toISOString(),
     };
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,
@@ -191,7 +191,7 @@ export function aiRoutes(): Hono<IAuthVars> {
       await promoteAnother(organization.db, organization.organizationId);
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

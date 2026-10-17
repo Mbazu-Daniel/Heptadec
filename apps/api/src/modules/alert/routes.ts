@@ -218,7 +218,7 @@ export function alertRoutes(): Hono<IAuthVars> {
     if (edited === undefined) {
       throw new NotFoundException("That alert rule could not be changed");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

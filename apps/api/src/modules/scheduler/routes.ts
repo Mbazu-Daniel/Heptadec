@@ -244,7 +244,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule could not be changed");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

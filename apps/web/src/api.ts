@@ -13,6 +13,11 @@ import type {
   IPresignImageResponse,
   ImageTarget,
 } from "@heptadec/api/images-contracts";
+import type {
+  BillingCadence,
+  IBillingSummary,
+  IStartCheckoutResponse,
+} from "@heptadec/api/billing-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import type {
   ApiErrorCode,
@@ -193,6 +198,18 @@ export function fetchMemberProfile(): Promise<IMemberProfileResponse> {
 
 export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
   return request<IImagesConfigResponse>("/api/images/config");
+}
+
+export function fetchBilling(): Promise<IBillingSummary> {
+  return request<IBillingSummary>("/api/billing");
+}
+
+export function startCheckout(
+  cadence: BillingCadence,
+): Promise<IStartCheckoutResponse> {
+  return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", {
+    cadence,
+  });
 }
 
 /**

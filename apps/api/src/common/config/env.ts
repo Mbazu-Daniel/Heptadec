@@ -23,6 +23,21 @@ export const config = {
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
   },
   betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:8787",
+  /**
+   * Bachs holds the products and the card details; Heptadec holds only the
+   * subscription state its webhooks report. The base URL defaults to the
+   * sandbox because a sandbox key is what a deployment starts with, and a
+   * sandbox key against the live host is refused rather than charged.
+   */
+  bachs: {
+    secretKey: process.env.BACHS_SECRET_KEY ?? "",
+    webhookSecret: process.env.BACHS_WEBHOOK_SECRET ?? "",
+    baseUrl: process.env.BACHS_BASE_URL ?? "https://sandbox-api.bachs.io",
+    products: {
+      monthly: process.env.BACHS_PRODUCT_MONTHLY ?? "",
+      yearly: process.env.BACHS_PRODUCT_YEARLY ?? "",
+    },
+  },
   extraOrigins: (process.env.HEPTADEC_EXTRA_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())

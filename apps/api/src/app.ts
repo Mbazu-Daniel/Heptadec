@@ -35,6 +35,7 @@ import { aiRoutes } from "./modules/ai";
 import { memberRoutes } from "./modules/member";
 import { organizationRoutes } from "./modules/organization";
 import { imageRoutes } from "./modules/images";
+import { billingRoutes } from "./modules/billing";
 
 // Compression is a deployment concern, not an app concern: Cloudflare's edge
 // already compresses responses, so compressing again in the Worker corrupts
@@ -77,6 +78,7 @@ export function buildApp(options: IAppOptions): Hono<IAuthVars> {
   app.route("/", organizationRoutes());
   app.route("/", memberRoutes());
   app.route("/", imageRoutes());
+  app.route("/", billingRoutes());
   app.route("/", invitationRoutes());
   app.route("/", mcpRoutes());
   app.route("/", aiRoutes());

@@ -40,6 +40,13 @@
     "R2CustomDomain": "",
     "CLOUDFLARE_ACCOUNT_ID": "PASTE_YOUR_CLOUDFLARE_ACCOUNT_ID_HERE",
     "BETTER_AUTH_URL": "https://your-worker.your-subdomain.workers.dev",
-    "WEB_URL": "https://your-worker.your-subdomain.workers.dev"
+    "WEB_URL": "https://your-worker.your-subdomain.workers.dev",
+    // Billing. The two secrets — BACHS_SECRET_KEY and BACHS_WEBHOOK_SECRET —
+    // are set with `wrangler secret put`, never here. Empty product ids mean
+    // billing reports itself unconfigured instead of offering a checkout that
+    // cannot work, so fill these in only once both products exist in Bachs.
+    "BACHS_BASE_URL": "https://api.bachs.io",
+    "BACHS_PRODUCT_MONTHLY": "",
+    "BACHS_PRODUCT_YEARLY": ""
   }
 }

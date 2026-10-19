@@ -60,6 +60,17 @@ export interface ICreateAlertRuleRequest {
   threshold: number;
 }
 
+/**
+ * A full replacement of an alert rule's watch. The query it reads is the
+ * rule's identity and cannot change here.
+ */
+export interface IUpdateAlertRuleRequest {
+  name: string;
+  column: string;
+  operator: AlertOperator;
+  threshold: number;
+}
+
 export function breaches(
   value: number,
   operator: AlertOperator,

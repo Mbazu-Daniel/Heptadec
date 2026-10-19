@@ -9,6 +9,7 @@
     "./organization-contracts": "./src/modules/organization/contracts.ts",
     "./member-contracts": "./src/modules/member/contracts.ts",
     "./images-contracts": "./src/modules/images/contracts.ts",
+    "./billing-contracts": "./src/modules/billing/contracts.ts",
     "./invitation-contracts": "./src/modules/invitation/contracts.ts",
     "./schema-contracts": "./src/modules/schema/contracts.ts",
     "./query-contracts": "./src/modules/query/contracts.ts",
@@ -27,7 +28,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.billing.config.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "pnpm --filter @heptadec/web build",
     "db:migrate:d1": "wrangler d1 migrations apply heptadec",

@@ -4,6 +4,7 @@ import { authFor } from "../../common/config/better-auth";
 import { UnauthorizedException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { isBetterAuthError } from "../../common/exceptions/from-better-auth";
+import { requireEntitlement } from "../billing/entitlement";
 import { MCP_CONFIG_ID } from "./capabilities";
 
 const { member } = schema;
@@ -58,6 +59,8 @@ export async function authenticateMcpKey(
   if (owner.length === 0) {
     throw new UnauthorizedException("That MCP token is not valid");
   }
+
+  await requireEntitlement(db, organizationId);
 
   return {
     keyId: key.id,

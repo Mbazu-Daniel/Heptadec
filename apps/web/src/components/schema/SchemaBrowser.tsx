@@ -54,10 +54,6 @@ export function SchemaBrowser({
   const [runRequest, setRunRequest] = useState<IRunRequest | null>(null);
   const [queriesToken, setQueriesToken] = useState(0);
   const [editorSql, setEditorSql] = useState("");
-  // A source reports the language it is asked in, and what follows from that is
-  // decided per language rather than per engine. "No SQL dialect" is not the
-  // same question: a Redis source has no dialect either, but it is asked for a
-  // command rather than a pipeline.
   const pipelineSource = source.queryLanguage === "pipeline";
 
   useEffect(() => {
@@ -89,8 +85,6 @@ export function SchemaBrowser({
 
   useEffect(() => {
     const current = TABS.find((entry) => entry.id === tab);
-    // The source is left out: the sidebar already says which one is open, and
-    // the breadcrumb is for getting back out, not for repeating the context.
     onTrail?.([{ label: current?.label ?? tab }]);
   }, [onTrail, tab]);
 
@@ -208,10 +202,6 @@ export function SchemaBrowser({
           {tab === "query" ? (
             <>
               <ResizablePanel defaultSize="50%" minSize="25%">
-                {/* Only a SQL or a pipeline source reaches this browser, so no dialect
-                    here means a pipeline source and there is nothing to guess:
-                    the editor is told which dialect rather than left to assume
-                    Postgres. */}
                 {source.sqlDialect === null ? (
                   <PipelineRunner
                     key={source.id}
@@ -223,7 +213,6 @@ export function SchemaBrowser({
                   <QueryRunner
                     key={source.id}
                     source={source}
-                    dialect={source.sqlDialect}
                     focusTable={selectedTable}
                     runRequest={runRequest}
                     onRan={() => setQueriesToken((count) => count + 1)}

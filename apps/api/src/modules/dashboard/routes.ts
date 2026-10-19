@@ -17,6 +17,7 @@ import {
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
 import { recordAudit, auditActor } from "../audit";
+import { deleteDashboardRows } from "../../common/ownership";
 import { materializeResult } from "../query-result/cache";
 import { widgetData } from "./widget-data";
 import {
@@ -29,7 +30,7 @@ import {
 } from "./detail";
 import type { ChartType, ICreateDashboardRequest } from "./contracts";
 
-const { dashboard, widget, savedQuery, shareLink, dashboardDataSource } = schema;
+const { dashboard, widget, savedQuery, dashboardDataSource } = schema;
 
 const MAX_NAME = 120;
 
@@ -203,10 +204,7 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     if (found === undefined) {
       throw new NotFoundException("That dashboard does not exist");
     }
-    await organization.db.delete(shareLink).where(eq(shareLink.dashboardId, found.id));
-    await organization.db.delete(dashboardDataSource).where(eq(dashboardDataSource.dashboardId, found.id));
-    await organization.db.delete(widget).where(eq(widget.dashboardId, found.id));
-    await organization.db.delete(dashboard).where(eq(dashboard.id, found.id));
+    await deleteDashboardRows(organization, found.id);
     const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,

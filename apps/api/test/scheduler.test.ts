@@ -257,6 +257,60 @@ it("keeps ticking when a stored schedule cannot be read", async () => {
   expect(healthyRow.lastRunAt).not.toBeNull();
 });
 
+it("writes an edited schedule and recomputes when it runs next", async () => {
+  const { cookie, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, savedQueryId, { cron: "0 9 * * *" });
+
+  const res = await request(`/api/scheduled-jobs/${id}`, {
+    method: "PUT",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Evenings",
+      cron: "30 18 * * 1-5",
+      timezone: "Asia/Tokyo",
+      ttlSeconds: 3600,
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await db.select().from(scheduledJob).where(eq(scheduledJob.id, id));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.name).toBe("Evenings");
+  expect(rows[0]!.cron).toBe("30 18 * * 1-5");
+  expect(rows[0]!.timezone).toBe("Asia/Tokyo");
+  expect(rows[0]!.ttlSeconds).toBe(3600);
+  const tokyoEvening = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(rows[0]!.nextRunAt);
+  expect(tokyoEvening).toBe("18:30");
+  expect(rows[0]!.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+});
+
+it("refuses an unreadable edit and leaves the stored schedule intact", async () => {
+  const { cookie, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, savedQueryId);
+
+  const res = await request(`/api/scheduled-jobs/${id}`, {
+    method: "PUT",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Hourly",
+      cron: "not a cron",
+      timezone: "UTC",
+      ttlSeconds: 3600,
+    }),
+  });
+  expect(res.status).toBe(400);
+
+  const rows = await db.select().from(scheduledJob).where(eq(scheduledJob.id, id));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.cron).toBe("* * * * *");
+  expect(rows[0]!.timezone).toBe("UTC");
+});
+
 it("refuses a schedule it could not honour and writes nothing", async () => {
   const { cookie, savedQueryId } = await ownerWithQuery();
 

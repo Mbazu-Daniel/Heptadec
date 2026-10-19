@@ -88,6 +88,63 @@ it("returns real rows from the seeded postgres", async () => {
   expect(typeof body.durationMs).toBe("number");
 });
 
+it("caps a result at the row budget and marks it truncated", async () => {
+  const { cookie, id } = await ownerWithSource(true);
+
+  const res = await query(cookie, id, "SELECT generate_series(1, 10050) AS n");
+  expect(res.status).toBe(200);
+
+  const body = (await res.json()) as {
+    rows: Array<Record<string, unknown>>;
+    rowCount: number;
+    truncated: boolean;
+  };
+  expect(body.rows).toHaveLength(10_000);
+  expect(body.rowCount).toBe(10_000);
+  expect(body.truncated).toBe(true);
+});
+
+it("composes a refinement in the API and returns the executed statement", async () => {
+  const { cookie, id } = await ownerWithSource(true);
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      sql: "SELECT id, code FROM regions",
+      refine: {
+        filter: { column: "code", op: "=", value: "us-east-1" },
+        sort: { column: "id", dir: "desc" },
+      },
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const body = (await res.json()) as {
+    rows: Array<Record<string, unknown>>;
+    statement?: string;
+  };
+  expect(body.rows).toHaveLength(1);
+  expect(body.rows[0]).toMatchObject({ code: "us-east-1" });
+  expect(body.statement).toContain("WHERE");
+  expect(body.statement).toContain("ORDER BY");
+  expect(body.statement).toContain("LIMIT 100");
+});
+
+it("refuses a refinement with an operator it does not know", async () => {
+  const { cookie, id } = await ownerWithSource(true);
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      sql: "SELECT id, code FROM regions",
+      refine: { filter: { column: "code", op: "DROP TABLE", value: "" } },
+    }),
+  });
+  expect(res.status).toBe(400);
+});
+
 it("refuses a write on a read-only source and leaves the row count unchanged", async () => {
   const before = await eventCount();
   const { cookie, id } = await ownerWithSource(true);
@@ -150,9 +207,6 @@ function probeKey(): string {
   return `heptadec:query:${Date.now().toString(36)}:${redisProbeSeq}`;
 }
 
-/** A token with no punctuation in it: a Quickwit query reads `:` as a field
- * separator, so a key shaped for Redis is not a token a search can be asked
- * for. */
 function probeToken(): string {
   redisProbeSeq += 1;
   return `probe${Date.now().toString(36)}${redisProbeSeq}`;
@@ -255,8 +309,6 @@ it("runs a search over a quickwit index and answers with the documents it matche
     headers: { cookie },
   });
 
-  // Quickwit holds no documents until they are ingested, so the search this
-  // asserts on is only meaningful if the test put something there first.
   const index = `events_${Date.now().toString(36)}`;
   const created = await fetch(`${STACK.quickwit.endpoint}/api/v1/indexes`, {
     method: "POST",

@@ -4,7 +4,7 @@ import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
-const { dataSource, queryVersion, savedQuery } = schema;
+const { dataSource, queryResult, queryVersion, savedQuery } = schema;
 
 async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
   const { cookie } = await signUp(uniqueEmail());
@@ -87,10 +87,25 @@ it("renames a saved query and leaves the SQL untouched", async () => {
 });
 
 it("deletes a saved query and leaves the database without it", async () => {
-  const { cookie } = await ownerWithOrg();
+  const { cookie, orgId } = await ownerWithOrg();
   const sourceId = await createSource(cookie);
   const created = await save(cookie, sourceId, { name: "Gone", sql: "SELECT 1" });
   const { savedQuery: createdQuery } = (await created.json()) as { savedQuery: { id: string } };
+
+  await db.insert(queryResult).values({
+    organizationId: orgId,
+    savedQueryId: createdQuery.id,
+    ranAt: new Date(),
+    ttlSeconds: 60,
+    payload: "{}",
+  });
+  await db.insert(queryVersion).values({
+    organizationId: orgId,
+    savedQueryId: createdQuery.id,
+    name: "Gone",
+    sql: "SELECT 1",
+    createdAt: new Date(),
+  });
 
   const res = await request(`/api/saved-queries/${createdQuery.id}`, {
     method: "DELETE",
@@ -99,6 +114,18 @@ it("deletes a saved query and leaves the database without it", async () => {
   expect(res.status).toBe(200);
 
   expect(await rowsFor(sourceId)).toHaveLength(0);
+  expect(
+    await db
+      .select()
+      .from(queryResult)
+      .where(eq(queryResult.savedQueryId, createdQuery.id)),
+  ).toHaveLength(0);
+  expect(
+    await db
+      .select()
+      .from(queryVersion)
+      .where(eq(queryVersion.savedQueryId, createdQuery.id)),
+  ).toHaveLength(0);
 });
 
 it("404s a saved query that belongs to another organization", async () => {

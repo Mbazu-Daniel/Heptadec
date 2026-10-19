@@ -8,6 +8,7 @@ import {
 } from "../../common/middleware/require-session";
 import { readBody, readString } from "../../common/http/body";
 import { currentOrganizationId } from "../../common/session/current-organization";
+import { deleteOrganizationRows } from "../../common/ownership";
 import {
   BadRequestException,
   ForbiddenException,
@@ -25,23 +26,6 @@ import type {
 const { member, organization } = schema;
 
 const MAX_SLUG = 80;
-
-const ORG_SCOPED_TABLES = [
-  schema.aiChat,
-  schema.aiProvider,
-  schema.alertDelivery,
-  schema.alertRule,
-  schema.auditLog,
-  schema.dashboard,
-  schema.dataSource,
-  schema.notificationChannel,
-  schema.queryResult,
-  schema.queryVersion,
-  schema.savedQuery,
-  schema.scheduledJob,
-  schema.shareLink,
-  schema.widget,
-] as const;
 
 export function organizationRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
@@ -131,11 +115,7 @@ export function organizationRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That slug is not this organization's");
     }
 
-    await c.get("db").transaction(async (tx) => {
-      for (const table of ORG_SCOPED_TABLES) {
-        await tx.delete(table).where(scope.where(table.organizationId));
-      }
-    });
+    await deleteOrganizationRows(scope);
 
     await authFor(c.get("db")).api.deleteOrganization({
       body: { organizationId: scope.organizationId },

@@ -3,6 +3,7 @@ import type { IMembership } from "@heptadec/api/organization-contracts";
 import {
   IconChartBar,
   IconClock,
+  IconCreditCard,
   IconDatabase,
   IconDots,
   IconHistory,
@@ -41,6 +42,7 @@ export type WorkspaceView =
   | "mcp"
   | "team"
   | "audit"
+  | "billing"
   | "organization";
 
 interface IAppSidebarProps {
@@ -161,12 +163,8 @@ function SidebarUserCard({
           Organization settings
         </button>
         <div className="mx-2 my-1 border-t border-border" />
-        <div
-          role="group"
-          aria-label="Theme"
-          className="flex items-center gap-1 px-2.5 py-2"
-        >
-          <ThemeSwitch stretchModes />
+        <div className="px-2.5 py-2">
+          <ThemeSwitch stretchModes stacked />
         </div>
         <div className="mx-2 my-1 border-t border-border" />
         <button
@@ -360,6 +358,17 @@ export function AppSidebar({
                 >
                   <IconHistory size={20} strokeWidth={1.5} className="shrink-0" />
                   <span>Audit log</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={view === "billing"}
+                  tooltip="Billing"
+                  onClick={() => onViewChange("billing")}
+                  className={NAV_ITEM_CLASSNAME}
+                >
+                  <IconCreditCard size={20} strokeWidth={1.5} className="shrink-0" />
+                  <span>Billing</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

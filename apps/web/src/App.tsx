@@ -23,6 +23,7 @@ import { MemberProfile } from "./components/MemberProfile";
 import { ResetPassword } from "./components/ResetPassword";
 import { NotFound } from "./components/NotFound";
 import { Onboarding } from "./components/Onboarding";
+import { SubscriptionGate } from "./components/Paywall";
 import { PublicDashboard } from "./components/PublicDashboard";
 
 type Mode = "sign-in" | "sign-up";
@@ -42,7 +43,7 @@ function Loading() {
   return (
     <div className="relative grid min-h-screen place-items-center">
       <div className="spot" />
-      <p className="relative text-muted">Loading</p>
+      <p className="relative text-muted-foreground">Loading</p>
     </div>
   );
 }
@@ -85,10 +86,12 @@ function OrgRoute({
   me,
   orgs,
   onEnter,
+  onSignOut,
 }: {
   me: IMe | null;
   orgs: IOrganizationsResponse | null;
   onEnter: (organizationId: string) => void;
+  onSignOut: () => void;
 }) {
   const { orgSlug } = useParams();
   const membership =
@@ -108,7 +111,21 @@ function OrgRoute({
   if (!isActive) {
     return <Loading />;
   }
-  return <Outlet />;
+  const others = (orgs?.organizations ?? [])
+    .filter((entry) => entry.organization.slug !== membership.organization.slug)
+    .map((entry) => ({
+      name: entry.organization.name,
+      slug: entry.organization.slug,
+    }));
+  return (
+    <SubscriptionGate
+      isOwner={membership.role === "owner"}
+      others={others}
+      onSignOut={onSignOut}
+    >
+      <Outlet />
+    </SubscriptionGate>
+  );
 }
 
 function AuthRoute({ me, orgs, reload }: { me: IMe | null; orgs: IOrganizationsResponse | null; reload: () => Promise<void> }) {
@@ -204,6 +221,11 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
     [onSwitchOrganization],
   );
 
+  const onSignOut = useCallback(async () => {
+    await authClient.signOut();
+    setMe(null);
+  }, []);
+
   const onOpenOrganization = useCallback(
     (organizationId: string) => {
       const slug = slugFor(orgs, organizationId);
@@ -233,9 +255,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
 
   const authed = <Navigate to={me ? destinationFor(me, orgs) : "/signin"} replace />;
   const anon = <Navigate to="/signin" replace />;
-  // Someone who already has an organization lands on the create form only when
-  // they asked for it — the sidebar's "+ New organization". Everyone else would
-  // otherwise be walked into creating a second one by arriving here twice.
   const addingOrganization = new URLSearchParams(location.search).has("new");
 
   return (
@@ -320,7 +339,12 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         path="/:orgSlug"
         element={
           me && isOnboarded(me) ? (
-            <OrgRoute me={me} orgs={orgs} onEnter={onEnterOrganization} />
+            <OrgRoute
+              me={me}
+              orgs={orgs}
+              onEnter={onEnterOrganization}
+              onSignOut={onSignOut}
+            />
           ) : (
             authed
           )
@@ -336,10 +360,7 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
               onCreateOrganization={() => navigate("/organization?new=1")}
               onOpenProfile={() => navigate("/profile")}
               onOrganizationChanged={reload}
-              onSignOut={async () => {
-                await authClient.signOut();
-                setMe(null);
-              }}
+              onSignOut={onSignOut}
             />
           }
         />

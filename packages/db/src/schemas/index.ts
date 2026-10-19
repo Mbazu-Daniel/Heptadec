@@ -30,3 +30,5 @@ export * from "./ai-provider";
 
 export * from "./ai-chat";
 export * from "./notification-channel";
+
+export * from "./billing-subscription";

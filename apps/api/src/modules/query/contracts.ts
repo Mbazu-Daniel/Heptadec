@@ -1,28 +1,46 @@
-// MongoDB has no SQL: a query is a collection plus the aggregation pipeline to
-// run against it, which is what the editor holds and what the AI is asked for.
 export interface IMongoPipeline {
   collection: string;
   pipeline: Record<string, unknown>[];
 }
 
-/** A Quickwit search: which index to search, and the query itself. A search
- * names its own index, because a Quickwit source holds many and none of them is
- * the source. */
 export interface ISearchStatement {
   index: string;
   query: string;
 }
 
-/**
- * A Run as it arrives: exactly one of these keys, named by the language of the
- * source it is for. Every key here has a runner in `runners.ts`, so a language
- * with no runner cannot be asked for and one that is forgotten cannot be run.
- */
+export type FilterOp =
+  | "="
+  | "<>"
+  | ">"
+  | ">="
+  | "<"
+  | "<="
+  | "contains"
+  | "is null"
+  | "is not null";
+
+export interface IQueryFilter {
+  column: string;
+  op: FilterOp;
+  value: string;
+}
+
+export interface IQuerySort {
+  column: string;
+  dir: "asc" | "desc";
+}
+
+export interface IQueryRefine {
+  filter?: IQueryFilter | null;
+  sort?: IQuerySort | null;
+}
+
 export interface IQueryRequest {
   sql?: string;
   command?: string;
   mongo?: IMongoPipeline;
   search?: ISearchStatement;
+  refine?: IQueryRefine;
 }
 
 export interface IResultGrid {
@@ -35,6 +53,7 @@ export interface IQueryResponse extends IResultGrid {
   columnTypes: string[];
   rowCount: number;
   durationMs: number;
+  statement?: string;
 }
 
 export function gridNumber(raw: unknown): number | null {

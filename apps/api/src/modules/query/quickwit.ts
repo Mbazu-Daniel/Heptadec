@@ -3,14 +3,8 @@ import { quickwitSearch } from "../data-source/quickwit-client";
 import { toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import type { ISearchStatement, IQueryResponse } from "./contracts";
+import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
 
-const MAX_ROWS = 10_000;
-
-/**
- * Read the search a request carries. A source stores nothing about how it was
- * searched, so the index and the query arrive whole and are checked here rather
- * than trusting the shape the browser sent.
- */
 export function readSearchStatement(value: unknown): ISearchStatement {
   if (typeof value !== "object" || value === null) {
     throw new BadRequestException("A search is required");
@@ -30,13 +24,6 @@ export function readSearchStatement(value: unknown): ISearchStatement {
   return { index: index.trim(), query: query.trim() };
 }
 
-/**
- * Run one search over one index, and answer with a Grid like any other Run.
- *
- * A search is the one Run that has to name what it is over, because Quickwit
- * holds many indexes and none of them is the source — so the index travels with
- * the statement rather than being remembered from a connection.
- */
 export async function runSearchQuery(
   connection: IStoredConnection,
   statement: { index: string; query: string },
@@ -46,18 +33,19 @@ export async function runSearchQuery(
     connection,
     statement.index,
     statement.query,
-    MAX_ROWS,
+    DEFAULT_RESULT_BUDGET.maxRows,
   );
 
   const rows = toRows(search.documents);
   const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const budgeted = applyBudget(rows);
 
   return {
     columns,
-    rows,
-    truncated: search.truncated,
+    rows: budgeted.rows,
+    truncated: search.truncated || budgeted.truncated,
     columnTypes: columns.map(() => "string"),
-    rowCount: rows.length,
+    rowCount: budgeted.rows.length,
     durationMs: Math.round(performance.now() - startedAt),
   };
 }

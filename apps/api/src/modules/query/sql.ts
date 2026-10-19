@@ -9,13 +9,10 @@ import {
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
 import { runPostgresQuery } from "./postgres";
-import type { IQueryResponse } from "./contracts";
-
-const MAX_ROWS = 10_000;
-
-const MAX_BYTES = 5 * 1024 * 1024;
-
-const READ_ONLY_START = /^\s*(select|with|show|describe|desc|explain|pragma|values)\b/i;
+import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
+import { composeStatement, dialectOf } from "./compose";
+import { assertSqlReads } from "./read-policy";
+import type { IQueryRefine, IQueryResponse } from "./contracts";
 
 const MYSQL_TYPE_NAMES = new Map<number, string>(
   Object.entries(mysql.Types)
@@ -27,38 +24,38 @@ export async function runSqlQuery(
   connection: IStoredConnection,
   sql: string,
   readOnly: boolean,
+  refine: IQueryRefine | null = null,
 ): Promise<IQueryResponse> {
   const statement = sql.trim().replace(/;+\s*$/, "");
   if (statement.length === 0) {
     throw new BadRequestException("Write a statement to run");
   }
-  if (readOnly && connection.kind !== "postgres") {
-    assertReadOnly(statement);
+  if (readOnly) {
+    assertSqlReads(statement, "run");
   }
+  const dialect = dialectOf(connection.kind);
+  if (dialect === null) {
+    throw new BadRequestException(
+      "Running statements on that kind of source is not available yet",
+    );
+  }
+  const composed = composeStatement(statement, refine, dialect);
 
   switch (connection.kind) {
     case "postgres":
-      return runPostgresQuery(asRelational(connection, readOnly), statement);
+      return runPostgresQuery(asRelational(connection, readOnly), composed);
     case "mysql":
     case "mariadb":
-      return runMysqlStatement(connection, statement);
+      return runMysqlStatement(connection, composed);
     case "clickhouse":
-      return runClickhouseStatement(connection, statement);
+      return runClickhouseStatement(connection, composed);
     case "sqlite":
     case "libsql":
-      return runSqliteStatement(connection, statement);
+      return runSqliteStatement(connection, composed);
     default:
       throw new BadRequestException(
         "Running statements on that kind of source is not available yet",
       );
-  }
-}
-
-function assertReadOnly(statement: string): void {
-  if (!READ_ONLY_START.test(statement)) {
-    throw new BadRequestException(
-      "Only read-only statements can run here — that one writes",
-    );
   }
 }
 
@@ -71,16 +68,18 @@ async function runMysqlStatement(
   try {
     const [rows, fields] = await client.query(statement);
     const typed = toRows(rows as Array<Record<string, unknown>>);
+    const budgeted = applyBudget(typed);
     const columns = (fields ?? []).map((field) => field.name);
     return {
       columns,
       columnTypes: (fields ?? []).map(
         (field) => MYSQL_TYPE_NAMES.get(field.type ?? 0) ?? "UNKNOWN",
       ),
-      rows: typed.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: typed.length,
-      truncated: typed.length > MAX_ROWS || tooManyBytes(typed),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);
@@ -93,7 +92,7 @@ async function runClickhouseStatement(
   connection: IStoredConnection,
   statement: string,
 ): Promise<IQueryResponse> {
-  const client = clickhouseClient(connection, MAX_ROWS);
+  const client = clickhouseClient(connection, DEFAULT_RESULT_BUDGET.maxRows);
   const startedAt = Date.now();
   try {
     const result = await client.query({ query: statement, format: "JSON" });
@@ -102,13 +101,15 @@ async function runClickhouseStatement(
       data: Array<Record<string, unknown>>;
     };
     const rows = toRows(payload.data ?? []);
+    const budgeted = applyBudget(rows);
     return {
       columns: (payload.meta ?? []).map((entry) => entry.name),
       columnTypes: (payload.meta ?? []).map((entry) => entry.type),
-      rows: rows.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: rows.length,
-      truncated: rows.length > MAX_ROWS || tooManyBytes(rows),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);
@@ -134,13 +135,15 @@ async function runSqliteStatement(
     });
     const result = await Promise.race([run, timeout]);
     const rows = toRows(result.rows as unknown as Array<Record<string, unknown>>);
+    const budgeted = applyBudget(rows);
     return {
       columns: result.columns,
       columnTypes: result.columnTypes,
-      rows: rows.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: rows.length,
-      truncated: rows.length > MAX_ROWS || tooManyBytes(rows),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);
@@ -150,10 +153,6 @@ async function runSqliteStatement(
     }
     client.close();
   }
-}
-
-function tooManyBytes(rows: Array<Record<string, unknown>>): boolean {
-  return JSON.stringify(rows).length > MAX_BYTES;
 }
 
 function refused(caught: unknown): BadRequestException {

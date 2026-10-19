@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
 import { and, eq } from "drizzle-orm";
 import {
   schema,
@@ -45,6 +44,7 @@ import {
 } from "./instructions";
 import { chosenProvider } from "./provider";
 import { listModels, suggestModels } from "./models";
+import { runTurn } from "./turn";
 import type {
   ICreateAiProviderResponse,
   IAiProviderListResponse,
@@ -251,8 +251,6 @@ export function aiRoutes(): Hono<IAuthVars> {
       MAX_QUESTION,
     );
 
-    // Asking every source is the default; a picker narrows the question to the
-    // ones it is actually about.
     const wanted = optionalIdList(payload, "dataSourceIds");
     const owned = await organization.db
       .select()
@@ -299,130 +297,108 @@ export function aiRoutes(): Hono<IAuthVars> {
     }
     const { instructions, language } = style;
 
-    const startedAt = Date.now();
+    return runTurn(
+      c,
+      {
+        log: "[ai] that question could not be answered:",
+        message:
+          "That source could not be read, or the provider could not be reached. Check the source and the key.",
+      },
+      async (turn) => {
+        await turn.status("Reading the structure…");
 
-    return streamSSE(c, async (stream) => {
-      stream.onAbort(() => {
-        void stream.abort();
-      });
+        let answer = "";
+        let problem: string | null = null;
+        try {
+          const stored = await storedFromRow(source);
+          const context =
+            language === "search"
+              ? await quickwitContext(stored)
+              : language === "command"
+                ? await redisContext(stored)
+              : schemaContext({
+                  sourceId: source.id,
+                  ...(await introspectSchema(stored, source.readOnly)),
+                });
 
-      await stream.writeSSE({
-        event: "status",
-        data: JSON.stringify({ message: "Reading the structure…" }),
-      });
+          await turn.status(`Asking ${chosen.name} (${chosen.model})…`);
 
-      let answer = "";
-      let problem: string | null = null;
-      try {
-        const stored = await storedFromRow(source);
-        const context =
-          language === "search"
-            ? await quickwitContext(stored)
-            : language === "command"
-              ? await redisContext(stored)
-            : schemaContext({
-                sourceId: source.id,
-                ...(await introspectSchema(stored, source.readOnly)),
-              });
-
-        await stream.writeSSE({
-          event: "status",
-          data: JSON.stringify({
-            message: `Asking ${chosen.name} (${chosen.model})…`,
-          }),
-        });
-
-        for await (const chunk of streamQuery(chosen, question, context, instructions)) {
-          answer += chunk;
-          await stream.writeSSE({
-            event: "delta",
-            data: JSON.stringify({ text: chunk }),
-          });
+          for await (const chunk of streamQuery(chosen, question, context, instructions)) {
+            answer += chunk;
+            await turn.delta(chunk);
+          }
+        } catch (caught) {
+          console.error(`[ai] that question could not be answered:`, caught);
+          problem =
+            "That source could not be read, or the provider could not be reached. Check the source and the key.";
         }
-      } catch (caught) {
-        console.error(`[ai] that question could not be answered:`, caught);
-        problem =
-          "That source could not be read, or the provider could not be reached. Check the source and the key.";
-      }
 
-      const finished = readStatement(answer, language);
-      if (problem === null && answer.trim() === "") {
-        problem =
-          "That provider returned nothing. Check the key, the model id, and the base URL.";
-      }
-      const sql = problem === null ? finished.sql : null;
-      const pipeline = problem === null ? finished.pipeline : null;
-      const command = problem === null ? finished.command : null;
-      const search = problem === null ? finished.search : null;
-      const durationMs = Date.now() - startedAt;
+        const finished = readStatement(answer, language);
+        if (problem === null && answer.trim() === "") {
+          problem =
+            "That provider returned nothing. Check the key, the model id, and the base URL.";
+        }
+        const sql = problem === null ? finished.sql : null;
+        const pipeline = problem === null ? finished.pipeline : null;
+        const command = problem === null ? finished.command : null;
+        const search = problem === null ? finished.search : null;
+        const durationMs = Date.now() - turn.startedAt;
 
-      const inserted = await organization.db
-        .insert(aiChat)
-        .values({
-          organizationId: organization.organizationId,
+        const inserted = await organization.db
+          .insert(aiChat)
+          .values({
+            organizationId: organization.organizationId,
+            dataSourceId: source.id,
+            providerName: chosen.name,
+            model: chosen.model,
+            question,
+            sql:
+              sql ??
+              command ??
+              (search === null
+                ? pipeline === null
+                  ? null
+                  : JSON.stringify(pipeline)
+                : JSON.stringify(search)),
+            problem,
+            durationMs,
+            createdAt: new Date(),
+          })
+          .returning({ id: aiChat.id });
+
+        const body: IGenerateQueryResponse = {
+          chatId: inserted[0]!.id,
           dataSourceId: source.id,
+          dataSourceName: source.name,
+          language,
+          sql,
+          pipeline,
+          command,
+          search,
+          answered: finished.outcome === "answered",
           providerName: chosen.name,
           model: chosen.model,
-          question,
-          // One column holds whichever statement the engine runs: SQL, a Redis
-          // command, or the JSON of an aggregation pipeline.
-          sql:
-            sql ??
-            command ??
-            (search === null
-              ? pipeline === null
-                ? null
-                : JSON.stringify(pipeline)
-              : JSON.stringify(search)),
-          problem,
           durationMs,
-          createdAt: new Date(),
-        })
-        .returning({ id: aiChat.id });
+        };
 
-      const body: IGenerateQueryResponse = {
-        chatId: inserted[0]!.id,
-        dataSourceId: source.id,
-        dataSourceName: source.name,
-        language,
-        sql,
-        pipeline,
-        command,
-        search,
-        answered: finished.outcome === "answered",
-        providerName: chosen.name,
-        model: chosen.model,
-        durationMs,
-      };
+        if (problem !== null) {
+          await turn.problem(problem);
+        } else if (finished.outcome !== "answered") {
+          await turn.problem(
+            finished.outcome === "declined"
+              ? "That question could not be answered from this schema."
+              : "That answer came back in a shape I could not read. Ask again, or write the statement yourself.",
+          );
+        }
 
-      if (problem !== null) {
-        await stream.writeSSE({
-          event: "problem",
-          data: JSON.stringify({ message: problem }),
-        });
-      } else if (finished.outcome !== "answered") {
-        await stream.writeSSE({
-          event: "problem",
-          data: JSON.stringify({
-            message:
-              finished.outcome === "declined"
-                ? "That question could not be answered from this schema."
-                : "That answer came back in a shape I could not read. Ask again, or write the statement yourself.",
-          }),
-        });
-      }
-
-      await stream.writeSSE({ event: "done", data: JSON.stringify(body) });
-    });
+        await turn.done(body);
+      },
+    );
   });
 
   return routes;
 }
 
-/**
- * The ids a request narrowed a question to. Absent, null, or an empty list all
- * mean the same thing: search every source the organization owns.
- */
 function optionalIdList(
   payload: Record<string, unknown>,
   field: string,
@@ -439,16 +415,6 @@ function optionalIdList(
   return value as string[];
 }
 
-/**
- * How a source is asked about: the instructions the model is given, and the
- * language the answer comes back in.
- *
- * Answered per language rather than by trying an instruction set and catching
- * the refusal, so a source the app cannot ask about says so here rather than
- * being discovered at the point of asking. SQL is the one language whose
- * instructions depend on the engine, so it takes the dialect; every other
- * language is written the same whichever engine speaks it.
- */
 function askStyle(engine: IEngineSpec): {
   instructions: string;
   language: QueryLanguage;
@@ -469,11 +435,6 @@ function askStyle(engine: IEngineSpec): {
   }
 }
 
-/**
- * Ask which of several sources answers the question. Only the name and database
- * are sent: reading every candidate's structure would cost a round trip each,
- * and the second pass reads the winner properly anyway.
- */
 async function routeToSource(
   provider: AiProviderRow,
   question: string,

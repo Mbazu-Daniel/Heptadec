@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { IconTrash } from "@tabler/icons-react";
 import type {
   IAlertDelivery,
   IAlertRule,
-  ICreateAlertRuleRequest,
 } from "@heptadec/api/alert-contracts";
 import type {
-  ICreateScheduledJobRequest,
   IScheduledJob,
 } from "@heptadec/api/scheduler-contracts";
 import type { ISavedQueryListResponse } from "@heptadec/api/saved-query-contracts";
@@ -21,6 +24,8 @@ import {
   listNotificationChannels,
   listScheduledJobs,
   messageFor,
+  updateAlertRule,
+  updateScheduledJob,
 } from "../api";
 import {
   buildCron,
@@ -28,6 +33,7 @@ import {
   describeCron,
   HOURS,
   MINUTES,
+  parseWhen,
   REPEATS,
   WEEKDAYS,
   WEEKDAY_PRESETS,
@@ -66,11 +72,38 @@ function when(iso: string | null): string {
   return iso === null ? "never" : new Date(iso).toLocaleString();
 }
 
-
-/** One schedule, read as a sentence: how often, how long it stays fresh. */
-function scheduleSummary(job: IScheduledJob): string {
-  return `${describeCron(job.cron)} · kept fresh for ${freshness(job.ttlSeconds)} · next ${when(job.nextRunAt)} (${job.timezone})`;
+/** One state, read with one instrument: a dot for the mood, words for the why.
+    Green holds for healthy attention, amber for problems that need a move,
+    muted for information that only became interesting when asked for. */
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warning" | "muted";
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px]" role="status">
+      <span
+        className={
+          tone === "ok"
+            ? "size-1.5 rounded-full bg-green"
+            : tone === "warning"
+              ? "size-1.5 rounded-full bg-amber-600"
+              : "size-1.5 rounded-full bg-muted-foreground opacity-60"
+        }
+        aria-hidden="true"
+      />
+      <span className={tone === "warning" ? "text-amber-600" : "text-muted-foreground"}>
+        {children}
+      </span>
+    </span>
+  );
 }
+
+/** The right-edge cluster every card in the expanded row shares: Edit for the
+    changes it owns, delete for the ones it regrets. One shape, learned once. */
+
 
 function freshness(seconds: number): string {
   return (
@@ -97,10 +130,15 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
   const [channelCount, setChannelCount] = useState<number | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState<"schedule" | "alert" | null>(null);
+  // What is being added or edited. An edit carries the row it is editing, so
+  // the dialog opens prefilled and writes with PUT instead of creating.
+  const [adding, setAdding] = useState<
+    | { kind: "schedule"; job: IScheduledJob | null; queryId: string }
+    | { kind: "alert"; rule: IAlertRule | null; queryId: string }
+    | null
+  >(null);
   // Which rows are opened. The list stays collapsed until a row is clicked.
   const [expanded, setExpanded] = useState<readonly string[]>([]);
-  const [target, setTarget] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setProblem(null);
@@ -191,12 +229,9 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
   const waiting = entries.filter((entry) => entry.schedules.length === 0)
     .length;
   const chosen =
-    target === null ? null : (queries.find((q) => q.id === target) ?? null);
-
-  function summary(entry: { schedules: IScheduledJob[] }): string {
-    const first = entry.schedules[0]!;
-    return `${describeCron(first.cron)} · kept fresh ${freshness(first.ttlSeconds)}`;
-  }
+    adding === null
+      ? null
+      : (queries.find((query) => query.id === adding.queryId) ?? null);
 
   /** The deliveries made against one query's alerts, newest first. */
   function deliveriesFor(rules: readonly IAlertRule[]): IAlertDelivery[] {
@@ -214,12 +249,15 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
         <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {rules.length} {rules.length === 1 ? "alert" : "alerts"}
-          {waiting > 0 ? ` · ${waiting} waiting for a clock` : ""}
+          {waiting > 0 ? ` · ${waiting} without a schedule` : ""}
         </span>
         <Button
           onClick={() => {
-            setTarget(queries[0]?.id ?? null);
-            setAdding("schedule");
+            setAdding({
+              kind: "schedule",
+              job: null,
+              queryId: queries[0]?.id ?? "",
+            });
           }}
           disabled={queries.length === 0}
           className="h-7 gap-1.5 px-3 text-xs"
@@ -278,18 +316,16 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                           {open ? "expand_more" : "chevron_right"}
                         </span>
                         <span className="min-w-0 flex-1">
+                          {/* The list is names only — schedule first, query
+                              as the stand-in when nothing is scheduled. The
+                              query and its cadence live inside the row. */}
                           <span className="block truncate text-sm">
-                            {entry.query.name}
-                          </span>
-                          <span className="block truncate text-[11px] text-muted-foreground">
-                            {timed
-                              ? summary(entry)
-                              : "not on a timer"}
+                            {timed ? entry.schedules[0]!.name : entry.query.name}
                           </span>
                         </span>
                         {timed ? null : (
                           <span className="shrink-0 text-[11px] text-amber-600">
-                            waiting for a clock
+                            Not on a timer
                           </span>
                         )}
                         {entry.rules.length === 0 ? null : (
@@ -302,35 +338,100 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
 
                       {open ? (
                         <div className="grid gap-4 px-4 pb-4 pl-11">
+                          {/* The schedule gets a real card: what runs, when,
+                              how fresh, and the two verbs it owns — edit and
+                              stop — instead of unlabelled fragments. */}
                           {timed ? (
-                            <>
-                            <p className="text-[11px]">
-                              {/* Cadence and zone only: the collapsed row
-                                  already says how long the result stays fresh,
-                                  and saying it twice is how a list stops
-                                  reading as a list. */}
-                              {entry.schedules
-                                .map(
-                                  (job) =>
-                                    `${describeCron(job.cron)} (${job.timezone})`,
-                                )
-                                .join("  ·  ")}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              last{" "}
-                              {entry.schedules
-                                .map((job) => when(job.lastRunAt))
-                                .join(", ")}{" "}
-                              · next{" "}
-                              {entry.schedules
-                                .map((job) => when(job.nextRunAt))
-                                .join(", ")}
-                            </p>
-                            </>
+                            <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+                              <span
+                                className="material-symbols-outlined mt-0.5 text-[16px] text-muted-foreground"
+                                aria-hidden="true"
+                              >
+                                schedule
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm">
+                                  {entry.schedules
+                                    .map(
+                                      (job) =>
+                                        `${describeCron(job.cron)} (${job.timezone})`,
+                                    )
+                                    .join("  ·  ")}
+                                </p>
+                                <p className="mt-1 text-[11px] text-muted-foreground">
+                                  Results stay fresh for{" "}
+                                  {freshness(entry.schedules[0]!.ttlSeconds)}
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                  last ran{" "}
+                                  {entry.schedules
+                                    .map((job) => when(job.lastRunAt))
+                                    .join(", ")}{" "}
+                                  · next run{" "}
+                                  {entry.schedules
+                                    .map((job) => when(job.nextRunAt))
+                                    .join(", ")}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setAdding({
+                                      kind: "schedule",
+                                      job: entry.schedules[0]!,
+                                      queryId: entry.query.id,
+                                    });
+                                  }}
+                                  className="h-6 px-2 text-[11px]"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void removeSchedule(entry.schedules[0]!)
+                                  }
+                                  className="h-6 px-2 text-red"
+                                  title={`Remove the schedule ${entry.schedules[0]!.name}`}
+                                >
+                                  <IconTrash size={13} />
+                                </Button>
+                              </div>
+                            </div>
                           ) : (
-                            <p className="text-[11px] text-muted-foreground">
-                              Never checked — nothing runs this query. Put it on a timer.
-                            </p>
+                            <div className="flex items-start gap-3 rounded-lg border border-dashed border-amber-600/50 p-3">
+                              <span
+                                className="material-symbols-outlined mt-0.5 text-[16px] text-amber-600"
+                                aria-hidden="true"
+                              >
+                                alarm_off
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-amber-600">
+                                  Not running
+                                </p>
+                                <p className="mt-1 text-[11px] text-muted-foreground">
+                                  Nothing checks this query yet — its alerts
+                                  cannot fire until it is on a timer.
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                onClick={() => {
+                                  setAdding({
+                                    kind: "schedule",
+                                    job: null,
+                                    queryId: entry.query.id,
+                                  });
+                                }}
+                                className="h-6 shrink-0 self-center px-2 text-[11px]"
+                              >
+                                Put on a timer
+                              </Button>
+                            </div>
                           )}
 
                           <div>
@@ -341,8 +442,11 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                               <Button
                                 variant="ghost"
                                 onClick={() => {
-                                  setTarget(entry.query.id);
-                                  setAdding("alert");
+                                  setAdding({
+                                    kind: "alert",
+                                    rule: null,
+                                    queryId: entry.query.id,
+                                  });
                                 }}
                                 className="h-6 px-2 text-[11px]"
                               >
@@ -351,46 +455,79 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                             </div>
                             {entry.rules.length === 0 ? (
                               <p className="text-[11px] text-muted-foreground">
-                                "None"
+                                None — add one to be told when this column
+                                crosses a threshold.
                               </p>
                             ) : (
-                              <ul className="grid gap-1">
+                              <ul className="grid gap-2">
                                 {entry.rules.map((rule) => (
                                   <li
                                     key={rule.id}
-                                    className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]"
+                                    className="flex items-start gap-3 rounded-lg border border-border p-3"
                                   >
-                                    <span className="text-fg">{rule.name}</span>
-                                    <span className="font-mono text-muted-foreground">
-                                      {rule.column} {rule.operator}{" "}
-                                      {rule.threshold}
-                                    </span>
-                                    {/* The server knows whether anything runs this
-                                        rule's query, and says so per rule. Read
-                                        that rather than working it out from the
-                                        query's schedules here, where the two can
-                                        disagree about a rule nothing runs. */}
-                                    {rule.scheduled ? null : (
-                                      <span className="text-amber-600">
-                                        never runs — nothing queries it
-                                      </span>
-                                    )}
-                                    <span className="text-muted-foreground">
-                                      {channelCount === null
-                                        ? "reading…"
-                                        : channelCount === 0
-                                          ? "tells nobody — no channels connected"
-                                          : `tells ${channelCount} ${channelCount === 1 ? "channel" : "channels"}`}
-                                    </span>
-                                    <Button
-                                      variant="ghost"
-                                      disabled={busy}
-                                      onClick={() => void removeAlert(rule)}
-                                      className="ml-auto h-6 px-2 text-red"
-                                      title={`Remove the alert ${rule.name}`}
-                                    >
-                                      <IconTrash size={13} />
-                                    </Button>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="flex items-baseline gap-2">
+                                        <span className="min-w-0 truncate text-sm text-fg">
+                                          {rule.name}
+                                        </span>
+                                        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                                          {rule.column} {rule.operator}{" "}
+                                          {rule.threshold}
+                                        </span>
+                                      </p>
+                                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                        {/* The server knows whether anything runs this
+                                            rule's query, and says so per rule. Read
+                                            that rather than working it out from the
+                                            query's schedules here, where the two can
+                                            disagree about a rule nothing runs. */}
+                                        <StatusPill tone={rule.scheduled ? "ok" : "warning"}>
+                                          {rule.scheduled
+                                            ? "Checks each scheduled run"
+                                            : "Not scheduled — its query has no timer"}
+                                        </StatusPill>
+                                        {channelCount === null ? (
+                                          <StatusPill tone="muted">
+                                            Reading channels…
+                                          </StatusPill>
+                                        ) : channelCount === 0 ? (
+                                          <StatusPill tone="warning">
+                                            Not delivering — no channel connected
+                                          </StatusPill>
+                                        ) : (
+                                          <StatusPill tone="muted">
+                                            Delivers to {channelCount}{" "}
+                                            {channelCount === 1 ? "channel" : "channels"}
+                                          </StatusPill>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        disabled={busy}
+                                        onClick={() => {
+                                          setAdding({
+                                            kind: "alert",
+                                            rule,
+                                            queryId: entry.query.id,
+                                          });
+                                        }}
+                                        className="h-6 px-2 text-[11px]"
+                                        title={`Edit the alert ${rule.name}`}
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        disabled={busy}
+                                        onClick={() => void removeAlert(rule)}
+                                        className="h-6 px-2 text-red"
+                                        title={`Remove the alert ${rule.name}`}
+                                      >
+                                        <IconTrash size={13} />
+                                      </Button>
+                                    </div>
                                   </li>
                                 ))}
                               </ul>
@@ -435,30 +572,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                               </ul>
                             </ToggleFormArea>
                           ) : null}
-
-                          {timed ? (
-                            <Button
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                void removeSchedule(entry.schedules[0]!)
-                              }
-                              className="justify-self-start rounded-none text-red"
-                            >
-                              Stop
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              onClick={() => {
-                                setTarget(entry.query.id);
-                                setAdding("schedule");
-                              }}
-                              className="justify-self-start rounded-none"
-                            >
-                              Put this query on a timer
-                            </Button>
-                          )}
                         </div>
                       ) : null}
                     </li>
@@ -470,9 +583,10 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
         }
       />
 
-      {adding === "schedule" && chosen !== null ? (
+      {adding !== null && adding.kind === "schedule" && chosen !== null ? (
         <ScheduleDialog
           query={chosen}
+          job={adding.job}
           onClose={() => setAdding(null)}
           onSaved={async () => {
             setAdding(null);
@@ -481,9 +595,10 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
         />
       ) : null}
 
-      {adding === "alert" && chosen !== null ? (
+      {adding !== null && adding.kind === "alert" && chosen !== null ? (
         <AlertDialog
           query={chosen}
+          rule={adding.rule}
           onClose={() => setAdding(null)}
           onSaved={async () => {
             setAdding(null);
@@ -497,23 +612,31 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
 
 function ScheduleDialog({
   query,
+  job,
   onClose,
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
+  /** Set when editing an existing schedule; null when creating one. */
+  job: IScheduledJob | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   // A schedule runs one saved query, and the row this was opened from already
   // said which. Writing a query is not this dialog's job — a Saved Query belongs
-  // to the source it reads and is written there — so this turns one query into a
-  // timer and nothing else.
-  const [name, setName] = useState("");
-  const [when, setWhen] = useState<IWhen>(DEFAULT_WHEN);
-  const [timezone, setTimezone] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  // to the source it reads and is written there — so this turns one query into
+  // a timer and nothing else.
+  // Editing opens on the schedule's own words: parseWhen reverses buildCron,
+  // and an unreadable cron falls back to the default form rather than a guess.
+  const editing = job !== null;
+  const [name, setName] = useState(job?.name ?? "");
+  const [when, setWhen] = useState<IWhen>(
+    job === null ? DEFAULT_WHEN : (parseWhen(job.cron) ?? DEFAULT_WHEN),
   );
-  const [ttlSeconds, setTtlSeconds] = useState(3600);
+  const [timezone, setTimezone] = useState(
+    job?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+  );
+  const [ttlSeconds, setTtlSeconds] = useState(job?.ttlSeconds ?? 3600);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -523,14 +646,20 @@ function ScheduleDialog({
     setBusy(true);
     setProblem(null);
     try {
-      const input: ICreateScheduledJobRequest = {
-        savedQueryId: query.id,
+      // savedQueryId is absent on purpose when editing: the query a schedule
+      // runs is the schedule's identity, so moving it means creating a new
+      // schedule rather than rewriting history.
+      const input = {
         name,
         cron,
         timezone,
         ttlSeconds,
       };
-      await createScheduledJob(input);
+      if (job !== null) {
+        await updateScheduledJob(job.id, input);
+      } else {
+        await createScheduledJob({ ...input, savedQueryId: query.id });
+      }
       await onSaved();
     } catch (caught) {
       setProblem(messageFor(caught, "That schedule was not saved."));
@@ -543,7 +672,9 @@ function ScheduleDialog({
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>New schedule</DialogTitle>
+          <DialogTitle>
+            {editing ? "Edit schedule" : "New schedule"}
+          </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           {problem !== null ? <Alert>{problem}</Alert> : null}
@@ -695,7 +826,7 @@ function ScheduleDialog({
             disabled={busy || name.trim().length === 0}
             className={SMALL_BUTTON_CLASSNAME}
           >
-            {busy ? "Saving…" : "Save schedule"}
+            {busy ? "Saving…" : editing ? "Save changes" : "Save schedule"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -705,20 +836,28 @@ function ScheduleDialog({
 
 function AlertDialog({
   query,
+  rule,
   onClose,
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
+  /** Set when editing an existing rule; null when creating one. */
+  rule: IAlertRule | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   // An alert watches one saved query's column, and the row it was opened from
   // already said which — so it is named here rather than chosen from a list of
   // one.
-  const [name, setName] = useState("");
-  const [column, setColumn] = useState("");
-  const [operator, setOperator] = useState<(typeof OPERATORS)[number]>(">=");
-  const [threshold, setThreshold] = useState("");
+  const editing = rule !== null;
+  const [name, setName] = useState(rule?.name ?? "");
+  const [column, setColumn] = useState(rule?.column ?? "");
+  const [operator, setOperator] = useState<(typeof OPERATORS)[number]>(
+    rule?.operator ?? ">=",
+  );
+  const [threshold, setThreshold] = useState(
+    rule === null ? "" : String(rule.threshold),
+  );
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -726,14 +865,17 @@ function AlertDialog({
     setBusy(true);
     setProblem(null);
     try {
-      const input: ICreateAlertRuleRequest = {
-        savedQueryId: query.id,
+      const input = {
         name,
         column,
         operator,
         threshold: Number(threshold),
       };
-      await createAlertRule(input);
+      if (rule !== null) {
+        await updateAlertRule(rule.id, input);
+      } else {
+        await createAlertRule({ ...input, savedQueryId: query.id });
+      }
       await onSaved();
     } catch (caught) {
       setProblem(messageFor(caught, "That alert was not saved."));
@@ -746,7 +888,7 @@ function AlertDialog({
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New alert</DialogTitle>
+          <DialogTitle>{editing ? "Edit alert" : "New alert"}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           {problem !== null ? <Alert>{problem}</Alert> : null}
@@ -817,7 +959,7 @@ function AlertDialog({
             }
             className={SMALL_BUTTON_CLASSNAME}
           >
-            {busy ? "Saving…" : "Save alert"}
+            {busy ? "Saving…" : editing ? "Save changes" : "Save alert"}
           </Button>
         </DialogFooter>
       </DialogContent>

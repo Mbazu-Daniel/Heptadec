@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@heptadec/db";
 import { BadRequestException, NotFoundException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";
-import { canUseTooling, kindOf } from "../data-source/contracts";
+import { canUseTooling, kindOf } from "../data-source/engines";
 import type {
   ChartType,
   IDashboard,

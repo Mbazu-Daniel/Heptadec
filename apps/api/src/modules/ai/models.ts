@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { schema } from "@heptadec/db";
 import type { AiProviderRow } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
+import { logDriverFailure } from "../../common/driver-error";
 import { decryptSecret } from "../data-source/secret";
 import { providerSpec } from "./catalog";
 
@@ -39,7 +40,10 @@ export async function listModels(row: AiProviderRow): Promise<ModelListing> {
       headers: { authorization: `Bearer ${await decryptSecret(row.apiKey)}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
+  } catch (caught) {
+    // The listing answers with a status; the operator gets the driver's own
+    // words, which is the half this catch used to drop.
+    logDriverFailure(caught, "reach that provider");
     return { kind: "unreachable" };
   }
 

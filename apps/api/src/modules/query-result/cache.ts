@@ -22,7 +22,7 @@ import {
 import {
   canBeSaved,
   engineOf,
-} from "../data-source/contracts";
+} from "../data-source/engines";
 import {
   runSqlQuery,
 } from "../query/sql";
@@ -54,11 +54,7 @@ export async function materializeResult(
     );
   }
 
-  const grid = await runSqlQuery(
-    await storedFromRow(source),
-    query.sql,
-    source.readOnly,
-  );
+  const grid = await runSqlQuery(await storedFromRow(source), query.sql);
 
   await cacheResult(organization.db, query.organizationId, query.id, grid, ttlSeconds);
 

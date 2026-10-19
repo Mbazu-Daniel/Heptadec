@@ -1,5 +1,6 @@
 import pg from "pg";
 import { BadRequestException } from "../../common/exceptions";
+import { structureFailure } from "../../common/driver-error";
 import { postgresClient } from "../data-source/postgres-client";
 import type { ISavedConnection } from "../data-source/connection";
 import type {
@@ -29,7 +30,7 @@ export async function introspectPostgres(
       introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
-    throw new BadRequestException(readable(caught));
+    throw new BadRequestException(structureFailure(caught));
   } finally {
     await client.end();
   }
@@ -172,28 +173,11 @@ function toRelationship(row: IForeignKeyRow): ISchemaRelationship {
   };
 }
 
-function readable(caught: unknown): string {
-  const message = caught instanceof Error ? caught.message : "";
-  if (message.includes("ECONNREFUSED")) {
-    return "Nothing is listening on that host and port";
-  }
-  if (message.includes("password authentication failed")) {
-    return "That username and password were rejected";
-  }
-  if (message.includes("does not exist")) {
-    return "That database does not exist";
-  }
-  if (message.includes("statement timeout")) {
-    return "Reading the structure of that database took too long";
-  }
-  return "That data source's structure could not be read";
-}
-
 function connect(client: pg.Client): Promise<void> {
   return client
     .connect()
     .then(() => undefined)
     .catch((caught: unknown) => {
-      throw new BadRequestException(readable(caught));
+      throw new BadRequestException(structureFailure(caught));
     });
 }

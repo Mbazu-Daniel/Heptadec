@@ -20,6 +20,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
@@ -27,11 +28,10 @@ import { recordAudit, auditActor } from "../audit";
 import { encryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import {
-  canBeAsked,
-  engineOf,
   type IEngineSpec,
   type QueryLanguage,
 } from "../data-source/contracts";
+import { canBeAsked, engineOf } from "../data-source/engines";
 import { introspectSchema } from "../schema/introspect";
 import { AI_PROVIDERS, providerSpec } from "./catalog";
 import { quickwitContext, redisContext, schemaContext } from "./context";
@@ -311,7 +311,7 @@ export function aiRoutes(): Hono<IAuthVars> {
                 ? await redisContext(stored)
               : schemaContext({
                   sourceId: source.id,
-                  ...(await introspectSchema(stored, source.readOnly)),
+                  ...(await introspectSchema(stored)),
                 });
 
           await turn.status(`Asking ${chosen.name} (${chosen.model})…`);
@@ -321,8 +321,8 @@ export function aiRoutes(): Hono<IAuthVars> {
             await turn.delta(chunk);
           }
         } catch (caught) {
-          console.error(`[ai] that question could not be answered:`, caught);
           problem =
+            driverFailure(caught, "answer that question") ??
             "That source could not be read, or the provider could not be reached. Check the source and the key.";
         }
 

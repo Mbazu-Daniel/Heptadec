@@ -1,5 +1,6 @@
 import { createClient } from "redis";
 import { BadGatewayException, BadRequestException } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IRedisQueryResponse } from "./contracts";
@@ -80,13 +81,12 @@ function toGrid(result: unknown): {
 export async function runRedisQuery(
   source: IStoredConnection,
   command: string,
-  readOnly: boolean,
 ): Promise<IRedisQueryResponse> {
   const trimmed = command.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS) {
     throw new BadRequestException("A Redis command is required");
   }
-  assertRedisReads(trimmed, readOnly);
+  assertRedisReads(trimmed, source.readOnly);
   const tokens = tokenize(trimmed);
 
   const client = createClient({ url: redisUrl(source) });
@@ -104,8 +104,11 @@ export async function runRedisQuery(
       truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
-  } catch {
-    throw new BadGatewayException("That Redis command could not be run");
+  } catch (caught) {
+    throw new BadGatewayException(
+      driverFailure(caught, "run that Redis command") ??
+        "That Redis command could not be run",
+    );
   } finally {
     await client.quit().catch(() => undefined);
   }

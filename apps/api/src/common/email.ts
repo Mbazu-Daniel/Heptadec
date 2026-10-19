@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { driverFailure } from "./driver-error";
 
 export interface IEmail {
   to: string;
@@ -36,8 +37,13 @@ export async function sendEmail(email: IEmail): Promise<EmailOutcome> {
   }
   try {
     return transport === "cloudflare" ? await cloudflare(email) : await resend(email);
-  } catch {
-    return { status: "failed", reason: "The email provider could not be reached" };
+  } catch (caught) {
+    return {
+      status: "failed",
+      reason:
+        driverFailure(caught, "reach the email provider") ??
+        "The email provider could not be reached",
+    };
   }
 }
 

@@ -24,6 +24,7 @@ import {
   BadRequestException,
   BadGatewayException,
 } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import {
   can,
 } from "../rbac/authorize";
@@ -40,10 +41,7 @@ import {
   storedFromInput,
   storedFromRow,
 } from "./connection";
-import {
-  engineOf,
-  kindOf,
-} from "./contracts";
+import { engineFrom, engineOf, kindOf } from "./engines";
 import {
   PREVIEW_DEFAULT_LIMIT,
   PREVIEW_MAX_LIMIT,
@@ -387,17 +385,13 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       readBody(await c.req.json(), "A data source is required"),
     );
 
-    try {
-      const objects = await listObjects(storedFromInput(input));
-      const body: ITestConnectionResponse = {
-        ok: true,
-        total: objects.length,
-        sample: objects.slice(0, 10).map((object) => object.name),
-      };
-      return c.json(body);
-    } catch {
-      throw new BadGatewayException("The database could not be reached");
-    }
+    const objects = await reachable(() => listObjects(storedFromInput(input)));
+    const body: ITestConnectionResponse = {
+      ok: true,
+      total: objects.length,
+      sample: objects.slice(0, 10).map((object) => object.name),
+    };
+    return c.json(body);
   });
 
   return routes;
@@ -406,8 +400,11 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
 async function reachable<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
-  } catch {
-    throw new BadGatewayException("The database could not be reached");
+  } catch (caught) {
+    throw new BadGatewayException(
+      driverFailure(caught, "reach that data source") ??
+        "The database could not be reached",
+    );
   }
 }
 
@@ -433,8 +430,8 @@ function readPreviewQuery(value: unknown, kind: DataSourceKind): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 500) {
     throw new BadRequestException("The search text is invalid");
   }
-  if (kind !== "quickwit") {
-    throw new BadRequestException("Only Quickwit searches take a query");
+  if (engineFrom(kind).queryLanguage !== "search") {
+    throw new BadRequestException("Only search sources take a query");
   }
   return value;
 }

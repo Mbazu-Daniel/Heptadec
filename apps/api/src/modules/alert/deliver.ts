@@ -2,11 +2,16 @@ import type { AlertRuleRow, NotificationChannelRow } from "@heptadec/db";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { eq } from "drizzle-orm";
 import { decryptSecret } from "../data-source/secret";
+import { driverFailure } from "../../common/driver-error";
 import type {
   INotificationConfig,
   NotificationKind,
 } from "../notification/contracts";
-import type { AlertDeliveryChannel, AlertDeliveryStatus } from "./contracts";
+import type {
+  AlertDeliveryChannel,
+  AlertDeliveryStatus,
+  IAlertDelivery,
+} from "./contracts";
 
 const { alertDelivery, notificationChannel } = schema;
 
@@ -14,28 +19,46 @@ const DELIVERY_TIMEOUT_MS = 10_000;
 
 const RESEND_URL = "https://api.resend.com/emails";
 
+/** The row as the app hands it over. One owner, so the check that wrote a
+ * delivery and the route that reports it cannot describe it differently. */
+export function toAlertDelivery(
+  row: typeof alertDelivery.$inferSelect,
+): IAlertDelivery {
+  return {
+    id: row.id,
+    alertRuleId: row.alertRuleId,
+    channel: row.channel as AlertDeliveryChannel,
+    status: row.status as AlertDeliveryStatus,
+    message: row.message,
+    error: row.error,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export async function deliverBreach(
   db: HeptadecDatabase,
   rule: AlertRuleRow,
   message: string,
-): Promise<void> {
+): Promise<IAlertDelivery[]> {
   const channels = await db
     .select()
     .from(notificationChannel)
     .where(eq(notificationChannel.organizationId, rule.organizationId));
 
   if (channels.length === 0) {
-    await log(
-      db,
-      rule,
-      "none",
-      "skipped",
-      message,
-      "No notification channel is connected",
-    );
-    return;
+    return [
+      await log(
+        db,
+        rule,
+        "none",
+        "skipped",
+        message,
+        "No notification channel is connected",
+      ),
+    ];
   }
 
+  const delivered: IAlertDelivery[] = [];
   for (const channel of channels) {
     const kind = channel.kind as NotificationKind;
     const failure = await sendToChannel(
@@ -43,8 +66,11 @@ export async function deliverBreach(
       `Heptadec alert: ${rule.name}`,
       message,
     );
-    await log(db, rule, kind, failure === null ? "sent" : "failed", message, failure);
+    delivered.push(
+      await log(db, rule, kind, failure === null ? "sent" : "failed", message, failure),
+    );
   }
+  return delivered;
 }
 
 async function sendToChannel(
@@ -52,11 +78,27 @@ async function sendToChannel(
   subject: string,
   message: string,
 ): Promise<string | null> {
+  let config: INotificationConfig;
+  let recipients: string[];
   try {
-    const config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
-    return await post(config, JSON.parse(channel.recipients) as string[], subject, message);
-  } catch {
-    return "The channel could not be reached";
+    config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
+    recipients = JSON.parse(channel.recipients) as string[];
+  } catch (caught) {
+    // A configuration that will not open is a failure of what was stored, not
+    // of the network, so it says so rather than reading as a channel that could
+    // not be reached, and the driver's own words reach the operator.
+    return (
+      driverFailure(caught, "open that channel's sealed configuration") ??
+      "That channel's configuration could not be read"
+    );
+  }
+  try {
+    return await post(config, recipients, subject, message);
+  } catch (caught) {
+    return (
+      driverFailure(caught, "reach that channel") ??
+      "The channel could not be reached"
+    );
   }
 }
 
@@ -140,14 +182,18 @@ async function log(
   status: AlertDeliveryStatus,
   message: string,
   error: string | null,
-): Promise<void> {
-  await db.insert(alertDelivery).values({
-    organizationId: rule.organizationId,
-    alertRuleId: rule.id,
-    channel,
-    status,
-    message,
-    error,
-    createdAt: new Date(),
-  });
+): Promise<IAlertDelivery> {
+  const inserted = await db
+    .insert(alertDelivery)
+    .values({
+      organizationId: rule.organizationId,
+      alertRuleId: rule.id,
+      channel,
+      status,
+      message,
+      error,
+      createdAt: new Date(),
+    })
+    .returning();
+  return toAlertDelivery(inserted[0]!);
 }

@@ -8,9 +8,10 @@ import {
   type ConnectionMethod as ConnectionMethodChoice,
 } from "./ConnectionMethod";
 import { LibSQLForm, QuickwitForm, SqliteForm } from "./EndpointForms";
+import { type IBlockProps, connectionModeOptions } from "./fields";
 import { PostgresForm } from "./PostgresForm";
 import { ServerForm } from "./ServerForm";
-import { connectionModeOptions } from "./fields";
+import type { ReactElement } from "react";
 
 const MODE_LABELS: Record<ConnectionMode, string> = {
   tcp: "TCP",
@@ -105,32 +106,25 @@ export function EngineFields({
   );
 }
 
-function Form({
-  kind,
-  mode,
-  values,
-  onChange,
-}: {
-  kind: DataSourceKind;
-  mode: ConnectionMode | null;
-  values: Readonly<Record<string, string>>;
-  onChange: (field: ConnectionFieldKind, next: string) => void;
-}) {
-  const props = { kind, mode, values, onChange };
-  switch (kind) {
-    case "postgres":
-      return <PostgresForm {...props} />;
-    case "quickwit":
-      return <QuickwitForm {...props} />;
-    case "libsql":
-      return <LibSQLForm {...props} />;
-    case "sqlite":
-      return <SqliteForm {...props} />;
-    case "mysql":
-    case "mariadb":
-    case "clickhouse":
-    case "mongodb":
-    case "redis":
-      return <ServerForm {...props} />;
-  }
+/**
+ * The block of fields one engine shows. Keyed by the union, so an engine added
+ * to the catalog stops compiling here until its form exists, rather than
+ * rendering an empty block at runtime: the switch this replaces had no default
+ * and no exemption from returning, so nothing checked that it was complete.
+ */
+const FORMS: Record<DataSourceKind, (props: IBlockProps) => ReactElement> = {
+  postgres: PostgresForm,
+  quickwit: QuickwitForm,
+  libsql: LibSQLForm,
+  sqlite: SqliteForm,
+  mysql: ServerForm,
+  mariadb: ServerForm,
+  clickhouse: ServerForm,
+  mongodb: ServerForm,
+  redis: ServerForm,
+};
+
+function Form(props: IBlockProps) {
+  const Chosen = FORMS[props.kind];
+  return <Chosen {...props} />;
 }

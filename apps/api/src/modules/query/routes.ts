@@ -12,7 +12,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
-import { engineOf } from "../data-source/contracts";
+import { engineOf } from "../data-source/engines";
 import { savedConnection, storedFromRow } from "../data-source/connection";
 import { explainPostgresQuery } from "./postgres";
 import { runnerOf } from "./runners";
@@ -38,7 +38,6 @@ export function queryRoutes(): Hono<IAuthVars> {
     const body = await runner.run(
       await storedFromRow(source),
       await c.req.json(),
-      source.readOnly,
     );
     return c.json(body);
   });

@@ -4,7 +4,6 @@ import { afterAll, expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
-import { runDueJobs } from "../src/modules/scheduler";
 
 const {
   alertDelivery,
@@ -149,22 +148,32 @@ async function rule(
   });
 }
 
-async function runScheduledCheck(cookie: string, savedQueryId: string): Promise<void> {
-  const created = await request("/api/scheduled-jobs", {
+/**
+ * Asks the app to check a saved query's alerts. This is what a scheduled run
+ * does about them, so a breach reaching every channel is driven through the
+ * app's own seam rather than by backdating a job's `nextRunAt` and calling the
+ * tick by hand.
+ */
+async function checkNow(
+  cookie: string,
+  savedQueryId: string,
+): Promise<
+  Array<{ channel: string; status: string; message: string; error: string | null }>
+> {
+  const res = await request(`/api/saved-queries/${savedQueryId}/alert-checks`, {
     method: "POST",
-    headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ savedQueryId, name: "Check", cron: "* * * * *" }),
+    headers: { cookie },
   });
-  expect(created.status).toBe(201);
-  const { scheduledJob: job } = (await created.json()) as { scheduledJob: { id: string } };
-  createdJobs.push(job.id);
-
-  await db
-    .update(scheduledJob)
-    .set({ nextRunAt: new Date(Date.now() - 60_000) })
-    .where(eq(scheduledJob.id, job.id));
-
-  await runDueJobs(db, new Date());
+  expect(res.status).toBe(200);
+  const { alertDeliveries } = (await res.json()) as {
+    alertDeliveries: Array<{
+      channel: string;
+      status: string;
+      message: string;
+      error: string | null;
+    }>;
+  };
+  return alertDeliveries;
 }
 
 function deliveries(ruleId: string) {
@@ -240,7 +249,7 @@ it("fires a breached threshold and reaches every channel that is connected", asy
       threshold: 1,
     });
     expect(created.status).toBe(201);
-    await runScheduledCheck(cookie, savedQueryId);
+    const reported = await checkNow(cookie, savedQueryId);
 
     const posted = await waitForBodies(receiver.bodies);
     expect(posted).toHaveLength(1);
@@ -256,6 +265,12 @@ it("fires a breached threshold and reaches every channel that is connected", asy
     expect(slack.error).toBeNull();
     expect(slack.message).toBe(payload.text);
     expect(rows.find((row) => row.channel === "email")!.status).toBe("failed");
+
+    // The answer is the row it wrote, not a second account of the same send.
+    expect(reported.map((entry) => entry.channel).sort()).toEqual(["email", "slack"]);
+    expect(reported.find((entry) => entry.channel === "slack")!.status).toBe("sent");
+    expect(reported.find((entry) => entry.channel === "slack")!.message).toBe(payload.text);
+    expect(reported.find((entry) => entry.channel === "email")!.status).toBe("failed");
   } finally {
     await receiver.close();
   }
@@ -280,7 +295,7 @@ it("stays quiet when the threshold holds", async () => {
     });
     expect(created.status).toBe(201);
 
-    await runScheduledCheck(cookie, savedQueryId);
+    await checkNow(cookie, savedQueryId);
 
     expect(await deliveries(await ruleIdOf(savedQueryId))).toHaveLength(0);
     expect(receiver.bodies()).toHaveLength(0);
@@ -301,7 +316,7 @@ it("records a breach that has nowhere to go instead of dropping it", async () =>
   });
   expect(created.status).toBe(201);
 
-  await runScheduledCheck(cookie, savedQueryId);
+  await checkNow(cookie, savedQueryId);
 
   const rows = await deliveries(await ruleIdOf(savedQueryId));
   expect(rows).toHaveLength(1);
@@ -331,7 +346,7 @@ it("logs a channel that could not be reached without echoing its URL or token", 
   });
   expect(created.status).toBe(201);
 
-  await runScheduledCheck(cookie, savedQueryId);
+  await checkNow(cookie, savedQueryId);
 
   const rows = await deliveries(await ruleIdOf(savedQueryId));
   expect(rows).toHaveLength(1);
@@ -431,7 +446,7 @@ it("refuses a viewer who cannot add a rule", async () => {
     );
   expect(rows).toHaveLength(0);
 });
-it("marks a rule whose query nothing schedules, so it cannot look live", async () => {
+it("marks a rule whose query no schedule runs, so it does not fire on its own", async () => {
   const { cookie, orgId, savedQueryId } = await ownerWithChart();
 
   const created = await rule(cookie, {
@@ -464,7 +479,8 @@ it("marks a rule whose query nothing schedules, so it cannot look live", async (
   const unscheduled = alertRules.find((entry) => entry.id === body.alertRule.id);
   expect(unscheduled?.scheduled).toBe(false);
 
-  // Scheduling the query is what makes the rule live, and nothing else changes.
+  // Scheduling the query is what makes the rule fire on its own, and nothing
+  // else changes.
   const job = await request("/api/scheduled-jobs", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },

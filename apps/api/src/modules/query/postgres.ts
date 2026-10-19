@@ -1,5 +1,6 @@
 import pg from "pg";
 import { BadRequestException } from "../../common/exceptions";
+import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import { postgresClient } from "../data-source/postgres-client";
 import type { ISavedConnection } from "../data-source/connection";
@@ -145,9 +146,9 @@ export async function runStatement(
         "That statement could not be parsed — check the spelling",
       );
     }
-    console.error(`[api] postgres refused a statement: ${message}`);
     throw new BadRequestException(
-      "That statement was refused. Check the tables and columns it names exist and that you can read them.",
+      driverFailure(caught, "run that statement") ??
+        "That statement was refused. Check the tables and columns it names exist and that you can read them.",
     );
   }
 }
@@ -157,13 +158,11 @@ function connect(client: pg.Client): Promise<void> {
     .connect()
     .then(() => undefined)
     .catch((caught: unknown) => {
+      const failure = driverFailure(caught, "reach that data source");
+      if (failure !== null) {
+        throw new BadRequestException(failure);
+      }
       const message = caught instanceof Error ? caught.message : "";
-      if (message.includes("ECONNREFUSED")) {
-        throw new BadRequestException("Nothing is listening on that host and port");
-      }
-      if (message.includes("password authentication failed")) {
-        throw new BadRequestException("That username and password were rejected");
-      }
       if (message.includes("does not exist")) {
         throw new BadRequestException("That database does not exist");
       }

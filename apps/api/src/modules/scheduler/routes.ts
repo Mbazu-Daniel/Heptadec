@@ -188,8 +188,6 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     }
 
     const body = readBody(await c.req.json(), "A schedule change is required");
-    // A replacement, not a diff: the reader validates every field the same way
-    // creation does, so no edit can leave the schedule half-configured.
     const name = readString(body, "name", "Give the schedule a name", MAX_NAME);
     const cron = readString(body, "cron", "Write a five-field schedule", MAX_CRON);
     const timezone =
@@ -214,9 +212,6 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     const ttlSeconds = typeof ttl === "number" ? ttl : DEFAULT_TTL_SECONDS;
 
     const now = new Date();
-    // nextRunAt answers to the schedule, so an edited cron or zone retires the
-    // previously computed slot. Computing it inside the same object literal as
-    // the write keeps an unreadable edit from touching the stored row.
     const updated = await organization.db
       .update(scheduledJob)
       .set({
@@ -244,7 +239,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule could not be changed");
     }
 
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

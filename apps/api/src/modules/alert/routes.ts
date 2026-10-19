@@ -183,8 +183,6 @@ export function alertRoutes(): Hono<IAuthVars> {
     }
 
     const body = readBody(await c.req.json(), "An alert change is required");
-    // A replacement, not a diff: the reader validates every field the same way
-    // creation does, so no edit can leave the watch half-configured.
     const name = readString(body, "name", "Give the alert a name", MAX_NAME);
     const column = readString(body, "column", "Pick the column to watch", MAX_COLUMN);
     const operatorValue = readString(body, "operator", "Pick an operator", 8);
@@ -218,7 +216,7 @@ export function alertRoutes(): Hono<IAuthVars> {
     if (edited === undefined) {
       throw new NotFoundException("That alert rule could not be changed");
     }
-    const actor = auditActor(c);
+    const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
       actorId: actor.id,

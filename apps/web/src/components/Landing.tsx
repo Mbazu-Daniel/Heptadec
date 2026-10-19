@@ -8,7 +8,7 @@ import { EngineIcon } from "../lib/engine-icon";
 
 const REPO = "Mbazu-Daniel/Heptadec";
 
-const REPO_URL = `https://github.com/${REPO}`;
+export const REPO_URL = `https://github.com/${REPO}`;
 
 const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
 

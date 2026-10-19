@@ -17,6 +17,7 @@ import { requireOwner } from "../rbac/owner";
 import { auditActor, recordAudit } from "../audit";
 import { billingConfigured, billingPlans, cadenceForProduct, productIdFor } from "./catalog";
 import { createCheckoutSession } from "./client";
+import { entitlementFor } from "./entitlement";
 import { readSubscriptionEvent, type ISubscriptionEvent } from "./event";
 import { isSignedDelivery } from "./signature";
 import {
@@ -40,8 +41,14 @@ export function billingRoutes(): Hono<IAuthVars> {
       .limit(1);
     const row = rows[0];
 
+    const entitlement = await entitlementFor(
+      organization.db,
+      organization.organizationId,
+    );
     const body: IBillingSummary = {
       configured: billingConfigured(),
+      entitled: entitlement.entitled,
+      trialEndsAt: entitlement.trialEndsAt.toISOString(),
       plans: billingPlans(),
       subscription: row === undefined ? null : toSubscription(row),
     };
@@ -103,7 +110,7 @@ export function billingRoutes(): Hono<IAuthVars> {
       config.bachs.webhookSecret,
     );
     if (!signed) {
-      throw new BadRequestException("That delivery is not signed by Bachs");
+      throw new BadRequestException("That delivery is not signed");
     }
 
     const event = readSubscriptionEvent(raw);

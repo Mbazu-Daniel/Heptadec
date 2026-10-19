@@ -8,10 +8,7 @@ import type {
 import { fetchBilling, messageFor, startCheckout } from "../api";
 import { Button } from "./ui/button";
 import { Alert, EmptyState } from "./ui/feedback";
-import { VIEW_CLASSNAME, Workspace } from "./workspace";
-
-const PLAN_CARD =
-  "flex flex-col gap-3 rounded-xl border border-border bg-foreground/5 p-4";
+import { PLAN_CARD_CLASSNAME, VIEW_CLASSNAME, Workspace } from "./workspace";
 
 export function Billing({ isOwner }: { isOwner: boolean }) {
   const [summary, setSummary] = useState<IBillingSummary | null>(null);
@@ -82,7 +79,7 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
               </h2>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {summary.plans.map((plan) => (
-                  <div key={plan.cadence} className={PLAN_CARD}>
+                  <div key={plan.cadence} className={PLAN_CARD_CLASSNAME}>
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm font-medium text-fg">
                         {plan.label}
@@ -126,7 +123,7 @@ function CurrentPlan({
     return (
       <EmptyState
         title="No subscription yet"
-        body="This organization is not subscribed. Payment is taken on a Bachs checkout page, and this page follows what Bachs reports."
+        body="This organization is not subscribed. Choose a plan to turn the product on."
       />
     );
   }
@@ -159,8 +156,7 @@ function CurrentPlan({
         </div>
       </dl>
       <p className="text-xs text-muted-foreground">
-        Changing or cancelling this plan is not wired up yet; it needs a Bachs
-        customer portal session.
+        Changing or cancelling this plan is not wired up yet.
       </p>
     </div>
   );

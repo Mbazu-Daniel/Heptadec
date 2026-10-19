@@ -3,6 +3,7 @@ export const MAX_BODY_BYTES = 1024 * 1024;
 export const ERROR_CODES = {
   bad_request: 400,
   unauthorized: 401,
+  payment_required: 402,
   forbidden: 403,
   not_found: 404,
   payload_too_large: 413,

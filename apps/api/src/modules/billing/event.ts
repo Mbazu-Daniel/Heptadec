@@ -53,14 +53,14 @@ export function isSubscriptionEventType(
 
 function record(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new BadRequestException(`The Bachs delivery has no ${path}`);
+    throw new BadRequestException(`The delivery has no ${path}`);
   }
   return value as Record<string, unknown>;
 }
 
 function text(value: unknown, path: string): string {
   if (typeof value !== "string" || value === "") {
-    throw new BadRequestException(`The Bachs delivery has no ${path}`);
+    throw new BadRequestException(`The delivery has no ${path}`);
   }
   return value;
 }
@@ -68,7 +68,7 @@ function text(value: unknown, path: string): string {
 function moment(value: unknown, path: string): Date {
   const parsed = optionalMoment(value, path);
   if (parsed === null) {
-    throw new BadRequestException(`The Bachs delivery has no ${path}`);
+    throw new BadRequestException(`The delivery has no ${path}`);
   }
   return parsed;
 }
@@ -79,14 +79,14 @@ function optionalMoment(value: unknown, path: string): Date | null {
   }
   const parsed = new Date(text(value, path));
   if (Number.isNaN(parsed.getTime())) {
-    throw new BadRequestException(`The Bachs delivery has a malformed ${path}`);
+    throw new BadRequestException(`The delivery has a malformed ${path}`);
   }
   return parsed;
 }
 
 function flag(value: unknown, path: string): boolean {
   if (typeof value !== "boolean") {
-    throw new BadRequestException(`The Bachs delivery has no ${path}`);
+    throw new BadRequestException(`The delivery has no ${path}`);
   }
   return value;
 }

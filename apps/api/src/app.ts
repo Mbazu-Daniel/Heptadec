@@ -25,7 +25,7 @@ import { queryRoutes } from "./modules/query";
 import { schemaRoutes } from "./modules/schema";
 import { savedQueryRoutes } from "./modules/saved-query";
 import { dashboardRoutes, dashboardAiRoutes } from "./modules/dashboard";
-import { shareLinkRoutes } from "./modules/share-link";
+import { shareLinkRoutes, publicShareRoutes } from "./modules/share-link";
 import { schedulerRoutes } from "./modules/scheduler";
 import { alertRoutes } from "./modules/alert";
 import { notificationRoutes } from "./modules/notification";
@@ -35,7 +35,7 @@ import { aiRoutes } from "./modules/ai";
 import { memberRoutes } from "./modules/member";
 import { organizationRoutes } from "./modules/organization";
 import { imageRoutes } from "./modules/images";
-import { billingRoutes } from "./modules/billing";
+import { billingRoutes, subscribed } from "./modules/billing";
 
 export interface IAppOptions {
   compressResponses: boolean;
@@ -60,24 +60,26 @@ export function buildApp(options: IAppOptions): Hono<IAuthVars> {
   }
 
   app.route("/", authRoutes());
-  app.route("/", auditRoutes());
-  app.route("/", dataSourceRoutes());
-  app.route("/", queryRoutes());
-  app.route("/", schemaRoutes());
-  app.route("/", savedQueryRoutes());
-  app.route("/", dashboardRoutes());
-  app.route("/", dashboardAiRoutes());
-  app.route("/", shareLinkRoutes());
-  app.route("/", schedulerRoutes());
-  app.route("/", alertRoutes());
-  app.route("/", notificationRoutes());
+
+  app.route("/", subscribed(auditRoutes()));
+  app.route("/", subscribed(dataSourceRoutes()));
+  app.route("/", subscribed(queryRoutes()));
+  app.route("/", subscribed(schemaRoutes()));
+  app.route("/", subscribed(savedQueryRoutes()));
+  app.route("/", subscribed(dashboardRoutes()));
+  app.route("/", subscribed(dashboardAiRoutes()));
+  app.route("/", subscribed(shareLinkRoutes()));
+  app.route("/", publicShareRoutes());
+  app.route("/", subscribed(schedulerRoutes()));
+  app.route("/", subscribed(alertRoutes()));
+  app.route("/", subscribed(notificationRoutes()));
   app.route("/", organizationRoutes());
   app.route("/", memberRoutes());
   app.route("/", imageRoutes());
   app.route("/", billingRoutes());
   app.route("/", invitationRoutes());
   app.route("/", mcpRoutes());
-  app.route("/", aiRoutes());
+  app.route("/", subscribed(aiRoutes()));
 
   app.get("/health", (c) => c.json({ ok: true }));
 

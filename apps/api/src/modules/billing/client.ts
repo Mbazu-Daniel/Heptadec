@@ -34,7 +34,7 @@ export async function createCheckoutSession(
 
   if (!response.ok) {
     throw new BadGatewayException(
-      `Bachs refused the checkout (${response.status})`,
+      `The checkout was refused (${response.status})`,
     );
   }
   const session = (await response.json()) as ICheckoutSession;

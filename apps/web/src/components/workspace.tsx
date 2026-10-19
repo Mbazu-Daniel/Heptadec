@@ -11,6 +11,9 @@ export const SMALL_BUTTON_CLASSNAME = "h-7 px-2.5 text-xs";
 
 export const TABLE_CLASSNAME = "w-full border-collapse text-left text-xs";
 
+export const PLAN_CARD_CLASSNAME =
+  "flex flex-col gap-3 rounded-xl border border-border bg-foreground/5 p-4";
+
 export const TABLE_HEAD_CLASSNAME = "font-medium text-muted-foreground";
 
 export const TABLE_ROW_CLASSNAME =

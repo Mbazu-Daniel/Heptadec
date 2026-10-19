@@ -6,6 +6,8 @@ export { BadRequestException } from "./bad-request";
 
 export { UnauthorizedException } from "./unauthorized";
 
+export { PaymentRequiredException } from "./payment-required";
+
 export { ForbiddenException } from "./forbidden";
 
 export { NotFoundException } from "./not-found";

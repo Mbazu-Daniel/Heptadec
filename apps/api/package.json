@@ -28,7 +28,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.billing.config.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "pnpm --filter @heptadec/web build",
     "db:migrate:d1": "wrangler d1 migrations apply heptadec",

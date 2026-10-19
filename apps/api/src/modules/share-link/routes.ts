@@ -19,6 +19,7 @@ import {
   type IOrganizationScope,
 } from "../../common/session/current-organization";
 import { can } from "../rbac/authorize";
+import { entitlementFor } from "../billing/entitlement";
 import { recordAudit, auditActor } from "../audit";
 import { materializeResult } from "../query-result/cache";
 import { widgetPoints } from "../dashboard/widget-data";
@@ -310,6 +311,13 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     });
     return c.json({ id: found.id });
   });
+
+  return routes;
+}
+
+export function publicShareRoutes(): Hono<IAuthVars> {
+  const routes = new Hono<IAuthVars>();
+
   routes.get("/api/share/:token", async (c) => {
     rateLimit(c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "direct");
 
@@ -327,6 +335,10 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     }
     if (found.expiresAt !== null && found.expiresAt.getTime() <= Date.now()) {
       throw new NotFoundException("That link has expired");
+    }
+    const entitlement = await entitlementFor(c.get("db"), found.organizationId);
+    if (!entitlement.entitled) {
+      throw new NotFoundException("That link does not work");
     }
 
     const body: ISharedDashboardResponse = {

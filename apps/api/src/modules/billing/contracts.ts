@@ -23,6 +23,8 @@ export interface IBillingSubscription {
 
 export interface IBillingSummary {
   configured: boolean;
+  entitled: boolean;
+  trialEndsAt: string;
   plans: IBillingPlan[];
   subscription: IBillingSubscription | null;
 }

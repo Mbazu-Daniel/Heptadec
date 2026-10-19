@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@heptadec/db";
 import {
@@ -33,6 +32,7 @@ import { gridNumber } from "../query/contracts";
 import { cacheResult, cachedResult } from "../query-result/cache";
 import { complete } from "../ai/generate";
 import { chosenProvider } from "../ai/provider";
+import { runTurn } from "../ai/turn";
 import { schemaContext } from "../ai/context";
 import {
   dashboardAskInstructions,
@@ -164,90 +164,74 @@ function dashboardAiRoutes() {
       throw new NotFoundException("That dashboard could not be created");
     }
 
-    return streamSSE(c, async (stream) => {
-      stream.onAbort(() => {
-        void stream.abort();
-      });
+    return runTurn(
+      c,
+      {
+        log: "[dashboard] that plan could not be produced:",
+        message:
+          "That source could not be read, or the provider could not be reached. The dashboard is saved with its sources connected.",
+      },
+      async (turn) => {
+        let problem: string | null = null;
+        const skipped: string[] = [];
 
-      let problem: string | null = null;
-      const skipped: string[] = [];
-
-      try {
-        const analysed = sources.filter(canUseTooling);
-        if (analysed.length === 0) {
-          problem =
-            "None of those sources can be described in full yet, so there is nothing to build from them.";
-        } else {
-          const blocks: string[] = [];
-          for (const source of analysed) {
-            await stream.writeSSE({
-              event: "status",
-              data: JSON.stringify({ message: `Reading ${source.name}…` }),
-            });
-            const described = await introspectPostgres(await savedConnection(source));
-            blocks.push(schemaBlock(source, described));
-          }
-
-          await stream.writeSSE({
-            event: "status",
-            data: JSON.stringify({
-              message: `Asking ${provider.name} (${provider.model})…`,
-            }),
-          });
-
-          const answer = await complete(
-            provider,
-            dashboardPlanInstructions,
-            planPrompt(blocks, request.brief),
-          );
-          const plan = readJsonObject(answer);
-          const charts = plan === null ? [] : asArray(plan.charts).slice(0, MAX_CHARTS);
-          if (charts.length === 0) {
+        try {
+          const analysed = sources.filter(canUseTooling);
+          if (analysed.length === 0) {
             problem =
-              "That provider did not return a plan. The dashboard is saved with its sources connected, so you can add charts by hand or ask again.";
-          }
+              "None of those sources can be described in full yet, so there is nothing to build from them.";
+          } else {
+            const blocks: string[] = [];
+            for (const source of analysed) {
+              await turn.status(`Reading ${source.name}…`);
+              const described = await introspectPostgres(await savedConnection(source));
+              blocks.push(schemaBlock(source, described));
+            }
 
-          for (const raw of charts) {
-            try {
-              const draft = await buildChart(raw, analysed);
-              await persistChart(created.id, draft, organization);
-              await stream.writeSSE({
-                event: "status",
-                data: JSON.stringify({ message: `Added ${draft.title}` }),
-              });
-            } catch (caught) {
-              skipped.push(skippedFor(caught, raw));
+            await turn.status(`Asking ${provider.name} (${provider.model})…`);
+
+            const answer = await complete(
+              provider,
+              dashboardPlanInstructions,
+              planPrompt(blocks, request.brief),
+            );
+            const plan = readJsonObject(answer);
+            const charts = plan === null ? [] : asArray(plan.charts).slice(0, MAX_CHARTS);
+            if (charts.length === 0) {
+              problem =
+                "That provider did not return a plan. The dashboard is saved with its sources connected, so you can add charts by hand or ask again.";
+            }
+
+            for (const raw of charts) {
+              try {
+                const draft = await buildChart(raw, analysed);
+                await persistChart(created.id, draft, organization);
+                await turn.status(`Added ${draft.title}`);
+              } catch (caught) {
+                skipped.push(skippedFor(caught, raw));
+              }
             }
           }
+        } catch (caught) {
+          console.error(`[dashboard] that plan could not be produced:`, caught);
+          problem =
+            "That source could not be read, or the provider could not be reached. The dashboard is saved with its sources connected.";
         }
-      } catch (caught) {
-        console.error(`[dashboard] that plan could not be produced:`, caught);
-        problem =
-          "That source could not be read, or the provider could not be reached. The dashboard is saved with its sources connected.";
-      }
 
-      if (skipped.length > 0) {
-        await stream.writeSSE({
-          event: "skipped",
-          data: JSON.stringify({ titles: skipped }),
-        });
-      }
-      if (problem !== null) {
-        await stream.writeSSE({
-          event: "problem",
-          data: JSON.stringify({ message: problem }),
-        });
-      }
+        if (skipped.length > 0) {
+          await turn.skipped(skipped);
+        }
+        if (problem !== null) {
+          await turn.problem(problem);
+        }
 
-      const response: IGenerateDashboardResponse = {
-        dashboard: await dashboardDetail(created, organization),
-        durationMs: Date.now() - now.getTime(),
-      };
-      await stream.writeSSE({
-        event: "done",
-        data: JSON.stringify(response),
-      });
-    });
+        const response: IGenerateDashboardResponse = {
+          dashboard: await dashboardDetail(created, organization),
+          durationMs: Date.now() - now.getTime(),
+        };
+        await turn.done(response);
+      },
+    );
   });
 
   routes.post("/api/dashboards/:id/ask", requireSession, async (c) => {
@@ -289,66 +273,54 @@ function dashboardAiRoutes() {
       );
     }
 
-    const startedAt = Date.now();
     const widgets = await readWidgets(found.id, organization);
 
-    return streamSSE(c, async (stream) => {
-      stream.onAbort(() => {
-        void stream.abort();
-      });
+    return runTurn(
+      c,
+      {
+        log: "[dashboard] that request could not be answered:",
+        message:
+          "That provider did not return a proposal. Check the key, the model id, and the base URL.",
+      },
+      async (turn) => {
+        let proposal: IDashboardProposal | null = null;
 
-      let proposal: IDashboardProposal | null = null;
+        try {
+          const blocks: string[] = [];
+          for (const source of analysed) {
+            await turn.status(`Reading ${source.name}…`);
+            const described = await introspectPostgres(await savedConnection(source));
+            blocks.push(schemaBlock(source, described));
+          }
 
-      try {
-        const blocks: string[] = [];
-        for (const source of analysed) {
-          await stream.writeSSE({
-            event: "status",
-            data: JSON.stringify({ message: `Reading ${source.name}…` }),
-          });
-          const described = await introspectPostgres(await savedConnection(source));
-          blocks.push(schemaBlock(source, described));
+          await turn.status(`Asking ${provider.name} (${provider.model})…`);
+
+          const answer = await complete(
+            provider,
+            dashboardAskInstructions,
+            await askPrompt(found.name, blocks, widgets, organization, question),
+          );
+          proposal = readProposal(answer, question);
+        } catch (caught) {
+          console.error(`[dashboard] that request could not be answered:`, caught);
         }
 
-        await stream.writeSSE({
-          event: "status",
-          data: JSON.stringify({
-            message: `Asking ${provider.name} (${provider.model})…`,
-          }),
-        });
+        if (proposal === null) {
+          await turn.problem(
+            "That provider did not return a proposal. Check the key, the model id, and the base URL.",
+          );
+          return;
+        }
 
-        const answer = await complete(
-          provider,
-          dashboardAskInstructions,
-          await askPrompt(found.name, blocks, widgets, organization, question),
-        );
-        proposal = readProposal(answer, question);
-      } catch (caught) {
-        console.error(`[dashboard] that request could not be answered:`, caught);
-      }
-
-      if (proposal === null) {
-        await stream.writeSSE({
-          event: "problem",
-          data: JSON.stringify({
-            message:
-              "That provider did not return a proposal. Check the key, the model id, and the base URL.",
-          }),
-        });
-        return;
-      }
-
-      const response: IAskDashboardResponse = {
-        proposal,
-        providerName: provider.name,
-        model: provider.model,
-        durationMs: Date.now() - startedAt,
-      };
-      await stream.writeSSE({
-        event: "done",
-        data: JSON.stringify(response),
-      });
-    });
+        const response: IAskDashboardResponse = {
+          proposal,
+          providerName: provider.name,
+          model: provider.model,
+          durationMs: Date.now() - turn.startedAt,
+        };
+        await turn.done(response);
+      },
+    );
   });
 
   routes.post("/api/dashboards/:id/apply", requireSession, async (c) => {

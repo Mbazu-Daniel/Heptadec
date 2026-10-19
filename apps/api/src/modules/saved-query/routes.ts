@@ -13,6 +13,7 @@ import {
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
 import { recordAudit, auditActor } from "../audit";
+import { deleteSavedQueryRows } from "../../common/ownership";
 import type {
   ICreateSavedQueryRequest,
   IQueryVersion,
@@ -23,7 +24,7 @@ import type {
   IUpdateSavedQueryRequest,
 } from "./contracts";
 
-const { alertDelivery, alertRule, dataSource, queryVersion, savedQuery, scheduledJob, widget } = schema;
+const { dataSource, queryVersion, savedQuery } = schema;
 
 const MAX_NAME = 120;
 
@@ -276,50 +277,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (existing === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    await organization.db
-      .delete(widget)
-      .where(
-        and(
-          eq(widget.savedQueryId, existing.id),
-          organization.where(widget.organizationId),
-        ),
-      );
-    await organization.db
-      .delete(scheduledJob)
-      .where(
-        and(
-          eq(scheduledJob.savedQueryId, existing.id),
-          organization.where(scheduledJob.organizationId),
-        ),
-      );
-    const rules = await organization.db
-      .select({ id: alertRule.id })
-      .from(alertRule)
-      .where(
-        and(
-          eq(alertRule.savedQueryId, existing.id),
-          organization.where(alertRule.organizationId),
-        ),
-      );
-    for (const rule of rules) {
-      await organization.db
-        .delete(alertDelivery)
-        .where(
-          and(
-            eq(alertDelivery.alertRuleId, rule.id),
-            organization.where(alertDelivery.organizationId),
-          ),
-        );
-    }
-    await organization.db
-      .delete(alertRule)
-      .where(
-        and(
-          eq(alertRule.savedQueryId, existing.id),
-          organization.where(alertRule.organizationId),
-        ),
-      );
-    await organization.db.delete(savedQuery).where(eq(savedQuery.id, existing.id));
+    await deleteSavedQueryRows(organization, existing.id);
     const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,

@@ -4,7 +4,28 @@ import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { request, signUp, uniqueEmail, uniqueSlug, db } from "./helpers";
 
-const { organization, member, invitation, session } = schema;
+const {
+  organization,
+  member,
+  invitation,
+  session,
+  aiChat,
+  aiProvider,
+  alertDelivery,
+  alertRule,
+  auditLog,
+  billingSubscription,
+  dashboard,
+  dashboardDataSource,
+  dataSource,
+  notificationChannel,
+  queryResult,
+  queryVersion,
+  savedQuery,
+  scheduledJob,
+  shareLink,
+  widget,
+} = schema;
 
 it("stores the organization, the owner membership, and the active organization", async () => {
   const { user: created, cookie } = await signUp(uniqueEmail());
@@ -146,4 +167,201 @@ it("refuses to switch into an organization the user does not belong to", async (
     .from(session)
     .where(eq(session.userId, mine.id));
   expect(sessions[0]!.activeOrganizationId ?? null).not.toBe(other.id);
+});
+
+it("deletes every row the organization owns", async () => {
+  const { cookie } = await signUp(uniqueEmail());
+  const slug = uniqueSlug();
+  const created = await authFor(db).api.createOrganization({
+    body: { name: "Disposable", slug },
+    headers: { cookie },
+  });
+  const orgId = created.id;
+  const now = new Date();
+  const dataSourceId = `ds_${orgId}`;
+  const savedQueryId = `sq_${orgId}`;
+  const dashboardId = `db_${orgId}`;
+  const alertRuleId = `ar_${orgId}`;
+
+  await db.insert(dataSource).values({
+    id: dataSourceId,
+    organizationId: orgId,
+    kind: "postgres",
+    name: "Source",
+    readOnly: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(savedQuery).values({
+    id: savedQueryId,
+    organizationId: orgId,
+    dataSourceId,
+    name: "Query",
+    sql: "SELECT 1",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(queryVersion).values({
+    organizationId: orgId,
+    savedQueryId,
+    name: "Query",
+    sql: "SELECT 1",
+    createdAt: now,
+  });
+  await db.insert(queryResult).values({
+    organizationId: orgId,
+    savedQueryId,
+    ranAt: now,
+    ttlSeconds: 60,
+    payload: "{}",
+  });
+  await db.insert(dashboard).values({
+    id: dashboardId,
+    organizationId: orgId,
+    name: "Dashboard",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(dashboardDataSource).values({
+    organizationId: orgId,
+    dashboardId,
+    dataSourceId,
+    createdAt: now,
+  });
+  await db.insert(widget).values({
+    organizationId: orgId,
+    dashboardId,
+    savedQueryId,
+    chartType: "bar",
+    title: "Chart",
+    labelColumn: "a",
+    valueColumn: "b",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(shareLink).values({
+    organizationId: orgId,
+    dashboardId,
+    tokenHash: "hash",
+    snapshot: "{}",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(scheduledJob).values({
+    organizationId: orgId,
+    savedQueryId,
+    name: "Job",
+    cron: "0 * * * *",
+    timezone: "UTC",
+    ttlSeconds: 60,
+    nextRunAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(alertRule).values({
+    id: alertRuleId,
+    organizationId: orgId,
+    savedQueryId,
+    name: "Rule",
+    column: "a",
+    operator: ">",
+    threshold: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(alertDelivery).values({
+    organizationId: orgId,
+    alertRuleId,
+    channel: "slack",
+    status: "sent",
+    message: "breach",
+    createdAt: now,
+  });
+  await db.insert(notificationChannel).values({
+    organizationId: orgId,
+    name: "Slack",
+    kind: "slack",
+    recipients: "[]",
+    config: "{}",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(aiProvider).values({
+    organizationId: orgId,
+    name: "Provider",
+    provider: "openai",
+    model: "gpt",
+    apiKey: "key",
+    isDefault: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(aiChat).values({
+    organizationId: orgId,
+    dataSourceId,
+    providerName: "Provider",
+    model: "gpt",
+    question: "question",
+    durationMs: 1,
+    createdAt: now,
+  });
+  await db.insert(auditLog).values({
+    organizationId: orgId,
+    occurredAt: now,
+    actorId: "actor",
+    actorLabel: "Actor",
+    event: "test.event",
+    targetKind: "test",
+  });
+  await db.insert(billingSubscription).values({
+    organizationId: orgId,
+    customerId: "cust",
+    subscriptionId: "sub",
+    productId: "prod",
+    status: "active",
+    cancelAtPeriodEnd: false,
+    eventCreatedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const res = await request("/api/organization/delete", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ slug }),
+  });
+  expect(res.status).toBe(200);
+
+  const tables = [
+    ["aiChat", aiChat],
+    ["aiProvider", aiProvider],
+    ["alertDelivery", alertDelivery],
+    ["alertRule", alertRule],
+    ["auditLog", auditLog],
+    ["billingSubscription", billingSubscription],
+    ["dashboard", dashboard],
+    ["dashboardDataSource", dashboardDataSource],
+    ["dataSource", dataSource],
+    ["notificationChannel", notificationChannel],
+    ["queryResult", queryResult],
+    ["queryVersion", queryVersion],
+    ["savedQuery", savedQuery],
+    ["scheduledJob", scheduledJob],
+    ["shareLink", shareLink],
+    ["widget", widget],
+  ] as const;
+
+  for (const [name, table] of tables) {
+    const rows = await db
+      .select()
+      .from(table)
+      .where(eq(table.organizationId, orgId));
+    expect(rows, `${name} should be empty`).toHaveLength(0);
+  }
+
+  const organizations = await db
+    .select()
+    .from(organization)
+    .where(eq(organization.id, orgId));
+  expect(organizations).toHaveLength(0);
 });

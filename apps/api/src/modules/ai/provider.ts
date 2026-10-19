@@ -1,30 +1,30 @@
 import { and, desc, eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { schema } from "@heptadec/db";
+import type { IOrganizationScope } from "../../common/session/current-organization";
 
 const { aiProvider } = schema;
 
 export async function chosenProvider(
-  db: HeptadecDatabase,
-  organizationId: string,
+  organization: IOrganizationScope,
   requested: unknown,
 ): Promise<typeof aiProvider.$inferSelect | null> {
   if (typeof requested === "string" && requested !== "") {
-    const rows = await db
+    const rows = await organization.db
       .select()
       .from(aiProvider)
       .where(
         and(
           eq(aiProvider.id, requested),
-          eq(aiProvider.organizationId, organizationId),
+          organization.where(aiProvider.organizationId),
         ),
       )
       .limit(1);
     return rows[0] ?? null;
   }
-  const rows = await db
+  const rows = await organization.db
     .select()
     .from(aiProvider)
-    .where(eq(aiProvider.organizationId, organizationId))
+    .where(organization.where(aiProvider.organizationId))
     .orderBy(desc(aiProvider.isDefault), aiProvider.createdAt)
     .limit(1);
   return rows[0] ?? null;

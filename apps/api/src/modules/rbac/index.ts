@@ -12,3 +12,4 @@ export {
 } from "./permissions";
 
 export { can, type Action, type Resource } from "./authorize";
+export { requireOwner } from "./owner";

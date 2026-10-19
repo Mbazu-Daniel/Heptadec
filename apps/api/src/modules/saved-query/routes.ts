@@ -170,7 +170,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       .where(
         and(
           eq(savedQuery.dataSourceId, source.id),
-          eq(savedQuery.organizationId, organization.organizationId),
+          organization.where(savedQuery.organizationId),
           eq(savedQuery.sql, sql),
         ),
       )

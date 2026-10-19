@@ -57,11 +57,7 @@ export function billingRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/billing/checkout", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(
-      organization.db,
-      c.req.raw.headers,
-      "Only owners can start a subscription",
-    );
+    requireOwner(c, "Only owners can start a subscription");
 
     if (!billingConfigured()) {
       throw new BadRequestException("Billing is not configured on this deployment");

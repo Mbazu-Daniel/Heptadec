@@ -4,7 +4,6 @@ import {
   schema,
   type AiProviderRow,
   type DataSourceRow,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,
@@ -13,6 +12,7 @@ import {
 import {
   activeOrganization,
   oneRow,
+  type IOrganizationScope,
 } from "../../common/session/current-organization";
 import {
   BadGatewayException,
@@ -22,6 +22,7 @@ import {
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
+import { requireOwner } from "../rbac/owner";
 import { recordAudit, auditActor } from "../audit";
 import { encryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
@@ -66,7 +67,7 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/ai/providers", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(organization.db, c.req.raw.headers);
+    requireOwner(c, "Only owners can manage AI providers");
 
     const rows = await organization.db
       .select()
@@ -92,7 +93,7 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/ai/providers", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(organization.db, c.req.raw.headers);
+    requireOwner(c, "Only owners can manage AI providers");
 
     const payload = readBody(await c.req.json(), "A provider is required");
     const name = readString(payload, "name", "Give the provider a name", MAX_NAME);
@@ -170,7 +171,7 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.delete("/api/ai/providers/:id", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(organization.db, c.req.raw.headers);
+    requireOwner(c, "Only owners can manage AI providers");
 
     const found = await oneRow(organization.db, aiProvider, c.req.param("id"), organization);
     if (found === undefined) {
@@ -188,7 +189,7 @@ export function aiRoutes(): Hono<IAuthVars> {
       .returning({ id: aiProvider.id });
 
     if (removed.length > 0 && found.isDefault) {
-      await promoteAnother(organization.db, organization.organizationId);
+      await promoteAnother(organization);
     }
 
     const actor = await auditActor(c);
@@ -208,7 +209,7 @@ export function aiRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/ai/providers/:id/models", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    await requireOwner(organization.db, c.req.raw.headers);
+    requireOwner(c, "Only owners can manage AI providers");
 
     const found = await oneRow(organization.db, aiProvider, c.req.param("id"), organization);
     if (found === undefined) {
@@ -223,11 +224,7 @@ export function aiRoutes(): Hono<IAuthVars> {
       throw new BadGatewayException("That provider could not be reached");
     }
     if (listing.kind === "unsupported") {
-      const suggestions = await suggestModels(
-        organization.db,
-        organization.organizationId,
-        found.provider,
-      );
+      const suggestions = await suggestModels(organization, found.provider);
       const body: IListModelsResponse = { source: "suggestions", models: suggestions };
       return c.json(body);
     }
@@ -273,11 +270,7 @@ export function aiRoutes(): Hono<IAuthVars> {
       );
     }
 
-    const chosen = await chosenProvider(
-      organization.db,
-      organization.organizationId,
-      payload.providerId,
-    );
+    const chosen = await chosenProvider(organization, payload.providerId);
     if (chosen === null) {
       throw new BadRequestException(
         "No AI provider is set up for this organization yet",
@@ -468,24 +461,15 @@ async function routeToSource(
   return match;
 }
 
-async function requireOwner(db: HeptadecDatabase, headers: Headers): Promise<void> {
-  if (!(await can(db, headers, "invitation", "create"))) {
-    throw new ForbiddenException("Only owners can manage AI providers");
-  }
-}
-
-async function promoteAnother(
-  db: HeptadecDatabase,
-  organizationId: string,
-): Promise<void> {
-  const next = await db
+async function promoteAnother(organization: IOrganizationScope): Promise<void> {
+  const next = await organization.db
     .select({ id: aiProvider.id })
     .from(aiProvider)
-    .where(eq(aiProvider.organizationId, organizationId))
+    .where(organization.where(aiProvider.organizationId))
     .orderBy(aiProvider.createdAt)
     .limit(1);
   if (next[0] !== undefined) {
-    await db
+    await organization.db
       .update(aiProvider)
       .set({ isDefault: true })
       .where(eq(aiProvider.id, next[0].id));

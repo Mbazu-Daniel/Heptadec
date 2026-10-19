@@ -8,23 +8,8 @@ import { readMongoPipeline, runMongoQuery } from "./mongo";
 import { runRedisQuery } from "./redis";
 import { readSearchStatement, runSearchQuery } from "./quickwit";
 
-/**
- * What one language's Run answers with: the Grid every Run is, plus whatever
- * else that language's result carries. Redis reports how long it took and no
- * column types; the rest report both.
- */
 export type RunResult = IQueryResponse | IRedisQueryResponse;
 
-/**
- * The seam one language is run through.
- *
- * A statement crosses the wire untrusted, so reading it is part of running it
- * and belongs beside it: each language below reads its own body and then
- * executes, rather than leaving the reading to the route and the running to
- * this module. That is what lets a route ask "which language is this engine"
- * once, instead of carrying a branch per language that knows where in the body
- * to reach and what to do with what it finds.
- */
 export interface ILanguageRunner {
   run(
     connection: IStoredConnection,
@@ -33,11 +18,6 @@ export interface ILanguageRunner {
   ): Promise<RunResult>;
 }
 
-/**
- * Every language, keyed by the language itself. A language with no runner is a
- * missing key here and so a compile error, rather than an engine that is listed
- * throughout the app and cannot be run.
- */
 const RUNNERS = {
   sql: {
     run: (connection, body, readOnly) =>
@@ -48,10 +28,11 @@ const RUNNERS = {
       ),
   },
   command: {
-    run: (connection, body) =>
+    run: (connection, body, readOnly) =>
       runRedisQuery(
         connection,
         readString(readBody(body, "A command is required"), "command", "A Redis command is required"),
+        readOnly,
       ),
   },
   pipeline: {
@@ -71,12 +52,6 @@ const RUNNERS = {
   },
 } as const satisfies Record<QueryLanguage, ILanguageRunner>;
 
-/**
- * The runner an engine speaks through, or a refusal naming the engine. Every Run
- * the app makes arrives through here, so no caller carries its own list of the
- * languages that exist — the list is this record's keys, and the compiler holds
- * it to all of them.
- */
 export function runnerOf(engine: IEngineSpec): ILanguageRunner {
   const language = engine.queryLanguage;
   if (language === null) {

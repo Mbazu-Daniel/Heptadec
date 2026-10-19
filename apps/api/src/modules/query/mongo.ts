@@ -3,10 +3,9 @@ import { bsonTypeName, openMongo, toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IMongoPipeline, IQueryResponse } from "./contracts";
 import { applyBudget } from "./budget";
+import { assertMongoReads } from "./read-policy";
 
 const MAX_STAGES = 32;
-
-const WRITING_STAGES = ["$out", "$merge"];
 
 export function readMongoPipeline(value: unknown): IMongoPipeline {
   if (typeof value !== "object" || value === null) {
@@ -53,14 +52,7 @@ export async function runMongoQuery(
   readOnly: boolean,
 ): Promise<IQueryResponse> {
   if (readOnly) {
-    for (const stage of pipeline.pipeline) {
-      const name = Object.keys(stage)[0] ?? "";
-      if (WRITING_STAGES.includes(name)) {
-        throw new BadRequestException(
-          `Only read-only pipelines can run here — ${name} writes a collection`,
-        );
-      }
-    }
+    assertMongoReads(pipeline);
   }
 
   const startedAt = Date.now();

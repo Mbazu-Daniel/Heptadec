@@ -27,6 +27,7 @@ import {
   MCP_PERMISSION_RESOURCE,
 } from "./capabilities";
 import { applyBudget, MAX_BYTES } from "../query/budget";
+import { assertSqlReads } from "../query/read-policy";
 
 const { dataSource } = schema;
 
@@ -109,6 +110,7 @@ export function registerTools(
             "That data source is writable, so this token will not query it",
           );
         }
+        assertSqlReads(sql, "run");
         const grid = await runPostgresQuery(await savedConnection(source), sql);
         const budgeted = applyBudget(grid.rows, {
           maxRows: MCP_MAX_ROWS,

@@ -27,6 +27,7 @@ import { savedConnection } from "../data-source/connection";
 import { canUseTooling } from "../data-source/contracts";
 import { introspectPostgres } from "../schema/postgres";
 import { runPostgresQuery } from "../query/postgres";
+import { assertSqlReads } from "../query/read-policy";
 import type { IQueryResponse } from "../query/contracts";
 import { gridNumber } from "../query/contracts";
 import { cacheResult, cachedResult } from "../query-result/cache";
@@ -415,11 +416,6 @@ function dashboardAiRoutes() {
   return routes;
 }
 
-function isRead(sql: string): boolean {
-  const head = sql.replace(/[\s(]+/g, " ").trim().toUpperCase();
-  return head.startsWith("SELECT") || head.startsWith("WITH");
-}
-
 function readChartType(raw: unknown): ChartType | null {
   return typeof raw === "string" && (CHART_TYPES as readonly string[]).includes(raw)
     ? (raw as ChartType)
@@ -510,9 +506,7 @@ async function buildChart(
   if (sql.length === 0 || sql.length > MAX_SQL) {
     throw new BadRequestException("That chart's statement is missing or too long");
   }
-  if (!isRead(sql)) {
-    throw new BadRequestException("That chart's statement is not a read");
-  }
+  assertSqlReads(sql, "draft-preview");
 
   const chartType = readChartType(entry.chartType);
   if (chartType === null) {

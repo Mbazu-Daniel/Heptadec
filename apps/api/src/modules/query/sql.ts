@@ -10,9 +10,8 @@ import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
 import { runPostgresQuery } from "./postgres";
 import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
+import { assertSqlReads } from "./read-policy";
 import type { IQueryResponse } from "./contracts";
-
-const READ_ONLY_START = /^\s*(select|with|show|describe|desc|explain|pragma|values)\b/i;
 
 const MYSQL_TYPE_NAMES = new Map<number, string>(
   Object.entries(mysql.Types)
@@ -29,8 +28,8 @@ export async function runSqlQuery(
   if (statement.length === 0) {
     throw new BadRequestException("Write a statement to run");
   }
-  if (readOnly && connection.kind !== "postgres") {
-    assertReadOnly(statement);
+  if (readOnly) {
+    assertSqlReads(statement, "run");
   }
 
   switch (connection.kind) {
@@ -48,14 +47,6 @@ export async function runSqlQuery(
       throw new BadRequestException(
         "Running statements on that kind of source is not available yet",
       );
-  }
-}
-
-function assertReadOnly(statement: string): void {
-  if (!READ_ONLY_START.test(statement)) {
-    throw new BadRequestException(
-      "Only read-only statements can run here — that one writes",
-    );
   }
 }
 

@@ -4,26 +4,11 @@ import { jsonValue } from "../../common/http/json-value";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IRedisQueryResponse } from "./contracts";
 import { applyBudget } from "./budget";
+import { assertRedisReads } from "./read-policy";
 
 const STATEMENT_TIMEOUT_MS = 15_000;
 
 const MAX_COMMAND_CHARS = 1_000;
-
-const READ_ONLY_REDIS_COMMANDS = new Set([
-  "exists", "keys", "scan", "type", "randomkey", "object", "dbsize", "ttl",
-  "pttl", "command", "info",
-  "get", "getrange", "strlen", "bitcount", "bitpos", "substr",
-  "hexists", "hget", "hgetall", "hlen", "hmget", "hscan", "hkeys", "hstrlen",
-  "hvals", "hrandfield",
-  "llen", "lindex", "lrange", "lpos",
-  "scard", "sdiff", "sinter", "sismember", "smembers", "srandmember", "sscan",
-  "sunion",
-  "zcard", "zcount", "zlexcount", "zmscore", "zrange", "zrangebylex",
-  "zrangebyscore", "zrank", "zrevrange", "zrevrangebylex", "zrevrangebyscore",
-  "zrevrank", "zscore", "zscan",
-  "xlen", "xrange", "xrevrange", "xread", "xinfo", "xpending",
-  "ping", "echo", "wait",
-]);
 
 function redisUrl(source: IStoredConnection): string {
   if (source.host === null || source.port === null) {
@@ -67,12 +52,6 @@ function tokenize(command: string): string[] {
   return tokens;
 }
 
-function commandName(command: string): string {
-  const trimmed = command.trim();
-  const first = trimmed.search(/\s/);
-  return first === -1 ? trimmed : trimmed.slice(0, first);
-}
-
 function toGrid(result: unknown): {
   columns: string[];
   rows: Array<Record<string, unknown>>;
@@ -101,18 +80,14 @@ function toGrid(result: unknown): {
 export async function runRedisQuery(
   source: IStoredConnection,
   command: string,
+  readOnly: boolean,
 ): Promise<IRedisQueryResponse> {
   const trimmed = command.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_CHARS) {
     throw new BadRequestException("A Redis command is required");
   }
+  assertRedisReads(trimmed, readOnly);
   const tokens = tokenize(trimmed);
-  const name = commandName(trimmed).toLowerCase();
-  if (!READ_ONLY_REDIS_COMMANDS.has(name)) {
-    throw new BadRequestException(
-      `Redis command \`${tokens[0] ?? ""}\` is not allowed on a read-only source`,
-    );
-  }
 
   const client = createClient({ url: redisUrl(source) });
   const startedAt = Date.now();

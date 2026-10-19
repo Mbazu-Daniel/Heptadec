@@ -2,20 +2,12 @@ import { BadRequestException } from "../../common/exceptions";
 import { bsonTypeName, openMongo, toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IMongoPipeline, IQueryResponse } from "./contracts";
-
-const MAX_ROWS = 10_000;
+import { applyBudget } from "./budget";
 
 const MAX_STAGES = 32;
 
-// A pipeline reads, so the only stages that write are the two that materialise
-// their result into a collection.
 const WRITING_STAGES = ["$out", "$merge"];
 
-/**
- * Read the aggregation pipeline a request carries. A source stores nothing about
- * how it was queried, so the pipeline arrives whole and is checked here rather
- * than trusting the shape the browser sent.
- */
 export function readMongoPipeline(value: unknown): IMongoPipeline {
   if (typeof value !== "object" || value === null) {
     throw new BadRequestException("A pipeline is required");
@@ -80,8 +72,6 @@ export async function runMongoQuery(
       .aggregate(pipeline.pipeline, { maxTimeMS: 15_000 })
       .toArray();
 
-    // A document has no declared columns, so the columns are the keys the
-    // returned documents actually carry, in the order they first appear.
     const columns: string[] = [];
     for (const document of documents) {
       for (const key of Object.keys(document)) {
@@ -99,12 +89,13 @@ export async function runMongoQuery(
       return first === undefined ? "null" : bsonTypeName(first);
     });
 
+    const budgeted = applyBudget(rows);
     return {
       columns,
       columnTypes,
-      rows: rows.slice(0, MAX_ROWS),
-      rowCount: rows.length,
-      truncated: rows.length > MAX_ROWS,
+      rows: budgeted.rows,
+      rowCount: budgeted.rows.length,
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } finally {

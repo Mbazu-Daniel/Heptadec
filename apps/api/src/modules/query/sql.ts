@@ -9,11 +9,8 @@ import {
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
 import { runPostgresQuery } from "./postgres";
+import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
 import type { IQueryResponse } from "./contracts";
-
-const MAX_ROWS = 10_000;
-
-const MAX_BYTES = 5 * 1024 * 1024;
 
 const READ_ONLY_START = /^\s*(select|with|show|describe|desc|explain|pragma|values)\b/i;
 
@@ -71,15 +68,16 @@ async function runMysqlStatement(
   try {
     const [rows, fields] = await client.query(statement);
     const typed = toRows(rows as Array<Record<string, unknown>>);
+    const budgeted = applyBudget(typed);
     const columns = (fields ?? []).map((field) => field.name);
     return {
       columns,
       columnTypes: (fields ?? []).map(
         (field) => MYSQL_TYPE_NAMES.get(field.type ?? 0) ?? "UNKNOWN",
       ),
-      rows: typed.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: typed.length,
-      truncated: typed.length > MAX_ROWS || tooManyBytes(typed),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } catch (caught) {
@@ -93,7 +91,7 @@ async function runClickhouseStatement(
   connection: IStoredConnection,
   statement: string,
 ): Promise<IQueryResponse> {
-  const client = clickhouseClient(connection, MAX_ROWS);
+  const client = clickhouseClient(connection, DEFAULT_RESULT_BUDGET.maxRows);
   const startedAt = Date.now();
   try {
     const result = await client.query({ query: statement, format: "JSON" });
@@ -102,12 +100,13 @@ async function runClickhouseStatement(
       data: Array<Record<string, unknown>>;
     };
     const rows = toRows(payload.data ?? []);
+    const budgeted = applyBudget(rows);
     return {
       columns: (payload.meta ?? []).map((entry) => entry.name),
       columnTypes: (payload.meta ?? []).map((entry) => entry.type),
-      rows: rows.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: rows.length,
-      truncated: rows.length > MAX_ROWS || tooManyBytes(rows),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } catch (caught) {
@@ -134,12 +133,13 @@ async function runSqliteStatement(
     });
     const result = await Promise.race([run, timeout]);
     const rows = toRows(result.rows as unknown as Array<Record<string, unknown>>);
+    const budgeted = applyBudget(rows);
     return {
       columns: result.columns,
       columnTypes: result.columnTypes,
-      rows: rows.slice(0, MAX_ROWS),
+      rows: budgeted.rows,
       rowCount: rows.length,
-      truncated: rows.length > MAX_ROWS || tooManyBytes(rows),
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } catch (caught) {
@@ -150,10 +150,6 @@ async function runSqliteStatement(
     }
     client.close();
   }
-}
-
-function tooManyBytes(rows: Array<Record<string, unknown>>): boolean {
-  return JSON.stringify(rows).length > MAX_BYTES;
 }
 
 function refused(caught: unknown): BadRequestException {

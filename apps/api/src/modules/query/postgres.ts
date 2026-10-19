@@ -3,11 +3,8 @@ import { BadRequestException } from "../../common/exceptions";
 import { jsonValue } from "../../common/http/json-value";
 import { postgresClient } from "../data-source/postgres-client";
 import type { ISavedConnection } from "../data-source/connection";
+import { applyBudget } from "./budget";
 import type { IExplainNode, IQueryResponse } from "./contracts";
-
-const MAX_ROWS = 10_000;
-
-const MAX_BYTES = 5 * 1024 * 1024;
 
 const SYNTAX_ERROR = /^syntax error|^incomplete input|^unterminated/;
 
@@ -35,23 +32,19 @@ export async function runPostgresQuery(
     const allRows = (result.rows as Array<Record<string, unknown>>).map(
       (row) => jsonValue(row) as Record<string, unknown>,
     );
-    const rows = allRows.slice(0, MAX_ROWS);
+    const budgeted = applyBudget(allRows);
 
     return {
       columns,
       columnTypes,
-      rows,
-      rowCount: rows.length,
-      truncated: allRows.length > rows.length || tooManyBytes(rows),
+      rows: budgeted.rows,
+      rowCount: budgeted.rows.length,
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } finally {
     await client.end();
   }
-}
-
-function tooManyBytes(rows: Array<Record<string, unknown>>): boolean {
-  return JSON.stringify(rows).length > MAX_BYTES;
 }
 
 export async function explainPostgresQuery(

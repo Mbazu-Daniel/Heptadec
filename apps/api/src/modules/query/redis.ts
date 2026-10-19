@@ -3,8 +3,7 @@ import { BadGatewayException, BadRequestException } from "../../common/exception
 import { jsonValue } from "../../common/http/json-value";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IRedisQueryResponse } from "./contracts";
-
-const MAX_ROWS = 10_000;
+import { applyBudget } from "./budget";
 
 const STATEMENT_TIMEOUT_MS = 15_000;
 
@@ -123,11 +122,11 @@ export async function runRedisQuery(
       abortSignal: AbortSignal.timeout(STATEMENT_TIMEOUT_MS),
     });
     const grid = toGrid(result);
-    const rows = grid.rows.slice(0, MAX_ROWS);
+    const budgeted = applyBudget(grid.rows);
     return {
       columns: grid.columns,
-      rows,
-      truncated: grid.rows.length > rows.length,
+      rows: budgeted.rows,
+      truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
     };
   } catch {

@@ -41,6 +41,36 @@ export interface IAppOptions {
   compressResponses: boolean;
 }
 
+type ModuleGate = "product" | "admin" | "self";
+
+interface IAppModule {
+  readonly gate: ModuleGate;
+  readonly routes: () => Hono<IAuthVars>;
+}
+
+const MODULES: readonly IAppModule[] = [
+  { gate: "admin", routes: authRoutes },
+  { gate: "product", routes: auditRoutes },
+  { gate: "product", routes: dataSourceRoutes },
+  { gate: "product", routes: queryRoutes },
+  { gate: "product", routes: schemaRoutes },
+  { gate: "product", routes: savedQueryRoutes },
+  { gate: "product", routes: dashboardRoutes },
+  { gate: "product", routes: dashboardAiRoutes },
+  { gate: "product", routes: shareLinkRoutes },
+  { gate: "self", routes: publicShareRoutes },
+  { gate: "product", routes: schedulerRoutes },
+  { gate: "product", routes: alertRoutes },
+  { gate: "product", routes: notificationRoutes },
+  { gate: "admin", routes: organizationRoutes },
+  { gate: "admin", routes: memberRoutes },
+  { gate: "admin", routes: imageRoutes },
+  { gate: "admin", routes: billingRoutes },
+  { gate: "admin", routes: invitationRoutes },
+  { gate: "self", routes: mcpRoutes },
+  { gate: "product", routes: aiRoutes },
+];
+
 export function buildApp(options: IAppOptions): Hono<IAuthVars> {
   const app = new Hono<IAuthVars>();
 
@@ -59,27 +89,13 @@ export function buildApp(options: IAppOptions): Hono<IAuthVars> {
     app.use(compress());
   }
 
-  app.route("/", authRoutes());
-
-  app.route("/", subscribed(auditRoutes()));
-  app.route("/", subscribed(dataSourceRoutes()));
-  app.route("/", subscribed(queryRoutes()));
-  app.route("/", subscribed(schemaRoutes()));
-  app.route("/", subscribed(savedQueryRoutes()));
-  app.route("/", subscribed(dashboardRoutes()));
-  app.route("/", subscribed(dashboardAiRoutes()));
-  app.route("/", subscribed(shareLinkRoutes()));
-  app.route("/", publicShareRoutes());
-  app.route("/", subscribed(schedulerRoutes()));
-  app.route("/", subscribed(alertRoutes()));
-  app.route("/", subscribed(notificationRoutes()));
-  app.route("/", organizationRoutes());
-  app.route("/", memberRoutes());
-  app.route("/", imageRoutes());
-  app.route("/", billingRoutes());
-  app.route("/", invitationRoutes());
-  app.route("/", mcpRoutes());
-  app.route("/", subscribed(aiRoutes()));
+  for (const appModule of MODULES) {
+    const routes = appModule.routes();
+    app.route(
+      "/",
+      appModule.gate === "product" ? subscribed(routes) : routes,
+    );
+  }
 
   app.get("/health", (c) => c.json({ ok: true }));
 

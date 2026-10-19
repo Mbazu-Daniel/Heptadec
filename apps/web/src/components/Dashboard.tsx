@@ -14,6 +14,7 @@ import { NotificationChannels } from "./NotificationChannels";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { TeamPanel } from "./TeamPanel";
 import { AuditLog } from "./AuditLog";
+import { Billing } from "./Billing";
 
 interface IDashboardProps {
   me: IMe;
@@ -34,6 +35,7 @@ const VIEW_LABELS: Record<WorkspaceView, string> = {
   mcp: "MCP",
   team: "Teams",
   audit: "Audit log",
+  billing: "Billing",
   organization: "Organization",
 };
 
@@ -123,6 +125,8 @@ export function Dashboard({
               isOwner={active.role === "owner"}
             />
           ) : null
+        ) : view === "billing" ? (
+          <Billing isOwner={active?.role === "owner"} />
         ) : view === "organization" ? (
           active ? (
             <OrganizationSettings

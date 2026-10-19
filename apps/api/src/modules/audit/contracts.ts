@@ -32,6 +32,7 @@ export const AUDIT_EVENTS = [
   "mcp_token.revoked",
   "ai_provider.created",
   "ai_provider.deleted",
+  "billing.checkout_started",
   "organization.created",
   "organization.updated",
 ] as const;
@@ -55,6 +56,7 @@ export const AUDIT_TARGET_KINDS = [
   "member",
   "mcp_token",
   "ai_provider",
+  "billing_subscription",
   "organization",
 ] as const;
 

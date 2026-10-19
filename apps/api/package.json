@@ -9,6 +9,7 @@
     "./organization-contracts": "./src/modules/organization/contracts.ts",
     "./member-contracts": "./src/modules/member/contracts.ts",
     "./images-contracts": "./src/modules/images/contracts.ts",
+    "./billing-contracts": "./src/modules/billing/contracts.ts",
     "./invitation-contracts": "./src/modules/invitation/contracts.ts",
     "./schema-contracts": "./src/modules/schema/contracts.ts",
     "./query-contracts": "./src/modules/query/contracts.ts",

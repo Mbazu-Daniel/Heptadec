@@ -27,7 +27,6 @@ interface IEngine {
   file: string;
   latency: string;
   snippet: string[];
-  /** Marks an engine still shipping as a preview. */
   preview?: boolean;
 }
 
@@ -209,7 +208,7 @@ function HeroCopy({ onGetStarted }: { onGetStarted: () => void }) {
         className={`group inline-flex items-center gap-2 h-8 px-4 rounded-full bg-(--mk-surface) border border-transparent [background-image:linear-gradient(var(--mk-bg-surface),var(--mk-bg-surface)),linear-gradient(90deg,color-mix(in_srgb,var(--mk-cyan)_60%,transparent),color-mix(in_srgb,var(--mk-cyan)_44%,transparent))] [background-origin:border-box] [background-clip:padding-box,border-box] transition-all duration-200 hover:[box-shadow:0_0_16px_color-mix(in_srgb,var(--mk-cyan)_35%,transparent)] mb-6`}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-(--mk-cyan) shadow-[0_0_6px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
-        <span className="text-sm text-(--mk-fg-primary)">Free and open source. No paid plan</span>
+        <span className="text-sm text-(--mk-fg-primary)">Free and open source. Self-host it yourself</span>
         <span className="font-mono text-[14.5px] text-(--mk-cyan) group-hover:translate-x-0.5 transition-transform duration-150">
           →
         </span>
@@ -770,8 +769,9 @@ function DeploySection() {
           Deploy it your way.
         </h2>
         <p className="text-[18px] leading-[27px] text-(--mk-fg-muted) max-w-[560px] mb-10">
-          No pricing tiers and no paid plan. Clone it, run it on your own
-          server, or let Cloudflare provision it for you.
+          Open source, and free if you deploy it yourself. Clone it and run it
+          on your own server — or let us deploy and run it for you, from $5 a
+          month.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

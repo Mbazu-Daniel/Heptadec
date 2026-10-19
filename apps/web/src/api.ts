@@ -13,6 +13,11 @@ import type {
   IPresignImageResponse,
   ImageTarget,
 } from "@heptadec/api/images-contracts";
+import type {
+  BillingCadence,
+  IBillingSummary,
+  IStartCheckoutResponse,
+} from "@heptadec/api/billing-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import type {
   ApiErrorCode,
@@ -195,13 +200,18 @@ export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
   return request<IImagesConfigResponse>("/api/images/config");
 }
 
-/**
- * Ask the API to sign an upload, then send the bytes straight to the bucket.
- *
- * The bytes are the file's own: nothing here base64-encodes them, and the API
- * never sees them. What comes back is the path to keep in the database and a URL
- * to PUT the file to.
- */
+export function fetchBilling(): Promise<IBillingSummary> {
+  return request<IBillingSummary>("/api/billing");
+}
+
+export function startCheckout(
+  cadence: BillingCadence,
+): Promise<IStartCheckoutResponse> {
+  return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", {
+    cadence,
+  });
+}
+
 export async function uploadImage(target: ImageTarget, picture: Blob): Promise<string> {
   const signed = await request<IPresignImageResponse>("/api/images/presign", "POST", {
     target,
@@ -227,7 +237,6 @@ export async function saveMemberDisplayName(
   });
 }
 
-/** The avatar for this membership, not for the person across organizations. */
 export async function saveMemberImage(
   image: string | null,
 ): Promise<IMemberProfileResponse> {
@@ -356,7 +365,6 @@ export async function askQuestion(
   return streamRequest(
     "/api/ai/ask",
     {
-      // An empty list asks every source the organization can ask about.
       dataSourceIds: [...dataSourceIds],
       question,
       ...(providerId === undefined ? {} : { providerId }),
@@ -506,8 +514,6 @@ export function runRedisCommand(
   });
 }
 
-/** A search names its own index, because a search source holds many and none of
- * them is the source. */
 export function runSearch(
   id: string,
   statement: ISearchStatement,

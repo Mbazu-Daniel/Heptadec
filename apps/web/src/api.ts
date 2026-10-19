@@ -57,6 +57,7 @@ import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
 import type {
   IExplainResponse,
   IMongoPipeline,
+  IQueryRefine,
   IQueryRequest,
   ISearchStatement,
   IQueryResponse,
@@ -492,8 +493,13 @@ export function previewSourceRows(
   });
 }
 
-export function runQuery(id: string, sql: string): Promise<IQueryResponse> {
-  const body: IQueryRequest = { sql };
+export function runQuery(
+  id: string,
+  sql: string,
+  refine: IQueryRefine | null = null,
+): Promise<IQueryResponse> {
+  const body: IQueryRequest =
+    refine === null ? { sql } : { sql, refine };
   return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
 }
 

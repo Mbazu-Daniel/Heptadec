@@ -104,6 +104,47 @@ it("caps a result at the row budget and marks it truncated", async () => {
   expect(body.truncated).toBe(true);
 });
 
+it("composes a refinement in the API and returns the executed statement", async () => {
+  const { cookie, id } = await ownerWithSource(true);
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      sql: "SELECT id, code FROM regions",
+      refine: {
+        filter: { column: "code", op: "=", value: "us-east-1" },
+        sort: { column: "id", dir: "desc" },
+      },
+    }),
+  });
+  expect(res.status).toBe(200);
+
+  const body = (await res.json()) as {
+    rows: Array<Record<string, unknown>>;
+    statement?: string;
+  };
+  expect(body.rows).toHaveLength(1);
+  expect(body.rows[0]).toMatchObject({ code: "us-east-1" });
+  expect(body.statement).toContain("WHERE");
+  expect(body.statement).toContain("ORDER BY");
+  expect(body.statement).toContain("LIMIT 100");
+});
+
+it("refuses a refinement with an operator it does not know", async () => {
+  const { cookie, id } = await ownerWithSource(true);
+
+  const res = await request(`/api/data-sources/${id}/query`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({
+      sql: "SELECT id, code FROM regions",
+      refine: { filter: { column: "code", op: "DROP TABLE", value: "" } },
+    }),
+  });
+  expect(res.status).toBe(400);
+});
+
 it("refuses a write on a read-only source and leaves the row count unchanged", async () => {
   const before = await eventCount();
   const { cookie, id } = await ownerWithSource(true);

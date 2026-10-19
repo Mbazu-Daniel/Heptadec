@@ -10,8 +10,9 @@ import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
 import { runPostgresQuery } from "./postgres";
 import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
+import { composeStatement, dialectOf } from "./compose";
 import { assertSqlReads } from "./read-policy";
-import type { IQueryResponse } from "./contracts";
+import type { IQueryRefine, IQueryResponse } from "./contracts";
 
 const MYSQL_TYPE_NAMES = new Map<number, string>(
   Object.entries(mysql.Types)
@@ -23,6 +24,7 @@ export async function runSqlQuery(
   connection: IStoredConnection,
   sql: string,
   readOnly: boolean,
+  refine: IQueryRefine | null = null,
 ): Promise<IQueryResponse> {
   const statement = sql.trim().replace(/;+\s*$/, "");
   if (statement.length === 0) {
@@ -31,18 +33,25 @@ export async function runSqlQuery(
   if (readOnly) {
     assertSqlReads(statement, "run");
   }
+  const dialect = dialectOf(connection.kind);
+  if (dialect === null) {
+    throw new BadRequestException(
+      "Running statements on that kind of source is not available yet",
+    );
+  }
+  const composed = composeStatement(statement, refine, dialect);
 
   switch (connection.kind) {
     case "postgres":
-      return runPostgresQuery(asRelational(connection, readOnly), statement);
+      return runPostgresQuery(asRelational(connection, readOnly), composed);
     case "mysql":
     case "mariadb":
-      return runMysqlStatement(connection, statement);
+      return runMysqlStatement(connection, composed);
     case "clickhouse":
-      return runClickhouseStatement(connection, statement);
+      return runClickhouseStatement(connection, composed);
     case "sqlite":
     case "libsql":
-      return runSqliteStatement(connection, statement);
+      return runSqliteStatement(connection, composed);
     default:
       throw new BadRequestException(
         "Running statements on that kind of source is not available yet",
@@ -70,6 +79,7 @@ async function runMysqlStatement(
       rowCount: typed.length,
       truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);
@@ -99,6 +109,7 @@ async function runClickhouseStatement(
       rowCount: rows.length,
       truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);
@@ -132,6 +143,7 @@ async function runSqliteStatement(
       rowCount: rows.length,
       truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } catch (caught) {
     throw refused(caught);

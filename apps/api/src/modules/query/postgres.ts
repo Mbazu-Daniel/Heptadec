@@ -41,6 +41,7 @@ export async function runPostgresQuery(
       rowCount: budgeted.rows.length,
       truncated: budgeted.truncated,
       durationMs: Date.now() - startedAt,
+      statement,
     };
   } finally {
     await client.end();

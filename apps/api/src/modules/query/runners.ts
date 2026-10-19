@@ -4,6 +4,7 @@ import type { IEngineSpec, QueryLanguage } from "../data-source/contracts";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IQueryResponse, IRedisQueryResponse } from "./contracts";
 import { runSqlQuery } from "./sql";
+import { readQueryRefine } from "./compose";
 import { readMongoPipeline, runMongoQuery } from "./mongo";
 import { runRedisQuery } from "./redis";
 import { readSearchStatement, runSearchQuery } from "./quickwit";
@@ -20,12 +21,15 @@ export interface ILanguageRunner {
 
 const RUNNERS = {
   sql: {
-    run: (connection, body, readOnly) =>
-      runSqlQuery(
+    run: (connection, body, readOnly) => {
+      const request = readBody(body, "A statement is required");
+      return runSqlQuery(
         connection,
-        readString(readBody(body, "A statement is required"), "sql", "A statement is required"),
+        readString(request, "sql", "A statement is required"),
         readOnly,
-      ),
+        readQueryRefine(request),
+      );
+    },
   },
   command: {
     run: (connection, body, readOnly) =>

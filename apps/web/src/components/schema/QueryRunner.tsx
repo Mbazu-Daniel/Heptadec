@@ -9,9 +9,12 @@ import {
 import type { IQueryResponse } from "@heptadec/api/query-contracts";
 import type { IExplainNode } from "@heptadec/api/query-contracts";
 import type {
-  IDataSource,
-  SqlDialect,
-} from "@heptadec/api/data-source-contracts";
+  FilterOp,
+  IQueryFilter,
+  IQueryRefine,
+  IQuerySort,
+} from "@heptadec/api/query-contracts";
+import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import {
   askQuestion,
   explainQuery,
@@ -20,7 +23,6 @@ import {
   runQuery,
 } from "../../api";
 import { exportCsv, exportJson } from "../../lib/export";
-import { castToText, quoteIdentifier } from "../../lib/sql";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -33,7 +35,7 @@ import {
   TOOLBAR_SELECT_CLASSNAME,
 } from "../workspace";
 
-const FILTER_OPS = [
+const FILTER_OPS: ReadonlyArray<{ id: FilterOp; label: string }> = [
   { id: "=", label: "equals" },
   { id: "<>", label: "not equals" },
   { id: ">", label: "greater than" },
@@ -43,59 +45,14 @@ const FILTER_OPS = [
   { id: "contains", label: "contains" },
   { id: "is null", label: "is null" },
   { id: "is not null", label: "is not null" },
-] as const;
-
-type FilterOp = (typeof FILTER_OPS)[number]["id"];
-
-interface IRefineFilter {
-  column: string;
-  op: FilterOp;
-  value: string;
-}
-
-interface IRefineSort {
-  column: string;
-  dir: "asc" | "desc";
-}
+];
 
 function needsValue(op: FilterOp): boolean {
   return op !== "is null" && op !== "is not null";
 }
 
-function quoteLiteral(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-function composeStatement(
-  base: string,
-  filter: IRefineFilter | null,
-  sort: IRefineSort | null,
-  dialect: SqlDialect,
-): string {
-  if (filter === null && sort === null) {
-    return base;
-  }
-  const inner = base.replace(/;+\s*$/, "").trim();
-  let statement = `SELECT * FROM (${inner}) AS heptadec_filtered`;
-  if (filter !== null) {
-    const column = quoteIdentifier(dialect, filter.column);
-    if (filter.op === "is null" || filter.op === "is not null") {
-      statement += ` WHERE ${column} ${filter.op === "is null" ? "IS NULL" : "IS NOT NULL"}`;
-    } else if (filter.op === "contains") {
-      statement += ` WHERE ${castToText(dialect, column)} LIKE ${quoteLiteral(`%${filter.value}%`)}`;
-    } else {
-      statement += ` WHERE ${column} ${filter.op} ${quoteLiteral(filter.value)}`;
-    }
-  }
-  if (sort !== null) {
-    statement += ` ORDER BY ${quoteIdentifier(dialect, sort.column)} ${sort.dir === "asc" ? "ASC" : "DESC"}`;
-  }
-  return `${statement} LIMIT 100`;
-}
-
 export function QueryRunner({
   source,
-  dialect,
   initialSql,
   focusTable,
   runRequest,
@@ -103,10 +60,6 @@ export function QueryRunner({
   onSqlChange,
 }: {
   source: IDataSource;
-  /** Taken from the source rather than defaulted here: an engine with no
-   * dialect is not one this editor is for, and guessing "postgres" would
-   * build statements in a language the engine does not speak. */
-  dialect: SqlDialect;
   initialSql: string;
   focusTable: string | null;
   runRequest: { sql: string; nonce: number } | null;
@@ -174,7 +127,7 @@ export function QueryRunner({
     onSqlChange(sql);
   }, [sql, onSqlChange]);
 
-  function activeFilter(): IRefineFilter | null {
+  function activeFilter(): IQueryFilter | null {
     if (
       filterColumn === "" ||
       (needsValue(filterOp) && filterValue === "")
@@ -184,22 +137,29 @@ export function QueryRunner({
     return { column: filterColumn, op: filterOp, value: filterValue };
   }
 
-  function activeSort(): IRefineSort | null {
+  function activeSort(): IQuerySort | null {
     return sortColumn === null ? null : { column: sortColumn, dir: sortDir };
   }
 
-  async function execute(statement: string, resetRefine: boolean): Promise<void> {
+  async function execute(
+    statement: string,
+    resetRefine: boolean,
+    refine: IQueryRefine | null = null,
+  ): Promise<void> {
     const ticket = ++latestRun.current;
     setRunning(true);
     setProblem(null);
     try {
-      const answer = await runQuery(sourceId, statement);
+      const answer = await runQuery(sourceId, statement, refine);
       if (ticket !== latestRun.current) {
         return;
       }
       setResult(answer);
       setPlan(null);
-      void recordRun(sourceId, statement).then(onRan, () => undefined);
+      void recordRun(sourceId, answer.statement ?? statement).then(
+        onRan,
+        () => undefined,
+      );
       if (resetRefine) {
         setFilterColumn(answer.columns[0] ?? "");
         setFilterOp("=");
@@ -232,12 +192,17 @@ export function QueryRunner({
       setExplaining(false);
     }
   }
-  function refine(sort: IRefineSort | null): void {
-    void execute(composeStatement(sql, activeFilter(), sort, dialect), false);
+  function refine(sort: IQuerySort | null): void {
+    const filter = activeFilter();
+    void execute(
+      sql,
+      false,
+      filter === null && sort === null ? null : { filter, sort },
+    );
   }
 
   function toggleSort(column: string): void {
-    const next: IRefineSort | null =
+    const next: IQuerySort | null =
       sortColumn !== column
         ? { column, dir: "asc" }
         : sortDir === "asc"

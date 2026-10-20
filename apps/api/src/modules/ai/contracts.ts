@@ -33,6 +33,13 @@ export interface IListModelsResponse {
   models: IAiModel[];
 }
 
+/** A provider that is not saved yet, so the form can offer its models first. */
+export interface IListProviderModelsRequest {
+  provider: string;
+  apiKey: string;
+  baseUrl?: string;
+}
+
 export interface ICreateAiProviderRequest {
   name: string;
   provider: string;

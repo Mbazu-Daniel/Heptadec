@@ -538,6 +538,41 @@ it("lists the models the provider actually serves, not a shipped list", async ()
   }
 });
 
+it("offers a provider's models before it is saved, and writes nothing", async () => {
+  const provider = await startModelsProvider([
+    { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
+    { id: "qwen/qwen3.8-27b", name: "Qwen 3.8 27B" },
+  ]);
+  try {
+    const { cookie, organizationId } = await ownerWithSource();
+    const res = await request("/api/ai/providers/models", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "openai-compatible",
+        baseUrl: provider.baseUrl,
+        apiKey: "sk-draft",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      source: string;
+      models: Array<{ id: string }>;
+    };
+    expect(body.source).toBe("provider");
+    expect(body.models.map((entry) => entry.id)).toEqual([
+      "openai/gpt-oss-120b",
+      "qwen/qwen3.8-27b",
+    ]);
+    expect(provider.seenAuth).toBe("Bearer sk-draft");
+
+    const saved = await db.select().from(aiProvider);
+    expect(mineOf(saved, organizationId)).toEqual([]);
+  } finally {
+    await provider.close();
+  }
+});
+
 it("falls back to what the organization already uses when a provider lists nothing", async () => {
   const provider = await startModelsProvider(null);
   try {

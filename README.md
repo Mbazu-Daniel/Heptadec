@@ -233,11 +233,21 @@ One Worker serves the SPA and the API from the same origin, so the client keeps 
 
 ```bash
 pnpm --filter @heptadec/api exec wrangler login
-pnpm --filter @heptadec/web run build
 pnpm deploy:cloudflare
 ```
 
-The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, applies migrations, and deploys the Worker. It uploads whatever is already in `apps/web/dist`, so build the web app first, or run `pnpm --filter @heptadec/api run deploy:worker` after provisioning, which builds and then deploys. Re-running leaves what already exists alone. Set `CLOUDFLARE_ACCOUNT_ID` in `.env` if your login covers more than one account.
+The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone. Set `CLOUDFLARE_ACCOUNT_ID` in `.env` if your login covers more than one account.
+
+#### From Cloudflare's build settings
+
+Deploying from the Cloudflare dashboard runs the same two steps as one command, with the working directory at the repository root:
+
+| Setting | Value |
+|---|---|
+| Build command | `pnpm run build` |
+| Deploy command | `pnpm db:migrate:d1 && pnpm deploy:worker` |
+
+`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory: `pnpm deploy:worker` builds the web app and deploys the Worker, and `pnpm db:migrate:d1` applies the migrations first, so the Worker is never rolled out ahead of the schema it reads. The build environment needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, which wrangler reads from the environment.
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -260,8 +270,8 @@ The manual equivalent, when you would rather drive wrangler yourself:
 
 ```bash
 pnpm --filter @heptadec/api exec wrangler d1 create heptadec
-pnpm --filter @heptadec/api exec wrangler d1 migrations apply heptadec --remote
-pnpm --filter @heptadec/api run deploy:worker
+pnpm db:migrate:d1
+pnpm deploy:worker
 ```
 
 To develop against workerd with a local D1 database instead of Node:

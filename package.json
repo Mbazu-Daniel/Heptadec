@@ -20,7 +20,9 @@
     "seed:test": "./scripts/seed-test.sh",
     "db:generate": "pnpm --filter @heptadec/db run generate",
     "db:migrate": "pnpm --filter @heptadec/db run migrate",
-    "deploy:cloudflare": "./scripts/deploy-cloudflare.sh"
+    "db:migrate:d1": "pnpm --filter @heptadec/api run db:migrate:d1",
+    "deploy:cloudflare": "./scripts/deploy-cloudflare.sh",
+    "deploy:worker": "pnpm --filter @heptadec/api run deploy:worker"
   },
   "devDependencies": {
     "wrangler": "^4.149.0"

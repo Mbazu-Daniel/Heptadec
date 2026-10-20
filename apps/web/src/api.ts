@@ -52,6 +52,7 @@ import type {
   IAiProviderListResponse,
   IGenerateQueryResponse,
   IListModelsResponse,
+  IListProviderModelsRequest,
 } from "@heptadec/api/ai-contracts";
 import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
 import type {
@@ -281,6 +282,12 @@ export function listAiProviderModels(
   providerId: string,
 ): Promise<IListModelsResponse> {
   return request<IListModelsResponse>(`/api/ai/providers/${providerId}/models`);
+}
+
+export function listProviderModels(
+  input: IListProviderModelsRequest,
+): Promise<IListModelsResponse> {
+  return request<IListModelsResponse>("/api/ai/providers/models", "POST", input);
 }
 
 export async function removeAiProvider(providerId: string): Promise<void> {

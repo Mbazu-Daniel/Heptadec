@@ -4,11 +4,13 @@ import type {
   IAiModel,
   IAiProvider,
   IAiProviderListResponse,
+  IListModelsResponse,
 } from "@heptadec/api/ai-contracts";
 import {
   createAiProvider,
   listAiProviderModels,
   listAiProviders,
+  listProviderModels,
   messageFor,
   removeAiProvider,
 } from "../api";
@@ -45,8 +47,12 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [models, setModels] = useState<IAiModel[] | null>(null);
+  const [modelSource, setModelSource] = useState<
+    "provider" | "suggestions" | null
+  >(null);
   const [modelsNote, setModelsNote] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
 
   const reload = useCallback(async () => {
     if (!isOwner) {
@@ -76,23 +82,75 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     }
   }, [provider, catalog]);
 
+  function applyListing(listed: IListModelsResponse): void {
+    setModels(listed.models);
+    setModelSource(listed.source);
+    if (listed.source === "provider") {
+      setModel(listed.models[0]?.id ?? "");
+      setModelsNote(`${listed.models.length} models this key can reach`);
+      return;
+    }
+    setModelsNote("That provider does not publish a model list — type the model id");
+  }
+
   async function loadModels(target: IAiProvider): Promise<void> {
     setLoadingModels(true);
     setModelsNote(null);
     try {
-      const listed = await listAiProviderModels(target.id);
-      setModels(listed.models);
-      setModelsNote(
-        listed.source === "provider"
-          ? `${listed.models.length} models this key can reach`
-          : "That provider does not publish a model list — type the model id",
-      );
-      setModel(listed.models[0]?.id ?? target.model);
+      applyListing(await listAiProviderModels(target.id));
     } catch (caught) {
-      setModels([]);
+      setModels(null);
+      setModelSource("suggestions");
       setModelsNote(messageFor(caught, "The model list could not be read."));
     } finally {
       setLoadingModels(false);
+    }
+  }
+
+  /**
+   * Lists a provider's models before it is saved, so the form can offer a
+   * dropdown instead of asking for a model id from memory.
+   */
+  async function loadDraftModels(
+    targetProvider: string,
+    targetBaseUrl: string,
+  ): Promise<void> {
+    const spec = catalog.find((entry) => entry.id === targetProvider);
+    if (
+      spec === undefined ||
+      apiKey.trim() === "" ||
+      (spec.needsBaseUrl && targetBaseUrl.trim() === "")
+    ) {
+      return;
+    }
+    setLoadingDraft(true);
+    setModelsNote(null);
+    try {
+      applyListing(
+        await listProviderModels({
+          provider: targetProvider,
+          apiKey,
+          ...(targetBaseUrl === "" ? {} : { baseUrl: targetBaseUrl }),
+        }),
+      );
+    } catch (caught) {
+      setModels(null);
+      setModelSource("suggestions");
+      setModelsNote(messageFor(caught, "The model list could not be read."));
+    } finally {
+      setLoadingDraft(false);
+    }
+  }
+
+  function chooseProvider(next: string): void {
+    setProvider(next);
+    setModels(null);
+    setModelSource(null);
+    setModelsNote(null);
+    setModel("");
+    const spec = catalog.find((entry) => entry.id === next);
+    if (spec !== undefined && !spec.needsBaseUrl && apiKey.trim() !== "") {
+      void loadDraftModels(next, "");
     }
   }
 
@@ -137,6 +195,17 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
   }
 
   const chosenSpec = catalog.find((entry) => entry.id === provider);
+  const modelHint =
+    provider === ""
+      ? "Choose a provider first"
+      : apiKey.trim() === ""
+        ? "Add the key, then leave the field to load this provider's models"
+        : chosenSpec?.needsBaseUrl === true && baseUrl.trim() === ""
+          ? "Add the base URL, then leave the field to load this provider's models"
+          : null;
+  const modelMessage = loadingDraft
+    ? "Reading the model list…"
+    : (modelsNote ?? modelHint);
 
   if (!isOwner) {
     return (
@@ -176,7 +245,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                   id="ai-provider"
                   className={SELECT_CLASSNAME}
                   value={provider}
-                  onChange={(event) => setProvider(event.target.value)}
+                  onChange={(event) => chooseProvider(event.target.value)}
                 >
                   <option value="">Choose a provider</option>
                   {catalog.map((entry) => (
@@ -197,13 +266,28 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
               </FieldGroup>
               <FieldGroup>
                 <FieldLabel htmlFor="ai-model">Model</FieldLabel>
-                <Input
-                  id="ai-model"
-                  value={model}
-                  list="ai-model-suggestions"
-                  placeholder="model id"
-                  onChange={(event) => setModel(event.target.value)}
-                />
+                {modelSource === "provider" && models !== null ? (
+                  <select
+                    id="ai-model"
+                    className={SELECT_CLASSNAME}
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                  >
+                    {models.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.label === null ? entry.id : `${entry.label} · ${entry.id}`}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="ai-model"
+                    value={model}
+                    list="ai-model-suggestions"
+                    placeholder="model id"
+                    onChange={(event) => setModel(event.target.value)}
+                  />
+                )}
                 <datalist id="ai-model-suggestions">
                   {(models ?? []).map((entry) => (
                     <option key={entry.id} value={entry.id}>
@@ -211,9 +295,9 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                     </option>
                   ))}
                 </datalist>
-                {modelsNote === null ? null : (
+                {modelMessage === null ? null : (
                   <span className="text-[12px] text-muted-foreground">
-                    {modelsNote}
+                    {modelMessage}
                   </span>
                 )}
               </FieldGroup>
@@ -225,6 +309,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                   value={apiKey}
                   placeholder="sk-…"
                   onChange={(event) => setApiKey(event.target.value)}
+                  onBlur={() => void loadDraftModels(provider, baseUrl)}
                 />
               </FieldGroup>
               {chosenSpec?.needsBaseUrl === true ? (
@@ -235,6 +320,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                     value={baseUrl}
                     placeholder={chosenSpec?.exampleBaseUrl}
                     onChange={(event) => setBaseUrl(event.target.value)}
+                    onBlur={() => void loadDraftModels(provider, baseUrl)}
                   />
                 </FieldGroup>
               ) : null}

@@ -25,7 +25,7 @@ import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit, auditActor } from "../audit";
-import { encryptSecret } from "../data-source/secret";
+import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import {
   type IEngineSpec,
@@ -33,7 +33,7 @@ import {
 } from "../data-source/contracts";
 import { canBeAsked, engineOf } from "../data-source/engines";
 import { introspectSchema } from "../schema/introspect";
-import { AI_PROVIDERS, providerSpec } from "./catalog";
+import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
 import { quickwitContext, redisContext, schemaContext } from "./context";
 import { readStatement, streamQuery } from "./generate";
 import {
@@ -44,7 +44,12 @@ import {
   routeInstructions,
 } from "./instructions";
 import { chosenProvider } from "./provider";
-import { listModels, suggestModels } from "./models";
+import {
+  listModels,
+  suggestModels,
+  type IModelConfig,
+  type ModelListing,
+} from "./models";
 import { runTurn } from "./turn";
 import type {
   ICreateAiProviderResponse,
@@ -106,14 +111,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
     const isDefault = payload.isDefault === true;
 
-    let baseUrl: string | null = spec.baseUrl === "" ? null : spec.baseUrl;
-    if (spec.needsBaseUrl) {
-      const given = readString(payload, "baseUrl", "That provider needs a base URL", 200);
-      if (!/^https?:\/\//.test(given)) {
-        throw new BadRequestException("The base URL must start with http:// or https://");
-      }
-      baseUrl = given.replace(/\/+$/, "");
-    }
+    const baseUrl = providerBaseUrl(spec, payload);
 
     const now = new Date();
     const [row] = await organization.db.transaction(async (tx) => {
@@ -216,21 +214,33 @@ export function aiRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That provider does not exist");
     }
 
-    const listing = await listModels(found);
-    if (listing.kind === "refused") {
-      throw new BadRequestException("That provider's key was refused");
-    }
-    if (listing.kind === "unreachable") {
-      throw new BadGatewayException("That provider could not be reached");
-    }
-    if (listing.kind === "unsupported") {
-      const suggestions = await suggestModels(organization, found.provider);
-      const body: IListModelsResponse = { source: "suggestions", models: suggestions };
-      return c.json(body);
-    }
+    const listing = await listModels({
+      provider: found.provider,
+      baseUrl: found.baseUrl,
+      apiKey: await decryptSecret(found.apiKey),
+    });
+    return c.json(await modelsAnswer(organization, found.provider, listing));
+  });
 
-    const body: IListModelsResponse = { source: "provider", models: listing.models };
-    return c.json(body);
+  routes.post("/api/ai/providers/models", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+    requireOwner(c, "Only owners can manage AI providers");
+
+    const payload = readBody(await c.req.json(), "A provider is required");
+    const provider = readString(payload, "provider", "Choose a provider", 40);
+    const spec = providerSpec(provider);
+    if (spec === null) {
+      throw new BadRequestException("That provider is not one we know");
+    }
+    const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
+    const config: IModelConfig = {
+      provider,
+      baseUrl: providerBaseUrl(spec, payload),
+      apiKey,
+    };
+
+    const listing = await listModels(config);
+    return c.json(await modelsAnswer(organization, provider, listing));
   });
 
   routes.post("/api/ai/ask", requireSession, async (c) => {
@@ -390,6 +400,42 @@ export function aiRoutes(): Hono<IAuthVars> {
   });
 
   return routes;
+}
+
+/**
+ * The base URL a spec talks to, from the request when the spec has none of its
+ * own. Creation and the model listing share it so a URL that saves is a URL
+ * that can be listed.
+ */
+function providerBaseUrl(
+  spec: IAiProviderSpec,
+  payload: Record<string, unknown>,
+): string | null {
+  if (!spec.needsBaseUrl) {
+    return spec.baseUrl === "" ? null : spec.baseUrl;
+  }
+  const given = readString(payload, "baseUrl", "That provider needs a base URL", 200);
+  if (!/^https?:\/\//.test(given)) {
+    throw new BadRequestException("The base URL must start with http:// or https://");
+  }
+  return given.replace(/\/+$/, "");
+}
+
+async function modelsAnswer(
+  organization: IOrganizationScope,
+  provider: string,
+  listing: ModelListing,
+): Promise<IListModelsResponse> {
+  if (listing.kind === "refused") {
+    throw new BadRequestException("That provider's key was refused");
+  }
+  if (listing.kind === "unreachable") {
+    throw new BadGatewayException("That provider could not be reached");
+  }
+  if (listing.kind === "unsupported") {
+    return { source: "suggestions", models: await suggestModels(organization, provider) };
+  }
+  return { source: "provider", models: listing.models };
 }
 
 function optionalIdList(

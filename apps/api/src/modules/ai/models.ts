@@ -1,9 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { schema } from "@heptadec/db";
-import type { AiProviderRow } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { logDriverFailure } from "../../common/driver-error";
-import { decryptSecret } from "../data-source/secret";
 import { providerSpec } from "./catalog";
 
 const { aiProvider } = schema;
@@ -17,18 +15,24 @@ export interface IModel {
   label: string | null;
 }
 
+export interface IModelConfig {
+  provider: string;
+  baseUrl: string | null;
+  apiKey: string;
+}
+
 export type ModelListing =
   | { kind: "models"; models: IModel[] }
   | { kind: "unsupported" }
   | { kind: "refused" }
   | { kind: "unreachable" };
 
-export async function listModels(row: AiProviderRow): Promise<ModelListing> {
-  const spec = providerSpec(row.provider);
+export async function listModels(config: IModelConfig): Promise<ModelListing> {
+  const spec = providerSpec(config.provider);
   if (spec === null) {
     return { kind: "refused" };
   }
-  const baseUrl = spec.needsBaseUrl ? row.baseUrl : spec.baseUrl;
+  const baseUrl = spec.needsBaseUrl ? config.baseUrl : spec.baseUrl;
   if (baseUrl === null || baseUrl === "") {
     return { kind: "refused" };
   }
@@ -37,7 +41,7 @@ export async function listModels(row: AiProviderRow): Promise<ModelListing> {
   try {
     response = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
       method: "GET",
-      headers: { authorization: `Bearer ${await decryptSecret(row.apiKey)}` },
+      headers: { authorization: `Bearer ${config.apiKey}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (caught) {

@@ -238,7 +238,28 @@ pnpm --filter @heptadec/api exec wrangler login
 pnpm deploy:cloudflare
 ```
 
-The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
+The script creates the D1 database when it is missing and records its id in `.env`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
+
+#### The Worker's configuration
+
+`apps/api/wrangler.jsonc` names this project's Cloudflare resources, so it is **not** committed: the repository is public, and a fork should not carry another account's database id. `apps/api/wrangler.jsonc.example` is the shape, and `pnpm config:worker` writes the real file from the environment:
+
+```bash
+pnpm config:worker
+```
+
+The values come from the environment — the gitignored `.env` on a laptop, repository secrets in CI:
+
+| Value | What it names |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | The account to deploy into |
+| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
+| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
+| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
+| `PUBLIC_URL` | The address users open; it becomes the Worker's `BETTER_AUTH_URL` and `WEB_URL` |
+| `RESEND_FROM` | The sender address |
+
+`pnpm db:migrate:d1` and `pnpm deploy:worker` write the configuration first, so neither needs it to exist.
 
 #### From GitHub Actions
 
@@ -251,14 +272,17 @@ pnpm deploy:worker     # then the Worker that reads it
 
 `wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory.
 
-`apps/api/wrangler.jsonc` is committed, because a build that clones the repository has no other way to find the Worker's bindings. It holds this project's account id, the D1 database id, the R2 bucket and its public id, the two origin URLs and the Resend sender address, and no secrets. A fork replaces those ids with its own before deploying.
-
-The job authenticates with two repository secrets:
+The job reads the same values from repository secrets, so the repository holds none of them:
 
 | Secret | What it is |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | An API token with Workers write and D1 edit |
 | `CLOUDFLARE_ACCOUNT_ID` | The account the Worker belongs to |
+| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
+| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
+| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
+| `PUBLIC_URL` | The address users open |
+| `RESEND_FROM` | The sender address |
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -278,14 +302,14 @@ pnpm --filter @heptadec/api exec wrangler secret put R2_SECRET_ACCESS_KEY
 pnpm --filter @heptadec/api exec wrangler secret put RESEND_API_KEY
 ```
 
-`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in `wrangler.jsonc`; point both at the origin users open. `RESEND_API_KEY` is a secret rather than a var, so it is not readable in the dashboard.
+`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in the rendered configuration; they come from `PUBLIC_URL`. `RESEND_API_KEY` is a secret rather than a var, so it is not readable in the dashboard.
 
 The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `wrangler r2 bucket cors set`.
 
 The manual equivalent, when you would rather drive wrangler yourself:
 
 ```bash
-pnpm --filter @heptadec/api exec wrangler d1 create heptadec
+pnpm config:worker
 pnpm db:migrate:d1
 pnpm deploy:worker
 ```
@@ -293,6 +317,7 @@ pnpm deploy:worker
 To develop against workerd with a local D1 database instead of Node:
 
 ```bash
+pnpm config:worker
 pnpm --filter @heptadec/api exec wrangler dev
 ```
 

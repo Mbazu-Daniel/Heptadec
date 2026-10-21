@@ -3,7 +3,7 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-10",
   "compatibility_flags": ["nodejs_compat"],
-  "account_id": "d3a1a9129ea0d79f4825eee02adbfb31",
+  "account_id": "__CLOUDFLARE_ACCOUNT_ID__",
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }
@@ -17,25 +17,25 @@
     {
       "binding": "DB",
       "database_name": "heptadec",
-      "database_id": "4eefabbd-e5bc-4823-b18f-83bb563165c7",
+      "database_id": "__CLOUDFLARE_D1_DATABASE_ID__",
       "migrations_dir": "../../packages/db/drizzle"
     }
   ],
   "r2_buckets": [
     {
       "binding": "IMAGES",
-      "bucket_name": "heptadec-images"
+      "bucket_name": "__R2_BUCKET_NAME__"
     }
   ],
   "triggers": {
     "crons": ["* * * * *"]
   },
   "vars": {
-    "CLOUDFLARE_ACCOUNT_ID": "d3a1a9129ea0d79f4825eee02adbfb31",
-    "R2_BUCKET_NAME": "heptadec-images",
-    "R2_PUBLIC_ID": "37703147ecbb414dbbf22775b0175ff6",
-    "BETTER_AUTH_URL": "https://heptadec.oktopals.com",
-    "WEB_URL": "https://heptadec.oktopals.com",
-    "RESEND_FROM": "Heptadec <noreply@oktopals.com>"
+    "CLOUDFLARE_ACCOUNT_ID": "__CLOUDFLARE_ACCOUNT_ID__",
+    "R2_BUCKET_NAME": "__R2_BUCKET_NAME__",
+    "R2_PUBLIC_ID": "__R2_PUBLIC_ID__",
+    "BETTER_AUTH_URL": "__PUBLIC_URL__",
+    "WEB_URL": "__PUBLIC_URL__",
+    "RESEND_FROM": "__RESEND_FROM__"
   }
 }

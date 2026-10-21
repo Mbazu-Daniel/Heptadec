@@ -39,6 +39,9 @@ const values = {
   __R2_PUBLIC_ID__: optional("R2_PUBLIC_ID"),
   __PUBLIC_URL__: required("PUBLIC_URL"),
   __RESEND_FROM__: optional("RESEND_FROM"),
+  __BACHS_BASE_URL__: optional("BACHS_BASE_URL"),
+  __BACHS_PRODUCT_MONTHLY__: optional("BACHS_PRODUCT_MONTHLY"),
+  __BACHS_PRODUCT_YEARLY__: optional("BACHS_PRODUCT_YEARLY"),
 };
 
 const template = readFileSync(templatePath, "utf8");
@@ -47,6 +50,16 @@ const rendered = Object.entries(values).reduce(
   template,
 );
 
-JSON.parse(rendered);
-writeFileSync(configPath, rendered);
+const config = JSON.parse(rendered);
+
+// A var with no value is left out rather than set to "", so the app's own
+// default stands: no BACHS_BASE_URL means the sandbox host, and billing stays
+// off until the key and both product ids are set.
+for (const [name, value] of Object.entries(config.vars)) {
+  if (value === "") {
+    delete config.vars[name];
+  }
+}
+
+writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 console.log(`[config] wrote ${configPath}`);

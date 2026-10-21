@@ -323,6 +323,41 @@ pnpm --filter @heptadec/api exec wrangler dev
 
 Two things do not run on Workers: SMTP alert channels, because there is no port 25 (use Resend or Cloudflare Email Sending), and local-file SQLite data sources, because there is no filesystem (point them at a `libsql://` URL). Both surface as a delivery or connection error rather than a silent skip.
 
+### Billing (Bachs)
+
+[Bachs](https://bachs.io) holds the products and collects the card details; this app stores only the state its webhooks report. Five values come from Bachs, and **all of them are needed** — with any one missing, billing reports itself unconfigured and the instance stays free.
+
+| Value | Where it goes | What it is |
+|---|---|---|
+| `BACHS_SECRET_KEY` | Worker secret | The API key from Bachs → Developers → API keys, `sk_live_…` |
+| `BACHS_WEBHOOK_SECRET` | Worker secret | The signing secret of the webhook endpoint, `whsec_…` |
+| `BACHS_PRODUCT_MONTHLY` | Worker var | The product billed monthly, `prod_…` |
+| `BACHS_PRODUCT_YEARLY` | Worker var | The product billed yearly, `prod_…` |
+| `BACHS_BASE_URL` | Worker var | `https://api.bachs.io` for live, `https://sandbox-api.bachs.io` for the sandbox |
+
+The two secrets are set on the Worker:
+
+```bash
+pnpm --filter @heptadec/api exec wrangler secret put BACHS_SECRET_KEY
+pnpm --filter @heptadec/api exec wrangler secret put BACHS_WEBHOOK_SECRET
+```
+
+The three vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the `BACHS_BASE_URL`, `BACHS_PRODUCT_MONTHLY` and `BACHS_PRODUCT_YEARLY` repository secrets in CI.
+
+**Two products, because a product's cycle cannot be changed afterwards.** Create one per cycle, give each a price, and keep them in step with the amounts the app advertises — $5.00 monthly and $50.00 yearly, in `apps/api/src/modules/billing/catalog.ts`. Bachs charges what its own catalogue says.
+
+**The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to the three subscription events:
+
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+
+The delivery carries the organization in `data.metadata.organization_id`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret.
+
+**A sandbox key against the live host is refused** rather than charged, so the base URL and the key have to be changed together.
+
+**Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already subscribed — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `dev` and `main`. What it does depends on the branch:

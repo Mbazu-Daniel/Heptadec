@@ -229,7 +229,7 @@ docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
 
 ### Cloudflare Workers
 
-One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. This deployment answers at `https://heptadec.oktopals.com`.
+One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. The origin comes from `PUBLIC_URL`, which names the address users open.
 
 Provisioning and deploy are one idempotent command:
 
@@ -359,7 +359,7 @@ The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, 
 | `R2_ACCESS_KEY_ID` | R2 access key that signs an upload | `your_r2_access_key_id` |
 | `R2_SECRET_ACCESS_KEY` | R2 secret key that signs an upload | `your_r2_secret_access_key` |
 | `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |
-| `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `37703147ecbb414dbbf22775b0175ff6` |
+| `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `your_bucket_id` |
 | `R2_CUSTOM_DOMAIN` | Custom domain for the bucket; it wins over the managed one | `images.example.com` |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |

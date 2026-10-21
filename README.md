@@ -240,18 +240,25 @@ pnpm deploy:cloudflare
 
 The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
 
-#### From Cloudflare's build settings
+#### From GitHub Actions
 
-The git integration builds and deploys on every push to `main`. Its project settings are:
+CI deploys the Worker, and Cloudflare's own git integration is switched off so there is one path that deploys it. The `Worker` job runs on a push to `main` and does two things in order:
 
-| Setting | Value |
+```bash
+pnpm db:migrate:d1     # the schema lands first
+pnpm deploy:worker     # then the Worker that reads it
+```
+
+`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory.
+
+`apps/api/wrangler.jsonc` is committed, because a build that clones the repository has no other way to find the Worker's bindings. It holds this project's account id, the D1 database id, the R2 bucket and its public id, the two origin URLs and the Resend sender address, and no secrets. A fork replaces those ids with its own before deploying.
+
+The job authenticates with two repository secrets:
+
+| Secret | What it is |
 |---|---|
-| Build command | `pnpm run build` |
-| Deploy command | `pnpm db:migrate:d1 && pnpm deploy:worker` |
-
-`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory: `pnpm deploy:worker` builds the web app and deploys the Worker, and `pnpm db:migrate:d1` applies the migrations first, so the Worker is never rolled out ahead of the schema it reads.
-
-`apps/api/wrangler.jsonc` is committed, because a build that clones the repository has no other way to find the Worker's bindings. It holds this project's account id, the D1 database id, the R2 bucket and its public id, the two origin URLs and the Resend sender address, and no secrets. A fork replaces those ids with its own before deploying. The build environment needs `CLOUDFLARE_API_TOKEN`, which the build token supplies, and nothing else: the account id is in the config.
+| `CLOUDFLARE_API_TOKEN` | An API token with Workers write and D1 edit |
+| `CLOUDFLARE_ACCOUNT_ID` | The account the Worker belongs to |
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -290,6 +297,22 @@ pnpm --filter @heptadec/api exec wrangler dev
 ```
 
 Two things do not run on Workers: SMTP alert channels, because there is no port 25 (use Resend or Cloudflare Email Sending), and local-file SQLite data sources, because there is no filesystem (point them at a `libsql://` URL). Both surface as a delivery or connection error rather than a silent skip.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `dev` and `main`. What it does depends on the branch:
+
+| Event | Job | What runs |
+|---|---|---|
+| Pull request | `Checks` | Typecheck, web build, the integration suite against the test stack |
+| Push to `dev` | `Checks` | The same |
+| Push to `main` | `Checks`, then `Images` and `Worker` | The checks first; then the Docker images are pushed to `ghcr.io` and the Worker is migrated and deployed |
+
+`dev` is where work lands: open a pull request against `dev`, and it is checked there. `main` is the release: merging `dev` into `main` is what builds the images and deploys the Worker, so nothing reaches the running deployment without the checks passing first.
+
+The `Worker` job needs two repository secrets, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A pull request never sees them: the workflow triggers on `pull_request`, which gives a fork no access to secrets, and the deploy job runs only on a push to `main`.
+
+The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`.
 
 ## Environment Variables
 
@@ -1422,7 +1445,7 @@ git checkout -b feature/your-feature-name
 pnpm typecheck
 pnpm test
 ```
-4. Commit your changes and submit a pull request.
+4. Commit your changes and open a pull request against `dev`.
 
 ## Author
 

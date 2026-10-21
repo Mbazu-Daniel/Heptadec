@@ -12,9 +12,9 @@
 #   BETTER_AUTH_SECRET      set once, then reused forever
 #   HEPTADEC_SECRET_KEY     set once, then reused forever — losing it breaks
 #                           every stored data-source credential
-#   CLOUDFLARE_ACCOUNT_ID   the account to deploy into. Only needed when your
-#                           login covers more than one; read from .env if it is
-#                           not already in the environment.
+#   CLOUDFLARE_ACCOUNT_ID   the account the Worker talks to for R2. It is read
+#                           from apps/api/wrangler.jsonc, which is where the
+#                           deployment's account lives.
 
 set -euo pipefail
 
@@ -25,22 +25,6 @@ BUCKET_NAME="${HEPTADEC_IMAGE_BUCKET:-heptadec-images}"
 CONFIG="apps/api/wrangler.jsonc"
 WRANGLER=(pnpm --filter @heptadec/api exec wrangler)
 
-# The account is deployment-specific, so its id is never in the repo — but a
-# login covering more than one account makes wrangler refuse to guess, which
-# would turn the deploy back into a command with an environment prefix. Reading
-# the id from the gitignored .env keeps it one command. Only this key is read:
-# sourcing the file would hand .env's development secrets to the steps below,
-# which push secrets into the worker.
-if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -f .env ]; then
-  CLOUDFLARE_ACCOUNT_ID="$(sed -n 's/^CLOUDFLARE_ACCOUNT_ID=//p' .env | tail -n 1)"
-  CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID%\"}"
-  CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID#\"}"
-  if [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
-    echo "Deploying into the account in .env: $CLOUDFLARE_ACCOUNT_ID"
-    export CLOUDFLARE_ACCOUNT_ID
-  fi
-fi
-
 say() {
   printf '\n\033[1m%s\033[0m\n' "$1"
 }
@@ -49,7 +33,7 @@ random_secret() {
   node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'
 }
 
-say "1/7 Checking your Cloudflare login"
+say "1/8 Checking your Cloudflare login"
 if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   echo "Not logged in yet. Run this once, then re-run the deploy:"
   echo
@@ -58,27 +42,19 @@ if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-# Wrangler refuses to choose between several accounts, and it only says so at
-# the first step that touches one — which is well past the build. Check now, so
-# the failure is the first thing you see rather than the fifth.
+# The first step that touches an account is well past the build, so a wrong
+# account id surfaces as a failure in step three rather than in step one.
 if ! "${WRANGLER[@]}" d1 list >/dev/null 2>&1; then
-  echo "Your Cloudflare login covers more than one account, and wrangler will"
-  echo "not pick one for you. Re-run the deploy with the account you want:"
-  echo
-  echo "    CLOUDFLARE_ACCOUNT_ID=<your account id> pnpm deploy:cloudflare"
-  echo
-  echo "or put CLOUDFLARE_ACCOUNT_ID=<your account id> in .env (gitignored),"
-  echo "and this command will pick it up on its own:"
-  echo
-  echo "    pnpm deploy:cloudflare"
+  echo "Wrangler cannot reach the account in $CONFIG."
+  echo "Check the account_id in that file and that your login covers it."
   echo
   exit 1
 fi
 
-say "2/7 Building the web app"
+say "2/8 Building the web app"
 pnpm --filter @heptadec/web build
 
-say "3/7 Ensuring the D1 database exists"
+say "3/8 Ensuring the D1 database exists"
 
 # The recorded id belongs to whoever created it, so a fresh account has to make
 # its own database and take the new id down. Creating is the only way to tell
@@ -118,14 +94,14 @@ else
   exit 1
 fi
 
-say "4/7 Ensuring the image bucket exists"
+say "4/8 Ensuring the image bucket exists"
 if "${WRANGLER[@]}" r2 bucket create "$BUCKET_NAME" >/dev/null 2>&1; then
   echo "Created $BUCKET_NAME"
 else
   echo "Already exists: $BUCKET_NAME"
 fi
 
-say "5/7 Setting secrets that are not already set"
+say "5/8 Setting secrets that are not already set"
 ensure_secret() {
   local name="$1"
   local value="$2"
@@ -154,20 +130,49 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
+# The browser PUTs an upload straight to the bucket, and the browser only lets
+# it when the bucket answers the preflight. A bucket with no CORS rule answers
+# "CORS not configured" and the upload fails in the browser, not in the API.
+say "6/8 Allowing the browser to upload to the bucket"
+origin="$(grep -oE '"BETTER_AUTH_URL"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
+if [ -n "$origin" ]; then
+  cors_file="$(mktemp)"
+  cat >"$cors_file" <<JSON
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["$origin"],
+        "methods": ["GET", "HEAD", "PUT"],
+        "headers": ["content-type"]
+      },
+      "exposeHeaders": ["etag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
+JSON
+  "${WRANGLER[@]}" r2 bucket cors set "$BUCKET_NAME" --file "$cors_file" --force
+  rm -f "$cors_file"
+  echo "Uploads allowed from $origin"
+else
+  echo "No BETTER_AUTH_URL in $CONFIG: uploads from a browser are blocked."
+fi
+
 # Images are read from the bucket's public URL, which is a property of the bucket
 # and not of this deployment, so it is checked rather than configured here.
-public_id="$(grep -oE '"R2PublicId"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
-if [ -n "$public_id" ] && [ "$public_id" != "PASTE_YOUR_R2_PUBLIC_ID_HERE" ]; then
+public_id="$(grep -oE '"R2_PUBLIC_ID"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
+if [ -n "$public_id" ]; then
   echo "Reading images from https://pub-$public_id.r2.dev"
   echo "  if avatars 404, public access is off on the bucket:"
   echo "      cf r2 buckets domains managed update $BUCKET_NAME --enabled true"
 else
-  echo "R2PublicId not set: images will be proxied through the API instead,"
+  echo "R2_PUBLIC_ID not set: images will be proxied through the API instead,"
   echo "  which works but costs a request per image."
 fi
 
-say "6/7 Applying database migrations"
+say "7/8 Applying database migrations"
 "${WRANGLER[@]}" d1 migrations apply "$D1_NAME" --remote
 
-say "7/7 Deploying"
+say "8/8 Deploying"
 "${WRANGLER[@]}" deploy

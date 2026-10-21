@@ -229,25 +229,29 @@ docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
 
 ### Cloudflare Workers
 
-One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. Provisioning and deploy are one idempotent command:
+One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. This deployment answers at `https://heptadec.oktopals.com`.
+
+Provisioning and deploy are one idempotent command:
 
 ```bash
 pnpm --filter @heptadec/api exec wrangler login
 pnpm deploy:cloudflare
 ```
 
-The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone. Set `CLOUDFLARE_ACCOUNT_ID` in `.env` if your login covers more than one account.
+The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
 
 #### From Cloudflare's build settings
 
-Deploying from the Cloudflare dashboard runs the same two steps as one command, with the working directory at the repository root:
+The git integration builds and deploys on every push to `main`. Its project settings are:
 
 | Setting | Value |
 |---|---|
 | Build command | `pnpm run build` |
 | Deploy command | `pnpm db:migrate:d1 && pnpm deploy:worker` |
 
-`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory: `pnpm deploy:worker` builds the web app and deploys the Worker, and `pnpm db:migrate:d1` applies the migrations first, so the Worker is never rolled out ahead of the schema it reads. The build environment needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, which wrangler reads from the environment.
+`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory: `pnpm deploy:worker` builds the web app and deploys the Worker, and `pnpm db:migrate:d1` applies the migrations first, so the Worker is never rolled out ahead of the schema it reads.
+
+`apps/api/wrangler.jsonc` is committed, because a build that clones the repository has no other way to find the Worker's bindings. It holds this project's account id, the D1 database id, the R2 bucket and its public id, the two origin URLs and the Resend sender address, and no secrets. A fork replaces those ids with its own before deploying. The build environment needs `CLOUDFLARE_API_TOKEN`, which the build token supplies, and nothing else: the account id is in the config.
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -262,9 +266,14 @@ Secrets never live in `wrangler.jsonc`:
 ```bash
 pnpm --filter @heptadec/api exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @heptadec/api exec wrangler secret put HEPTADEC_SECRET_KEY
+pnpm --filter @heptadec/api exec wrangler secret put R2_ACCESS_KEY_ID
+pnpm --filter @heptadec/api exec wrangler secret put R2_SECRET_ACCESS_KEY
+pnpm --filter @heptadec/api exec wrangler secret put RESEND_API_KEY
 ```
 
-`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in `wrangler.jsonc`; point both at the origin users open.
+`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in `wrangler.jsonc`; point both at the origin users open. `RESEND_API_KEY` is a secret rather than a var, so it is not readable in the dashboard.
+
+The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `wrangler r2 bucket cors set`.
 
 The manual equivalent, when you would rather drive wrangler yourself:
 
@@ -298,6 +307,12 @@ Two things do not run on Workers: SMTP alert channels, because there is no port 
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for R2 and email dispatch | `your_account_id` |
 | `CLOUDFLARE_EMAIL_TOKEN` | API token for Cloudflare email sending | `your_cf_email_token` |
 | `CLOUDFLARE_EMAIL_FROM` | Sender address for Cloudflare email | `notifications@example.com` |
+| `R2_BUCKET_NAME` | Bucket holding logos and avatars | `heptadec-images` |
+| `R2_ACCESS_KEY_ID` | R2 access key that signs an upload | `your_r2_access_key_id` |
+| `R2_SECRET_ACCESS_KEY` | R2 secret key that signs an upload | `your_r2_secret_access_key` |
+| `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |
+| `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `37703147ecbb414dbbf22775b0175ff6` |
+| `R2_CUSTOM_DOMAIN` | Custom domain for the bucket; it wins over the managed one | `images.example.com` |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | `your_github_client_id` |

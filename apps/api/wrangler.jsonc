@@ -3,6 +3,7 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-10",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "d3a1a9129ea0d79f4825eee02adbfb31",
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }
@@ -16,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "heptadec",
-      "database_id": "PASTE_YOUR_D1_DATABASE_ID_HERE",
+      "database_id": "4eefabbd-e5bc-4823-b18f-83bb563165c7",
       "migrations_dir": "../../packages/db/drizzle"
     }
   ],
@@ -30,14 +31,11 @@
     "crons": ["* * * * *"]
   },
   "vars": {
-    "R2BucketName": "heptadec-images",
-    "R2PublicId": "PASTE_YOUR_R2_PUBLIC_ID_HERE",
-    "R2CustomDomain": "",
-    "CLOUDFLARE_ACCOUNT_ID": "PASTE_YOUR_CLOUDFLARE_ACCOUNT_ID_HERE",
-    "BETTER_AUTH_URL": "https://your-worker.your-subdomain.workers.dev",
-    "WEB_URL": "https://your-worker.your-subdomain.workers.dev",
-    "BACHS_BASE_URL": "https://api.bachs.io",
-    "BACHS_PRODUCT_MONTHLY": "",
-    "BACHS_PRODUCT_YEARLY": ""
+    "CLOUDFLARE_ACCOUNT_ID": "d3a1a9129ea0d79f4825eee02adbfb31",
+    "R2_BUCKET_NAME": "heptadec-images",
+    "R2_PUBLIC_ID": "37703147ecbb414dbbf22775b0175ff6",
+    "BETTER_AUTH_URL": "https://heptadec.oktopals.com",
+    "WEB_URL": "https://heptadec.oktopals.com",
+    "RESEND_FROM": "Heptadec <noreply@oktopals.com>"
   }
 }

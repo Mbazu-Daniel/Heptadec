@@ -36,11 +36,6 @@ impl.html
 .agents/
 skills-lock.json
 
-# The real Cloudflare config holds a D1 database id and bucket name that belong
-# to whoever created them, so it is never committed. Copy the example and fill
-# it in for your own account.
-apps/api/wrangler.jsonc
-
 # This machine moves the test stack onto ports another project is using. It is
 # a local override of docker-compose.test.yml, not project config.
 docker-compose.test.override.yml

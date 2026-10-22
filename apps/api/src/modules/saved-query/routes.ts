@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
 import { schema } from "@heptadec/db";
+import { createSavedQuery, editSavedQuery } from "./edit";
 import {
   requireSession,
   type IAuthVars,
@@ -118,23 +119,11 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       sql: readString(body, "sql", "Write the statement to save", MAX_SQL),
     };
 
-    const now = new Date();
-    const inserted = await organization.db
-      .insert(savedQuery)
-      .values({
-        organizationId: organization.organizationId,
-        dataSourceId: source.id,
-        name: request.name,
-        sql: request.sql,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    const created = inserted[0];
-    if (created === undefined) {
-      throw new NotFoundException("That saved query could not be created");
-    }
+    const created = await createSavedQuery(organization, {
+      dataSourceId: source.id,
+      name: request.name,
+      sql: request.sql,
+    });
     const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,
@@ -226,32 +215,7 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       sql: readOptionalString(body, "sql", "Write the statement to save", MAX_SQL),
     };
 
-    const nextName = request.name ?? existing.name;
-    const nextSql = request.sql ?? existing.sql;
-    if (nextName === existing.name && nextSql === existing.sql) {
-      const response: ISavedQueryResponse = { savedQuery: toISavedQuery(existing) };
-      return c.json(response);
-    }
-
-    const now = new Date();
-    await organization.db.insert(queryVersion).values({
-      organizationId: existing.organizationId,
-      savedQueryId: existing.id,
-      name: existing.name,
-      sql: existing.sql,
-      createdAt: now,
-    });
-
-    const updated = await organization.db
-      .update(savedQuery)
-      .set({ name: nextName, sql: nextSql, updatedAt: now })
-      .where(eq(savedQuery.id, existing.id))
-      .returning();
-
-    const row = updated[0];
-    if (row === undefined) {
-      throw new NotFoundException("That saved query does not exist");
-    }
+    const row = await editSavedQuery(organization, existing.id, request);
     const actor = await auditActor(c);
     await recordAudit(organization.db, {
       organizationId: organization.organizationId,

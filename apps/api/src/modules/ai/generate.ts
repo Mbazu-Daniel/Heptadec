@@ -7,6 +7,7 @@ import { readMongoPipeline } from "../query/mongo";
 import { readSearchStatement } from "../query/quickwit";
 import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
 import { providerSpec } from "./catalog";
+import { baseUrlFor } from "./transport";
 
 const ANSWER_TIMEOUT_MS = 60_000;
 
@@ -48,8 +49,8 @@ async function* streamWith(
   if (spec === null) {
     throw new Error(`Unknown AI provider ${row.provider}`);
   }
-  const baseUrl = spec.needsBaseUrl ? row.baseUrl : spec.baseUrl;
-  if (baseUrl === null || baseUrl === "") {
+  const baseUrl = baseUrlFor(spec, row.baseUrl);
+  if (baseUrl === null) {
     throw new Error(`${spec.label} needs a base URL`);
   }
 

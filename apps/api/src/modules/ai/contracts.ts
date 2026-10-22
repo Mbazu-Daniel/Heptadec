@@ -1,5 +1,6 @@
 import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
 import type { QueryLanguage } from "../data-source/contracts";
+import type { IAiProviderSpec } from "./catalog";
 
 export interface IAiProvider {
   id: string;
@@ -14,13 +15,7 @@ export interface IAiProvider {
 
 export interface IAiProviderListResponse {
   providers: IAiProvider[];
-  catalog: Array<{
-    id: string;
-    label: string;
-    baseUrl: string;
-    needsBaseUrl: boolean;
-    exampleBaseUrl?: string;
-  }>;
+  catalog: IAiProviderSpec[];
 }
 
 export interface IAiModel {

@@ -1,8 +1,9 @@
 export { savedQueryRoutes } from "./routes";
-export { editSavedQuery, type ISavedQueryChange } from "./edit";
+export { editSavedQuery } from "./edit";
 
 export type {
   ICreateSavedQueryRequest,
+  ISavedQueryChange,
   IQueryVersion,
   IQueryVersionListResponse,
   ISavedQuery,

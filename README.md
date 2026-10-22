@@ -354,6 +354,10 @@ The three vars are read from the environment, like the rest of the Worker's conf
 
 The delivery carries the organization in `data.metadata.organization_id`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret.
 
+**The checkout opens as an overlay.** The web app loads Bachs's browser SDK and opens the hosted checkout in a modal over the page, so the customer never leaves the app and never sees card data on it. The checkout session is still created on the server, so the amount and currency are the server's to decide.
+
+**The fee preference decides who pays the processing fee.** Under "I pay fees" the customer pays the plan's price and the fee comes out of the balance; under "Customer pays fees" Bachs adds it on top, and a plan advertised as $5.00 is charged as $5.65. The app advertises the product's price, so the two have to agree.
+
 **A sandbox key against the live host is refused** rather than charged, so the base URL and the key have to be changed together.
 
 **Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already subscribed — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.

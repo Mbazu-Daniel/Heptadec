@@ -1,11 +1,12 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { IconBrandGithub, IconCreditCard, IconLock } from "@tabler/icons-react";
 import type {
   IBillingPlan,
   IBillingSummary,
 } from "@heptadec/api/billing-contracts";
-import { fetchBilling, messageFor, startCheckout } from "../api";
+import { fetchBilling } from "../api";
+import { useCheckout, type ICheckout } from "../checkout";
 import { Button } from "./ui/button";
 import { Alert } from "./ui/feedback";
 import { PLAN_CARD_CLASSNAME } from "./workspace";
@@ -25,23 +26,19 @@ export function SubscriptionGate({
   const [summary, setSummary] = useState<IBillingSummary | null>(null);
   const [unreadable, setUnreadable] = useState(false);
 
-  useEffect(() => {
-    let live = true;
-    fetchBilling()
-      .then((next) => {
-        if (live) {
-          setSummary(next);
-        }
-      })
-      .catch(() => {
-        if (live) {
-          setUnreadable(true);
-        }
-      });
-    return () => {
-      live = false;
-    };
+  const reload = useCallback(async () => {
+    try {
+      setSummary(await fetchBilling());
+    } catch {
+      setUnreadable(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const checkout = useCheckout(reload);
 
   if (summary === null) {
     return unreadable ? (
@@ -59,6 +56,7 @@ export function SubscriptionGate({
   return (
     <Paywall
       summary={summary}
+      checkout={checkout}
       isOwner={isOwner}
       others={others}
       onSignOut={onSignOut}
@@ -68,28 +66,22 @@ export function SubscriptionGate({
 
 function Paywall({
   summary,
+  checkout,
   isOwner,
   others,
   onSignOut,
 }: {
   summary: IBillingSummary;
+  checkout: ICheckout;
   isOwner: boolean;
   others: Array<{ name: string; slug: string }>;
   onSignOut: () => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   async function subscribe(cadence: IBillingPlan["cadence"]): Promise<void> {
-    setBusy(true);
     setProblem(null);
-    try {
-      const { checkoutUrl } = await startCheckout(cadence);
-      window.location.assign(checkoutUrl);
-    } catch (caught) {
-      setProblem(messageFor(caught, "That checkout could not be started."));
-      setBusy(false);
-    }
+    await checkout.start(cadence);
   }
 
   const lapsed = summary.subscription;
@@ -116,6 +108,15 @@ function Paywall({
         )}
 
         {problem !== null ? <Alert className="mt-4 w-full">{problem}</Alert> : null}
+        {checkout.problem !== null ? (
+          <Alert className="mt-4 w-full">{checkout.problem}</Alert>
+        ) : null}
+        {checkout.paid ? (
+          <Alert className="mt-4 w-full">
+            The payment went through. The product opens as soon as Bachs
+            confirms it.
+          </Alert>
+        ) : null}
 
         <div className="mt-6 grid w-full gap-2 sm:grid-cols-2">
           {summary.plans.map((plan) => (
@@ -134,7 +135,7 @@ function Paywall({
               {isOwner ? (
                 <Button
                   className="mt-auto self-start"
-                  disabled={busy}
+                  disabled={checkout.busy}
                   onClick={() => void subscribe(plan.cadence)}
                 >
                   <IconCreditCard size={16} strokeWidth={1.5} />

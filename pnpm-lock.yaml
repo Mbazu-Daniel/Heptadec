@@ -105,6 +105,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@bachs/js':
+        specifier: ^0.2.0
+        version: 0.2.0
       '@base-ui-components/react':
         specifier: 1.0.0-rc.0
         version: 1.0.0-rc.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -313,6 +316,10 @@ packages:
   '@babel/runtime@7.29.7':
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
+
+  '@bachs/js@0.2.0':
+    resolution: {integrity: sha512-O0W6ut3BwEadMN+NS56uXNEbwKdcmAGCjYuMDwrIJzy7a498Bc+byC+D+jYiVWMqqm4CUaSV3mV/GbAkJLsytQ==}
+    engines: {node: '>=18'}
 
   '@base-ui-components/react@1.0.0-rc.0':
     resolution: {integrity: sha512-9lhUFbJcbXvc9KulLev1WTFxS/alJRBWDH/ibKSQaNvmDwMFS2gKp1sTeeldYSfKuS/KC1w2MZutc0wHu2hRHQ==}
@@ -3879,6 +3886,8 @@ snapshots:
   '@aws/lambda-invoke-store@0.3.0': {}
 
   '@babel/runtime@7.29.7': {}
+
+  '@bachs/js@0.2.0': {}
 
   '@base-ui-components/react@1.0.0-rc.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:

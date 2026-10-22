@@ -5,7 +5,8 @@ import type {
   IBillingSubscription,
   IBillingSummary,
 } from "@heptadec/api/billing-contracts";
-import { fetchBilling, messageFor, startCheckout } from "../api";
+import { fetchBilling, messageFor } from "../api";
+import { useCheckout } from "../checkout";
 import { Button } from "./ui/button";
 import { Alert, EmptyState } from "./ui/feedback";
 import { PLAN_CARD_CLASSNAME, VIEW_CLASSNAME, Workspace } from "./workspace";
@@ -13,7 +14,6 @@ import { PLAN_CARD_CLASSNAME, VIEW_CLASSNAME, Workspace } from "./workspace";
 export function Billing({ isOwner }: { isOwner: boolean }) {
   const [summary, setSummary] = useState<IBillingSummary | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
     setProblem(null);
@@ -28,16 +28,10 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
     void reload();
   }, [reload]);
 
+  const checkout = useCheckout(reload);
+
   async function subscribe(cadence: IBillingPlan["cadence"]): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
-      const { checkoutUrl } = await startCheckout(cadence);
-      window.location.assign(checkoutUrl);
-    } catch (caught) {
-      setProblem(messageFor(caught, "That checkout could not be started."));
-      setBusy(false);
-    }
+    await checkout.start(cadence);
   }
 
   if (!isOwner) {
@@ -60,6 +54,15 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
       view={
         <div className="mx-auto max-w-3xl">
           {problem !== null ? <Alert className="mb-4">{problem}</Alert> : null}
+          {checkout.problem !== null ? (
+            <Alert className="mb-4">{checkout.problem}</Alert>
+          ) : null}
+          {checkout.paid ? (
+            <Alert className="mb-4">
+              The payment went through. This plan is active once Bachs confirms
+              it.
+            </Alert>
+          ) : null}
           {summary === null ? (
             <p className="text-xs text-muted-foreground">Loading</p>
           ) : (
@@ -92,7 +95,7 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
                     <Button
                       className="self-start"
                       disabled={
-                        busy ||
+                        checkout.busy ||
                         !summary.configured ||
                         summary.subscription !== null
                       }

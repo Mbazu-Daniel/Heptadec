@@ -1,25 +1,19 @@
 import { config } from "../../common/config/env";
 import { BILLING_CADENCES, type BillingCadence, type IBillingPlan } from "./contracts";
 
-const PLANS: Record<BillingCadence, IBillingPlan> = {
-  monthly: {
-    cadence: "monthly",
-    label: "Monthly",
-    amount: "5.00",
-    currency: "USD",
-    note: "Billed every month",
-  },
-  yearly: {
-    cadence: "yearly",
-    label: "Yearly",
-    amount: "50.00",
-    currency: "USD",
-    note: "Billed every year, two months free",
-  },
+const PLAN_COPY: Record<BillingCadence, { label: string; note: string }> = {
+  monthly: { label: "Monthly", note: "Billed every month" },
+  yearly: { label: "Yearly", note: "Billed every year, two months free" },
 };
 
 export function billingPlans(): IBillingPlan[] {
-  return BILLING_CADENCES.map((cadence) => PLANS[cadence]);
+  return BILLING_CADENCES.map((cadence) => ({
+    cadence,
+    label: PLAN_COPY[cadence].label,
+    amount: config.bachs.prices[cadence],
+    currency: config.bachs.currency,
+    note: PLAN_COPY[cadence].note,
+  }));
 }
 
 export function billingConfigured(): boolean {

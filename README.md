@@ -334,6 +334,9 @@ Two things do not run on Workers: SMTP alert channels, because there is no port 
 | `BACHS_PRODUCT_MONTHLY` | Worker var | The product billed monthly, `prod_…` |
 | `BACHS_PRODUCT_YEARLY` | Worker var | The product billed yearly, `prod_…` |
 | `BACHS_BASE_URL` | Worker var | `https://api.bachs.io` for live, `https://sandbox-api.bachs.io` for the sandbox |
+| `BACHS_CURRENCY` | Worker var | The currency the plans are priced in |
+| `BACHS_PRICE_MONTHLY` | Worker var | What the monthly plan costs, as a decimal string |
+| `BACHS_PRICE_YEARLY` | Worker var | What the yearly plan costs, as a decimal string |
 
 The two secrets are set on the Worker:
 
@@ -342,9 +345,11 @@ pnpm --filter @heptadec/api exec wrangler secret put BACHS_SECRET_KEY
 pnpm --filter @heptadec/api exec wrangler secret put BACHS_WEBHOOK_SECRET
 ```
 
-The three vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the `BACHS_BASE_URL`, `BACHS_PRODUCT_MONTHLY` and `BACHS_PRODUCT_YEARLY` repository secrets in CI.
+The vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the same names among the repository secrets in CI.
 
-**Two products, because a product's cycle cannot be changed afterwards.** Create one per cycle, give each a price, and keep them in step with the amounts the app advertises — $5.00 monthly and $50.00 yearly, in `apps/api/src/modules/billing/catalog.ts`. Bachs charges what its own catalogue says.
+**Two products, because a product's cycle cannot be changed afterwards.** Create one per cycle, give each a price, and keep them in step with the amounts the app advertises. The app's prices are the environment's `BACHS_PRICE_MONTHLY` and `BACHS_PRICE_YEARLY`, and `pnpm deploy:cloudflare` reads both products back from Bachs and refuses to deploy when they disagree — a customer must never be charged something the app did not promise.
+
+**A subscription bills in the currency it was created with, and Bachs collects subscriptions in USD on a card.** A one-time checkout can be priced and collected in any supported currency — naira included — and a USD-priced one converts at the page into the customer's local currency, with a chooser. A *plan* is a subscription, so its price currency is USD and the customer's location does not change it. `NGN_SUBSCRIPTIONS_NOT_ENABLED` is what a naira-priced plan is refused with.
 
 **The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to the three subscription events:
 
@@ -400,6 +405,14 @@ The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, 
 | `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |
 | `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `your_bucket_id` |
 | `R2_CUSTOM_DOMAIN` | Custom domain for the bucket; it wins over the managed one | `images.example.com` |
+| `BACHS_SECRET_KEY` | Bachs API key | `sk_live_…` |
+| `BACHS_WEBHOOK_SECRET` | Signing secret of the Bachs webhook endpoint | `whsec_…` |
+| `BACHS_BASE_URL` | The Bachs host; live and sandbox differ | `https://api.bachs.io` |
+| `BACHS_PRODUCT_MONTHLY` | The product billed monthly | `prod_…` |
+| `BACHS_PRODUCT_YEARLY` | The product billed yearly | `prod_…` |
+| `BACHS_CURRENCY` | The currency the plans are priced in | `USD` |
+| `BACHS_PRICE_MONTHLY` | What the monthly plan costs | `5.00` |
+| `BACHS_PRICE_YEARLY` | What the yearly plan costs | `50.00` |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | `your_github_client_id` |

@@ -126,7 +126,7 @@ function Paywall({
                   {plan.label}
                 </span>
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {plan.currency} {plan.amount}
+                  {plan.amount === "" ? null : `${plan.currency} ${plan.amount}`}
                 </span>
               </div>
               <p className="text-left text-xs text-muted-foreground">

@@ -42,6 +42,9 @@ const values = {
   __BACHS_BASE_URL__: optional("BACHS_BASE_URL"),
   __BACHS_PRODUCT_MONTHLY__: optional("BACHS_PRODUCT_MONTHLY"),
   __BACHS_PRODUCT_YEARLY__: optional("BACHS_PRODUCT_YEARLY"),
+  __BACHS_CURRENCY__: optional("BACHS_CURRENCY"),
+  __BACHS_PRICE_MONTHLY__: optional("BACHS_PRICE_MONTHLY"),
+  __BACHS_PRICE_YEARLY__: optional("BACHS_PRICE_YEARLY"),
 };
 
 const template = readFileSync(templatePath, "utf8");

@@ -45,6 +45,13 @@ export R2_BUCKET_NAME="${R2_BUCKET_NAME:-$(read_env R2_BUCKET_NAME)}"
 export R2_PUBLIC_ID="${R2_PUBLIC_ID:-$(read_env R2_PUBLIC_ID)}"
 export PUBLIC_URL="${PUBLIC_URL:-$(read_env PUBLIC_URL)}"
 export RESEND_FROM="${RESEND_FROM:-$(read_env RESEND_FROM)}"
+export BACHS_BASE_URL="${BACHS_BASE_URL:-$(read_env BACHS_BASE_URL)}"
+export BACHS_SECRET_KEY="${BACHS_SECRET_KEY:-$(read_env BACHS_SECRET_KEY)}"
+export BACHS_CURRENCY="${BACHS_CURRENCY:-$(read_env BACHS_CURRENCY)}"
+export BACHS_PRODUCT_MONTHLY="${BACHS_PRODUCT_MONTHLY:-$(read_env BACHS_PRODUCT_MONTHLY)}"
+export BACHS_PRODUCT_YEARLY="${BACHS_PRODUCT_YEARLY:-$(read_env BACHS_PRODUCT_YEARLY)}"
+export BACHS_PRICE_MONTHLY="${BACHS_PRICE_MONTHLY:-$(read_env BACHS_PRICE_MONTHLY)}"
+export BACHS_PRICE_YEARLY="${BACHS_PRICE_YEARLY:-$(read_env BACHS_PRICE_YEARLY)}"
 
 if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
   echo "CLOUDFLARE_ACCOUNT_ID is not set. Put it in .env or in the environment."
@@ -66,7 +73,7 @@ remember() {
   fi
 }
 
-say "1/7 Checking your Cloudflare login"
+say "1/8 Checking your Cloudflare login"
 if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   echo "Not logged in yet. Run this once, then re-run the deploy:"
   echo
@@ -75,7 +82,7 @@ if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-say "2/7 Ensuring the D1 database exists"
+say "2/8 Ensuring the D1 database exists"
 if [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
   created="$("${WRANGLER[@]}" d1 create heptadec </dev/null 2>&1)" || {
     echo "Could not create the database. Create it and set CLOUDFLARE_D1_DATABASE_ID:"
@@ -95,7 +102,7 @@ else
   echo "Using the database in CLOUDFLARE_D1_DATABASE_ID"
 fi
 
-say "3/7 Ensuring the image bucket exists"
+say "3/8 Ensuring the image bucket exists"
 if [ -z "$R2_BUCKET_NAME" ]; then
   echo "R2_BUCKET_NAME is not set. Put the bucket's name in .env."
   exit 1
@@ -119,7 +126,7 @@ fi
 # The browser PUTs an upload straight to the bucket, and the browser only lets
 # it when the bucket answers the preflight. A bucket with no CORS rule answers
 # "CORS not configured" and the upload fails in the browser, not in the API.
-say "4/7 Allowing the browser to upload to the bucket"
+say "4/8 Allowing the browser to upload to the bucket"
 if [ -n "$PUBLIC_URL" ]; then
   cors_file="$(mktemp)"
   cat >"$cors_file" <<JSON
@@ -144,7 +151,7 @@ else
   echo "PUBLIC_URL is not set: uploads from a browser are blocked."
 fi
 
-say "5/7 Setting secrets that are not already set"
+say "5/8 Setting secrets that are not already set"
 ensure_secret() {
   local name="$1"
   local value="$2"
@@ -173,8 +180,11 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
-say "6/7 Applying database migrations"
+say "6/8 Checking the advertised prices against Bachs"
+node scripts/check-bachs-prices.mjs
+
+say "7/8 Applying database migrations"
 pnpm db:migrate:d1
 
-say "7/7 Deploying"
+say "8/8 Deploying"
 pnpm deploy:worker

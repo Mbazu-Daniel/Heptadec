@@ -18,6 +18,15 @@ export const config = {
     secretKey: process.env.BACHS_SECRET_KEY ?? "",
     webhookSecret: process.env.BACHS_WEBHOOK_SECRET ?? "",
     baseUrl: process.env.BACHS_BASE_URL ?? "https://sandbox-api.bachs.io",
+    // The currency the plans are priced in. A subscription bills in the
+    // currency it was created with, so this is what the customer is charged.
+    currency: process.env.BACHS_CURRENCY ?? "USD",
+    // What each plan costs, as the decimal string the currency's precision
+    // asks for. Bachs charges its own catalogue, so these have to match it.
+    prices: {
+      monthly: process.env.BACHS_PRICE_MONTHLY ?? "",
+      yearly: process.env.BACHS_PRICE_YEARLY ?? "",
+    },
     products: {
       monthly: process.env.BACHS_PRODUCT_MONTHLY ?? "",
       yearly: process.env.BACHS_PRODUCT_YEARLY ?? "",

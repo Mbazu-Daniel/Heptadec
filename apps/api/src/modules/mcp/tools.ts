@@ -13,6 +13,7 @@ import {
   ENGINE_SPECS,
 } from "../data-source/contracts";
 import { canUseTooling, kindOf } from "../data-source/engines";
+import { quoteIdentifier } from "../data-source/sql-quoting";
 import {
   savedConnection,
 } from "../data-source/connection";
@@ -154,7 +155,7 @@ export function registerTools(
         }
         const grid = await runPostgresQuery(
           await savedConnection(source),
-          `SELECT * FROM ${quoteIdentifier(table)} LIMIT ${limit}`,
+          `SELECT * FROM ${quoteIdentifier("postgres", table)} LIMIT ${limit}`,
         );
         return answered({
           columns: grid.columns,
@@ -182,10 +183,6 @@ async function listDataSources(organization: IOrganizationScope) {
       readOnly: row.readOnly,
     };
   });
-}
-
-function quoteIdentifier(name: string): string {
-  return `"${name.replaceAll('"', '""')}"`;
 }
 
 function answered(payload: unknown) {

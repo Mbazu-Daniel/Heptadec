@@ -2,7 +2,7 @@ import { createClient } from "redis";
 import { BadGatewayException, BadRequestException } from "../../common/exceptions";
 import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
-import type { IStoredConnection } from "../data-source/connection";
+import { redisAddress, type IStoredConnection } from "../data-source/connection";
 import type { IRedisQueryResponse } from "./contracts";
 import { applyBudget } from "./budget";
 import { assertRedisReads } from "./read-policy";
@@ -10,22 +10,6 @@ import { assertRedisReads } from "./read-policy";
 const STATEMENT_TIMEOUT_MS = 15_000;
 
 const MAX_COMMAND_CHARS = 1_000;
-
-function redisUrl(source: IStoredConnection): string {
-  if (source.host === null || source.port === null) {
-    throw new BadRequestException("That source is missing connection details");
-  }
-  const username = source.username ?? "default";
-  const password = source.password;
-  const auth = username && password
-    ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
-    : username
-      ? `${encodeURIComponent(username)}@`
-      : "";
-  const scheme = source.connectionMode === "tls" ? "rediss" : "redis";
-  const database = source.database === null ? "" : `/${source.database}`;
-  return `${scheme}://${auth}${source.host}:${source.port}${database}`;
-}
 
 function tokenize(command: string): string[] {
   const tokens: string[] = [];
@@ -89,7 +73,7 @@ export async function runRedisQuery(
   assertRedisReads(trimmed, source.readOnly);
   const tokens = tokenize(trimmed);
 
-  const client = createClient({ url: redisUrl(source) });
+  const client = createClient({ url: redisAddress(source) });
   const startedAt = Date.now();
   try {
     await client.connect();

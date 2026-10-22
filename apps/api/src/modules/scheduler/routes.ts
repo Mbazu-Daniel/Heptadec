@@ -196,20 +196,7 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     if (!isTimezone(timezone)) {
       throw new BadRequestException("That timezone is not an IANA zone");
     }
-    const ttl = body.ttlSeconds;
-    if (
-      ttl !== undefined &&
-      ttl !== null &&
-      (typeof ttl !== "number" ||
-        !Number.isInteger(ttl) ||
-        ttl < MIN_TTL_SECONDS ||
-        ttl > MAX_TTL_SECONDS)
-    ) {
-      throw new BadRequestException(
-        `The freshness window must be between ${MIN_TTL_SECONDS} and ${MAX_TTL_SECONDS} seconds`,
-      );
-    }
-    const ttlSeconds = typeof ttl === "number" ? ttl : DEFAULT_TTL_SECONDS;
+    const ttlSeconds = readTtlSeconds(body.ttlSeconds);
 
     const now = new Date();
     const updated = await organization.db
@@ -291,20 +278,25 @@ export function schedulerRoutes(): Hono<IAuthVars> {
   return routes;
 }
 
-function readCreateRequest(body: Record<string, unknown>): IScheduleFields {
-  const ttl = body.ttlSeconds;
+function readTtlSeconds(value: unknown): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_TTL_SECONDS;
+  }
   if (
-    ttl !== undefined &&
-    ttl !== null &&
-    (typeof ttl !== "number" ||
-      !Number.isInteger(ttl) ||
-      ttl < MIN_TTL_SECONDS ||
-      ttl > MAX_TTL_SECONDS)
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < MIN_TTL_SECONDS ||
+    value > MAX_TTL_SECONDS
   ) {
     throw new BadRequestException(
       `The freshness window must be between ${MIN_TTL_SECONDS} and ${MAX_TTL_SECONDS} seconds`,
     );
   }
+  return value;
+}
+
+function readCreateRequest(body: Record<string, unknown>): IScheduleFields {
+  const ttlSeconds = readTtlSeconds(body.ttlSeconds);
 
   return {
     savedQueryId: readString(body, "savedQueryId", "Pick the query to schedule", 64),
@@ -313,7 +305,7 @@ function readCreateRequest(body: Record<string, unknown>): IScheduleFields {
     timezone:
       readOptionalString(body, "timezone", "Pick a timezone", MAX_TIMEZONE) ??
       DEFAULT_TIMEZONE,
-    ttlSeconds: typeof ttl === "number" ? ttl : DEFAULT_TTL_SECONDS,
+    ttlSeconds,
   };
 }
 

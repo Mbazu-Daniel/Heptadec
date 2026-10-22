@@ -49,10 +49,6 @@ export interface ICreateDashboardRequest {
   dataSourceIds: string[];
 }
 
-export interface IUpdateDashboardRequest {
-  name?: string;
-  dataSourceIds?: string[];
-}
 
 export interface IGenerateDashboardRequest {
   name: string;
@@ -62,6 +58,7 @@ export interface IGenerateDashboardRequest {
 
 export interface IUpdateDashboardRequest {
   name?: string;
+  dataSourceIds?: string[];
 }
 
 export interface ICreateWidgetRequest {

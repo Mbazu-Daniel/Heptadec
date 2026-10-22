@@ -40,6 +40,13 @@ export interface IAuthVars {
 const { member } = schema;
 
 export const requireSession = createMiddleware<IAuthVars>(async (c, next) => {
+  // The Subscription Gate reads the session before the route does, so the
+  // session and the membership are resolved once per request rather than once
+  // per layer that asks for them.
+  if (c.get("session") !== undefined) {
+    await next();
+    return;
+  }
   const db = c.get("db");
   const session = await authFor(db).api.getSession({ headers: c.req.raw.headers });
   c.set("session", session);

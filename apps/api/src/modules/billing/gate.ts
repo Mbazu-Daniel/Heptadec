@@ -7,6 +7,14 @@ import {
 import { billingConfigured } from "./catalog";
 import { requireEntitlement } from "./entitlement";
 
+/**
+ * Holds a module's routes behind the entitlement check.
+ *
+ * The module has to be built before it is passed here: the gate takes the
+ * routes it finds on it, so a route registered afterwards is not gated. Every
+ * route is taken, whichever way it was registered, so a module that serves one
+ * route for everybody still gets it behind the entitlement.
+ */
 export function subscribed(product: Hono<IAuthVars>): Hono<IAuthVars> {
   const gated = new Hono<IAuthVars>();
   for (const path of routePaths(product)) {
@@ -19,9 +27,7 @@ export function subscribed(product: Hono<IAuthVars>): Hono<IAuthVars> {
 function routePaths(product: Hono<IAuthVars>): string[] {
   const paths = new Set<string>();
   for (const route of product.routes) {
-    if (route.method !== "ALL") {
-      paths.add(route.path);
-    }
+    paths.add(route.path);
   }
   return [...paths];
 }

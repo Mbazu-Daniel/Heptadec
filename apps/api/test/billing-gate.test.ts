@@ -54,13 +54,17 @@ async function spendTrial(organizationId: string): Promise<void> {
     .where(eq(organization.id, organizationId));
 }
 
-async function subscribe(organizationId: string, status: string): Promise<void> {
+async function subscribe(
+  organizationId: string,
+  status: string,
+  productId = "prod_test_monthly",
+): Promise<void> {
   const now = new Date();
   await db.insert(billingSubscription).values({
     organizationId,
     customerId: "cust_gate",
     subscriptionId: "sub_gate",
-    productId: "prod_test_monthly",
+    productId,
     status,
     currentPeriodEnd: new Date(now.getTime() + 30 * DAY_MS),
     cancelAtPeriodEnd: false,
@@ -119,6 +123,17 @@ it("refuses an organization whose subscription was cancelled", async () => {
   await subscribe(organizationId, "canceled");
 
   const res = await createSource(cookie, "Cancelled source");
+
+  expect(res.status).toBe(402);
+  expect(await sourcesOf(organizationId)).toHaveLength(0);
+});
+
+it("refuses an organization subscribed to a product of its own", async () => {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  await spendTrial(organizationId);
+  await subscribe(organizationId, "active", "prod_somebody_elses");
+
+  const res = await createSource(cookie, "Someone else's source");
 
   expect(res.status).toBe(402);
   expect(await sourcesOf(organizationId)).toHaveLength(0);

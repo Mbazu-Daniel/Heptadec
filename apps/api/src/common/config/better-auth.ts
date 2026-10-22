@@ -45,6 +45,7 @@ export function authFor(db: HeptadecDatabase): HeptadecAuth {
 }
 
 function buildAuth(db: HeptadecDatabase) {
+  const cookieHost = new URL(config.betterAuthUrl).hostname;
   return betterAuth({
     appName: "Heptadec",
     baseURL: config.betterAuthUrl,
@@ -157,9 +158,13 @@ function buildAuth(db: HeptadecDatabase) {
       database: {
         generateId: () => crypto.randomUUID(),
       },
+      // A cookie scoped to "localhost" is dropped by the browser on any other
+      // host, so a deployed origin keeps the cookie to itself. Only the local
+      // development origins share it, where the web app and the API answer on
+      // different ports.
       crossSubDomainCookies: {
-        enabled: true,
-        domain: "localhost",
+        enabled: cookieHost.endsWith("localhost"),
+        domain: cookieHost.endsWith("localhost") ? cookieHost : undefined,
       },
     },
   });

@@ -46,13 +46,18 @@ import type {
   ICreateMcpTokenResponse,
   IMcpTokenListResponse,
 } from "@heptadec/api/mcp-contracts";
-import type {
-  ICreateAiProviderRequest,
-  ICreateAiProviderResponse,
-  IAiProviderListResponse,
-  IGenerateQueryResponse,
-  IListModelsResponse,
-  IListProviderModelsRequest,
+import {
+  ANSWER_EVENTS,
+  type IAnswerDelta,
+  type IAnswerProblem,
+  type IAnswerSkipped,
+  type IAnswerStatus,
+  type ICreateAiProviderRequest,
+  type ICreateAiProviderResponse,
+  type IAiProviderListResponse,
+  type IGenerateQueryResponse,
+  type IListModelsResponse,
+  type IListProviderModelsRequest,
 } from "@heptadec/api/ai-contracts";
 import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
 import type {
@@ -340,17 +345,16 @@ async function streamRequest<T>(
       const frame = buffer.slice(0, split);
       buffer = buffer.slice(split + 2);
       const event = readEvent(frame);
-      if (event?.name === "status") {
-        handlers.onStatus?.(readMessage(event.data));
-      } else if (event?.name === "delta") {
-        handlers.onDelta?.(readMessage(event.data));
-      } else if (event?.name === "skipped") {
-        const payload = JSON.parse(event.data) as { titles?: string[] };
-        handlers.onSkipped?.(payload.titles ?? []);
-      } else if (event?.name === "problem") {
-        handlers.onProblem?.(readMessage(event.data));
-      } else if (event?.name === "done") {
-        finished = JSON.parse(event.data) as T;
+      if (event?.name === ANSWER_EVENTS.status) {
+        handlers.onStatus?.(readPayload<IAnswerStatus>(event.data).message);
+      } else if (event?.name === ANSWER_EVENTS.delta) {
+        handlers.onDelta?.(readPayload<IAnswerDelta>(event.data).text);
+      } else if (event?.name === ANSWER_EVENTS.skipped) {
+        handlers.onSkipped?.(readPayload<IAnswerSkipped>(event.data).titles);
+      } else if (event?.name === ANSWER_EVENTS.problem) {
+        handlers.onProblem?.(readPayload<IAnswerProblem>(event.data).message);
+      } else if (event?.name === ANSWER_EVENTS.done) {
+        finished = readPayload<T>(event.data);
       }
       split = buffer.indexOf("\n\n");
     }
@@ -396,9 +400,8 @@ function readEvent(
   return data.length === 0 ? null : { name, data: data.join("\n") };
 }
 
-function readMessage(data: string): string {
-  const payload = JSON.parse(data) as { message?: string; text?: string };
-  return payload.message ?? payload.text ?? "";
+function readPayload<T>(data: string): T {
+  return JSON.parse(data) as T;
 }
 
 export function listMcpTokens(): Promise<IMcpTokenListResponse> {

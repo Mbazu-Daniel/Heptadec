@@ -27,6 +27,7 @@ serve(
         R2_CUSTOM_DOMAIN: r2.customDomain,
         R2_ACCESS_KEY_ID: r2.accessKeyId,
         R2_SECRET_ACCESS_KEY: r2.secretAccessKey,
+        R2_SESSION_TOKEN: r2.sessionToken,
       }),
     port: config.apiPort,
   },

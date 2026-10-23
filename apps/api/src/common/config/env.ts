@@ -12,6 +12,9 @@ export const config = {
     customDomain: process.env.R2_CUSTOM_DOMAIN ?? "",
     accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "",
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "",
+    // Node mode never binds an R2Bucket, so uploads sign directly against the
+    // S3 API, which takes a session token for temporary credentials.
+    sessionToken: process.env.R2_SESSION_TOKEN,
   },
   betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:8787",
   bachs: {

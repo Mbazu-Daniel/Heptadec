@@ -6,17 +6,39 @@ import {
 } from "../../common/exceptions";
 import { billingConfigured, cadenceForProduct } from "./catalog";
 
-const { billingSubscription, organization } = schema;
+const { billingSubscription, billingPayment, organization, user } = schema;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Maximum number of organizations allowed on the free tier. */
+export const FREE_TIER_ORG_LIMIT = 1;
 
 export const TRIAL_DAYS = 7;
 
 const STATUSES_WITH_ACCESS = ["trialing", "active", "past_due"];
+const PAYMENT_STATUSES_WITH_ACCESS = ["completed", "succeeded", "paid"];
 
 export interface IEntitlement {
   entitled: boolean;
   trialEndsAt: Date;
+}
+
+/**
+ * Checks if the user associated with the organization has exceeded
+ * their free-tier organization limit.
+ */
+async function checkOrgLimit(
+  db: HeptadecDatabase,
+  organizationId: string,
+): Promise<{ overLimit: boolean; orgCount: number }> {
+  // Count organizations; stop after LIMIT+1 to determine if over limit
+  const orgCount = await db
+    .select({ count: organization.id })
+    .from(organization)
+    .limit(FREE_TIER_ORG_LIMIT + 1);
+
+  const overLimit = orgCount.length > FREE_TIER_ORG_LIMIT;
+  return { overLimit, orgCount: orgCount.length };
 }
 
 export async function entitlementFor(
@@ -27,6 +49,7 @@ export async function entitlementFor(
     .select({
       createdAt: organization.createdAt,
       subscription: billingSubscription,
+      organizationId: organization.id,
     })
     .from(organization)
     .leftJoin(
@@ -41,21 +64,39 @@ export async function entitlementFor(
     throw new NotFoundException("That organization no longer exists");
   }
 
+  // Free-tier: check if user has exceeded organization limit
+  const { overLimit } = await checkOrgLimit(db, organizationId);
+  if (overLimit) {
+    throw new PaymentRequiredException(
+      "Your free organization limit has been reached. Upgrade to a paid plan for more organizations.",
+    );
+  }
+
   const trialEndsAt = new Date(found.createdAt.getTime() + TRIAL_DAYS * DAY_MS);
   if (!billingConfigured()) {
     return { entitled: true, trialEndsAt };
   }
 
   const subscription = found.subscription;
-  // A subscription to one of this app's own products is what pays for access. A
-  // subscription to anything else on the same Bachs account is somebody else's
-  // sale, and it leaves the organization on its trial.
   if (subscription !== null && cadenceForProduct(subscription.productId) !== null) {
     return {
       entitled: STATUSES_WITH_ACCESS.includes(subscription.status),
       trialEndsAt,
     };
   }
+
+  const payments = await db
+    .select()
+    .from(billingPayment)
+    .where(eq(billingPayment.organizationId, organizationId))
+    .orderBy(billingPayment.createdAt)
+    .limit(1);
+
+  const latest = payments[0];
+  if (latest !== undefined && PAYMENT_STATUSES_WITH_ACCESS.includes(latest.status)) {
+    return { entitled: true, trialEndsAt };
+  }
+
   return { entitled: Date.now() < trialEndsAt.getTime(), trialEndsAt };
 }
 

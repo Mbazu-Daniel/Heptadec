@@ -5,9 +5,11 @@ import {
   type ReactNode,
 } from "react";
 import { IconTrash } from "@tabler/icons-react";
-import type {
-  IAlertDelivery,
-  IAlertRule,
+import {
+  ALERT_OPERATORS,
+  type AlertOperator,
+  type IAlertDelivery,
+  type IAlertRule,
 } from "@heptadec/api/alert-contracts";
 import type {
   IScheduledJob,
@@ -57,8 +59,6 @@ import {
   VIEW_CLASSNAME,
   Workspace,
 } from "./workspace";
-
-const OPERATORS = [">", ">=", "<", "<=", "="] as const;
 
 const FRESHNESS = [
   { value: 300, label: "5 minutes" },
@@ -852,7 +852,7 @@ function AlertDialog({
   const editing = rule !== null;
   const [name, setName] = useState(rule?.name ?? "");
   const [column, setColumn] = useState(rule?.column ?? "");
-  const [operator, setOperator] = useState<(typeof OPERATORS)[number]>(
+  const [operator, setOperator] = useState<AlertOperator>(
     rule?.operator ?? ">=",
   );
   const [threshold, setThreshold] = useState(
@@ -922,11 +922,11 @@ function AlertDialog({
                 id="alert-operator"
                 value={operator}
                 onChange={(event) =>
-                  setOperator(event.target.value as (typeof OPERATORS)[number])
+                  setOperator(event.target.value as AlertOperator)
                 }
                 className="h-9 rounded-md border border-input bg-background px-2 font-mono text-xs text-foreground"
               >
-                {OPERATORS.map((option) => (
+                {ALERT_OPERATORS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

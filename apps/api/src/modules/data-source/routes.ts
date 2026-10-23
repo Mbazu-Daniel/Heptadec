@@ -31,10 +31,7 @@ import {
 import {
   encryptSecret,
 } from "./secret";
-import {
-  recordAudit,
-  auditActor,
-} from "../audit";
+import { recordAudit } from "../audit";
 import {
   readConnection,
   readConnectionUpdate,
@@ -157,11 +154,8 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const body: ICreateDataSourceResponse = {
       dataSource: toIDataSource(rows[0]!),
     };
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "data_source.created",
       targetKind: "data_source",
       targetId: rows[0]!.id,
@@ -239,11 +233,8 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const body: IUpdateDataSourceResponse = {
       dataSource: toIDataSource(updated[0]!),
     };
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "data_source.updated",
       targetKind: "data_source",
       targetId: updated[0]!.id,
@@ -275,11 +266,8 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That data source does not exist");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "data_source.deleted",
       targetKind: "data_source",
       targetId: removed[0]!.id,

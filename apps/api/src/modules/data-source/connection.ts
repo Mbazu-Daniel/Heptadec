@@ -621,6 +621,22 @@ export function tcpAddress(connection: IStoredConnection): {
   return { host: connection.host, port: connection.port };
 }
 
+export function redisAddress(connection: IStoredConnection): string {
+  const { host, port } = tcpAddress(connection);
+  const username = connection.username;
+  const auth = connection.password
+    ? `${username ? encodeURIComponent(username) : ""}:${encodeURIComponent(connection.password)}@`
+    : username
+      ? `${encodeURIComponent(username)}@`
+      : "";
+  const scheme = connection.connectionMode === "tls" ? "rediss" : "redis";
+  const database =
+    connection.database === null || connection.database === ""
+      ? ""
+      : `/${encodeURIComponent(connection.database)}`;
+  return `${scheme}://${auth}${host}:${port}${database}`;
+}
+
 export function endpointAddress(connection: IStoredConnection): {
   url: string;
   token: string | null;

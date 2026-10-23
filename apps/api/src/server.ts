@@ -21,12 +21,13 @@ serve(
     fetch: (request: Request) =>
       app.fetch(request, {
         db,
-        R2BucketName: r2.bucketName,
+        R2_BUCKET_NAME: r2.bucketName,
         CLOUDFLARE_ACCOUNT_ID: r2.accountId,
-        R2PublicId: r2.publicId,
-        R2CustomDomain: r2.customDomain,
-        R2AccessKeyId: r2.accessKeyId,
-        R2SecretAccessKey: r2.secretAccessKey,
+        R2_PUBLIC_ID: r2.publicId,
+        R2_CUSTOM_DOMAIN: r2.customDomain,
+        R2_ACCESS_KEY_ID: r2.accessKeyId,
+        R2_SECRET_ACCESS_KEY: r2.secretAccessKey,
+        R2_SESSION_TOKEN: r2.sessionToken,
       }),
     port: config.apiPort,
   },

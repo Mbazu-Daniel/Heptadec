@@ -36,23 +36,29 @@ type IBindings = IAuthVars["Bindings"];
  * says so here rather than at the point of upload.
  */
 function signer(env: IBindings): Omit<IUploadTarget, "key" | "contentType"> | null {
-  const { R2BucketName, CLOUDFLARE_ACCOUNT_ID, R2AccessKeyId, R2SecretAccessKey, R2SessionToken } = env;
+  const {
+    R2_BUCKET_NAME,
+    CLOUDFLARE_ACCOUNT_ID,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    R2_SESSION_TOKEN,
+  } = env;
   // An unset variable arrives as "" from a .env file and as undefined from a
   // wrangler var, and both mean the same thing.
   if (
-    !R2BucketName ||
+    !R2_BUCKET_NAME ||
     !CLOUDFLARE_ACCOUNT_ID ||
-    !R2AccessKeyId ||
-    !R2SecretAccessKey
+    !R2_ACCESS_KEY_ID ||
+    !R2_SECRET_ACCESS_KEY
   ) {
     return null;
   }
   return {
-    bucket: R2BucketName,
+    bucket: R2_BUCKET_NAME,
     accountId: CLOUDFLARE_ACCOUNT_ID,
-    accessKeyId: R2AccessKeyId,
-    secretAccessKey: R2SecretAccessKey,
-    sessionToken: R2SessionToken,
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+    sessionToken: R2_SESSION_TOKEN,
   };
 }
 

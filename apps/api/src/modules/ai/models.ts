@@ -3,6 +3,7 @@ import { schema } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { logDriverFailure } from "../../common/driver-error";
 import { providerSpec } from "./catalog";
+import { baseUrlFor } from "./transport";
 
 const { aiProvider } = schema;
 
@@ -32,8 +33,8 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
   if (spec === null) {
     return { kind: "refused" };
   }
-  const baseUrl = spec.needsBaseUrl ? config.baseUrl : spec.baseUrl;
-  if (baseUrl === null || baseUrl === "") {
+  const baseUrl = baseUrlFor(spec, config.baseUrl);
+  if (baseUrl === null) {
     return { kind: "refused" };
   }
 

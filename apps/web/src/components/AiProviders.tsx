@@ -18,6 +18,7 @@ import { Button } from "./ui/button";
 import { Alert, EmptyState } from "./ui/feedback";
 import { FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
+import { Select } from "./ui/select";
 import {
   SMALL_BUTTON_CLASSNAME,
   TABLE_CELL_CLASSNAME,
@@ -27,9 +28,6 @@ import {
   VIEW_CLASSNAME,
   Workspace,
 } from "./workspace";
-
-const SELECT_CLASSNAME =
-  "h-7 rounded-md border border-input bg-background px-2 font-mono text-xs text-foreground";
 
 type Catalog = IAiProviderListResponse["catalog"];
 
@@ -241,19 +239,18 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <FieldGroup>
                 <FieldLabel htmlFor="ai-provider">Provider</FieldLabel>
-                <select
-                  id="ai-provider"
-                  className={SELECT_CLASSNAME}
-                  value={provider}
-                  onChange={(event) => chooseProvider(event.target.value)}
-                >
-                  <option value="">Choose a provider</option>
-                  {catalog.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  options={catalog.map((entry) => ({
+                    value: entry.id,
+                    label: entry.label,
+                  }))}
+                  value={provider === "" ? null : provider}
+                  onValueChange={(next) => {
+                    chooseProvider(next ?? "");
+                  }}
+                  placeholder="Choose a provider"
+                  clearable={false}
+                />
               </FieldGroup>
               <FieldGroup>
                 <FieldLabel htmlFor="ai-name">Name</FieldLabel>
@@ -267,18 +264,21 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
               <FieldGroup>
                 <FieldLabel htmlFor="ai-model">Model</FieldLabel>
                 {modelSource === "provider" && models !== null ? (
-                  <select
-                    id="ai-model"
-                    className={SELECT_CLASSNAME}
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                  >
-                    {models.map((entry) => (
-                      <option key={entry.id} value={entry.id}>
-                        {entry.label === null ? entry.id : `${entry.label} · ${entry.id}`}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    options={models.map((entry) => ({
+                      value: entry.id,
+                      label:
+                        entry.label === null
+                          ? entry.id
+                          : `${entry.label} · ${entry.id}`,
+                    }))}
+                    value={model === "" ? null : model}
+                    onValueChange={(next) => {
+                      setModel(next ?? "");
+                    }}
+                    placeholder="Choose a model"
+                    clearable={false}
+                  />
                 ) : (
                   <Input
                     id="ai-model"

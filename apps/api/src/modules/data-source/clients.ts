@@ -9,6 +9,7 @@ import {
 import {
   databaseName,
   endpointAddress,
+  redisAddress,
   tcpAddress,
   type IStoredConnection,
 } from "./connection";
@@ -153,20 +154,8 @@ export function clickhouseClient(connection: IStoredConnection, limit: number) {
 }
 
 export async function redisClient(connection: IStoredConnection) {
-  const { host, port } = tcpAddress(connection);
-  const username = connection.username;
-  const auth = connection.password
-    ? `${username ? encodeURIComponent(username) : ""}:${encodeURIComponent(connection.password)}@`
-    : username
-      ? `${encodeURIComponent(username)}@`
-      : "";
-  const scheme = connection.connectionMode === "tls" ? "rediss" : "redis";
-  const database =
-    connection.database === null || connection.database === ""
-      ? ""
-      : `/${encodeURIComponent(connection.database)}`;
   const client = createRedisClient({
-    url: `${scheme}://${auth}${host}:${port}${database}`,
+    url: redisAddress(connection),
     socket: { connectTimeout: STATEMENT_TIMEOUT_MS },
   });
   await client.connect();

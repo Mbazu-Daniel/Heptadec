@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
+import { ANSWER_EVENTS } from "../src/modules/ai/contracts";
 import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
@@ -467,6 +468,29 @@ it("refuses a provider that is not in the catalog", async () => {
   expect(res.status).toBe(400);
 });
 
+it("does not offer a provider the transport cannot speak", async () => {
+  const { cookie } = await ownerWithSource();
+  const res = await request("/api/ai/providers", { headers: { cookie } });
+  const body = (await res.json()) as {
+    catalog: Array<{ id: string }>;
+  };
+  expect(body.catalog.some((entry) => entry.id === "anthropic")).toBe(false);
+  expect(body.catalog.some((entry) => entry.id === "groq")).toBe(true);
+});
+
+it("refuses a provider the transport cannot speak, and writes nothing", async () => {
+  const { cookie, organizationId } = await ownerWithSource();
+  const res = await addProvider(cookie, {
+    name: "Anthropic",
+    provider: "anthropic",
+    model: "claude",
+    apiKey: "sk-x",
+  });
+  expect(res.status).toBe(400);
+  const rows = await db.select().from(aiProvider);
+  expect(mineOf(rows, organizationId)).toHaveLength(0);
+});
+
 it("offers Groq in the catalog as a ready choice", async () => {
   const { cookie } = await ownerWithSource();
   const res = await request("/api/ai/providers", { headers: { cookie } });
@@ -712,7 +736,7 @@ it("names the source that answered when several are in scope", async () => {
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).trim())
       .join("\n");
-    if (frame.includes("event: done") && data !== "") {
+    if (frame.includes(`event: ${ANSWER_EVENTS.done}`) && data !== "") {
       body = JSON.parse(data) as { dataSourceId: string; dataSourceName: string };
     }
   }
@@ -796,7 +820,7 @@ it("answers a redis question with a read-only command", async () => {
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trim())
         .join("\n");
-      if (frame.includes("event: done") && data !== "") {
+      if (frame.includes(`event: ${ANSWER_EVENTS.done}`) && data !== "") {
         body = JSON.parse(data) as typeof body;
       }
     }
@@ -869,7 +893,7 @@ it("answers a quickwit question with a search over one index", async () => {
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trim())
         .join("\n");
-      if (frame.includes("event: done") && data !== "") {
+      if (frame.includes(`event: ${ANSWER_EVENTS.done}`) && data !== "") {
         body = JSON.parse(data) as typeof body;
       }
     }

@@ -229,25 +229,60 @@ docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
 
 ### Cloudflare Workers
 
-One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. Provisioning and deploy are one idempotent command:
+One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. The origin comes from `PUBLIC_URL`, which names the address users open.
+
+Provisioning and deploy are one idempotent command:
 
 ```bash
 pnpm --filter @heptadec/api exec wrangler login
 pnpm deploy:cloudflare
 ```
 
-The script creates the D1 database when it is missing and records its id in `apps/api/wrangler.jsonc`, creates the R2 image bucket, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, builds the web app, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone. Set `CLOUDFLARE_ACCOUNT_ID` in `.env` if your login covers more than one account.
+The script creates the D1 database when it is missing and records its id in `.env`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
 
-#### From Cloudflare's build settings
+#### The Worker's configuration
 
-Deploying from the Cloudflare dashboard runs the same two steps as one command, with the working directory at the repository root:
+`apps/api/wrangler.jsonc` names this project's Cloudflare resources, so it is **not** committed: the repository is public, and a fork should not carry another account's database id. `apps/api/wrangler.jsonc.example` is the shape, and `pnpm config:worker` writes the real file from the environment:
 
-| Setting | Value |
+```bash
+pnpm config:worker
+```
+
+The values come from the environment — the gitignored `.env` on a laptop, repository secrets in CI:
+
+| Value | What it names |
 |---|---|
-| Build command | `pnpm run build` |
-| Deploy command | `pnpm db:migrate:d1 && pnpm deploy:worker` |
+| `CLOUDFLARE_ACCOUNT_ID` | The account to deploy into |
+| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
+| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
+| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
+| `PUBLIC_URL` | The address users open; it becomes the Worker's `BETTER_AUTH_URL` and `WEB_URL` |
+| `RESEND_FROM` | The sender address |
 
-`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory: `pnpm deploy:worker` builds the web app and deploys the Worker, and `pnpm db:migrate:d1` applies the migrations first, so the Worker is never rolled out ahead of the schema it reads. The build environment needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, which wrangler reads from the environment.
+`pnpm db:migrate:d1` and `pnpm deploy:worker` write the configuration first, so neither needs it to exist.
+
+#### From GitHub Actions
+
+CI deploys the Worker, and Cloudflare's own git integration is switched off so there is one path that deploys it. The `Worker` job runs on a push to `main` and does two things in order:
+
+```bash
+pnpm db:migrate:d1     # the schema lands first
+pnpm deploy:worker     # then the Worker that reads it
+```
+
+`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory.
+
+The job reads the same values from repository secrets, so the repository holds none of them:
+
+| Secret | What it is |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | An API token with Workers write and D1 edit |
+| `CLOUDFLARE_ACCOUNT_ID` | The account the Worker belongs to |
+| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
+| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
+| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
+| `PUBLIC_URL` | The address users open |
+| `RESEND_FROM` | The sender address |
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -262,14 +297,19 @@ Secrets never live in `wrangler.jsonc`:
 ```bash
 pnpm --filter @heptadec/api exec wrangler secret put BETTER_AUTH_SECRET
 pnpm --filter @heptadec/api exec wrangler secret put HEPTADEC_SECRET_KEY
+pnpm --filter @heptadec/api exec wrangler secret put R2_ACCESS_KEY_ID
+pnpm --filter @heptadec/api exec wrangler secret put R2_SECRET_ACCESS_KEY
+pnpm --filter @heptadec/api exec wrangler secret put RESEND_API_KEY
 ```
 
-`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in `wrangler.jsonc`; point both at the origin users open.
+`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in the rendered configuration; they come from `PUBLIC_URL`. `RESEND_API_KEY` is a secret rather than a var, so it is not readable in the dashboard.
+
+The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `wrangler r2 bucket cors set`.
 
 The manual equivalent, when you would rather drive wrangler yourself:
 
 ```bash
-pnpm --filter @heptadec/api exec wrangler d1 create heptadec
+pnpm config:worker
 pnpm db:migrate:d1
 pnpm deploy:worker
 ```
@@ -277,10 +317,71 @@ pnpm deploy:worker
 To develop against workerd with a local D1 database instead of Node:
 
 ```bash
+pnpm config:worker
 pnpm --filter @heptadec/api exec wrangler dev
 ```
 
 Two things do not run on Workers: SMTP alert channels, because there is no port 25 (use Resend or Cloudflare Email Sending), and local-file SQLite data sources, because there is no filesystem (point them at a `libsql://` URL). Both surface as a delivery or connection error rather than a silent skip.
+
+### Billing (Bachs)
+
+[Bachs](https://bachs.io) holds the products and collects the card details; this app stores only the state its webhooks report. Five values come from Bachs, and **all of them are needed** — with any one missing, billing reports itself unconfigured and the instance stays free.
+
+| Value | Where it goes | What it is |
+|---|---|---|
+| `BACHS_SECRET_KEY` | Worker secret | The API key from Bachs → Developers → API keys, `sk_live_…` |
+| `BACHS_WEBHOOK_SECRET` | Worker secret | The signing secret of the webhook endpoint, `whsec_…` |
+| `BACHS_PRODUCT_MONTHLY` | Worker var | The product billed monthly, `prod_…` |
+| `BACHS_PRODUCT_YEARLY` | Worker var | The product billed yearly, `prod_…` |
+| `BACHS_BASE_URL` | Worker var | `https://api.bachs.io` for live, `https://sandbox-api.bachs.io` for the sandbox |
+| `BACHS_CURRENCY` | Worker var | The currency the plans are priced in |
+| `BACHS_PRICE_MONTHLY` | Worker var | What the monthly plan costs, as a decimal string |
+| `BACHS_PRICE_YEARLY` | Worker var | What the yearly plan costs, as a decimal string |
+
+The two secrets are set on the Worker:
+
+```bash
+pnpm --filter @heptadec/api exec wrangler secret put BACHS_SECRET_KEY
+pnpm --filter @heptadec/api exec wrangler secret put BACHS_WEBHOOK_SECRET
+```
+
+The vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the same names among the repository secrets in CI.
+
+**Two products, because a product's cycle cannot be changed afterwards.** Create one per cycle, give each a price, and keep them in step with the amounts the app advertises. The app's prices are the environment's `BACHS_PRICE_MONTHLY` and `BACHS_PRICE_YEARLY`, and `pnpm deploy:cloudflare` reads both products back from Bachs and refuses to deploy when they disagree — a customer must never be charged something the app did not promise.
+
+**A subscription bills in the currency it was created with, and Bachs collects subscriptions in USD on a card.** A one-time checkout can be priced and collected in any supported currency — naira included — and a USD-priced one converts at the page into the customer's local currency, with a chooser. A *plan* is a subscription, so its price currency is USD and the customer's location does not change it. `NGN_SUBSCRIPTIONS_NOT_ENABLED` is what a naira-priced plan is refused with.
+
+**The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to the three subscription events:
+
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+
+The delivery carries the organization in `data.metadata.organization_id`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret.
+
+**The checkout opens as an overlay.** The web app loads Bachs's browser SDK and opens the hosted checkout in a modal over the page, so the customer never leaves the app and never sees card data on it. The checkout session is still created on the server, so the amount and currency are the server's to decide.
+
+**The fee preference decides who pays the processing fee.** Under "I pay fees" the customer pays the plan's price and the fee comes out of the balance; under "Customer pays fees" Bachs adds it on top, and a plan advertised as $5.00 is charged as $5.65. The app advertises the product's price, so the two have to agree.
+
+**A sandbox key against the live host is refused** rather than charged, so the base URL and the key have to be changed together.
+
+**Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already subscribed — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `dev` and `main`. What it does depends on the branch:
+
+| Event | Job | What runs |
+|---|---|---|
+| Pull request | `Checks` | Typecheck, web build, the integration suite against the test stack |
+| Push to `dev` | `Checks` | The same |
+| Push to `main` | `Checks`, then `Images` and `Worker` | The checks first; then the Docker images are pushed to `ghcr.io` and the Worker is migrated and deployed |
+
+`dev` is where work lands: open a pull request against `dev`, and it is checked there. `main` is the release: merging `dev` into `main` is what builds the images and deploys the Worker, so nothing reaches the running deployment without the checks passing first.
+
+The `Worker` job needs two repository secrets, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A pull request never sees them: the workflow triggers on `pull_request`, which gives a fork no access to secrets, and the deploy job runs only on a push to `main`.
+
+The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`.
 
 ## Environment Variables
 
@@ -298,6 +399,20 @@ Two things do not run on Workers: SMTP alert channels, because there is no port 
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for R2 and email dispatch | `your_account_id` |
 | `CLOUDFLARE_EMAIL_TOKEN` | API token for Cloudflare email sending | `your_cf_email_token` |
 | `CLOUDFLARE_EMAIL_FROM` | Sender address for Cloudflare email | `notifications@example.com` |
+| `R2_BUCKET_NAME` | Bucket holding logos and avatars | `heptadec-images` |
+| `R2_ACCESS_KEY_ID` | R2 access key that signs an upload | `your_r2_access_key_id` |
+| `R2_SECRET_ACCESS_KEY` | R2 secret key that signs an upload | `your_r2_secret_access_key` |
+| `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |
+| `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `your_bucket_id` |
+| `R2_CUSTOM_DOMAIN` | Custom domain for the bucket; it wins over the managed one | `images.example.com` |
+| `BACHS_SECRET_KEY` | Bachs API key | `sk_live_…` |
+| `BACHS_WEBHOOK_SECRET` | Signing secret of the Bachs webhook endpoint | `whsec_…` |
+| `BACHS_BASE_URL` | The Bachs host; live and sandbox differ | `https://api.bachs.io` |
+| `BACHS_PRODUCT_MONTHLY` | The product billed monthly | `prod_…` |
+| `BACHS_PRODUCT_YEARLY` | The product billed yearly | `prod_…` |
+| `BACHS_CURRENCY` | The currency the plans are priced in | `USD` |
+| `BACHS_PRICE_MONTHLY` | What the monthly plan costs | `5.00` |
+| `BACHS_PRICE_YEARLY` | What the yearly plan costs | `50.00` |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | `your_github_client_id` |
@@ -1407,7 +1522,7 @@ git checkout -b feature/your-feature-name
 pnpm typecheck
 pnpm test
 ```
-4. Commit your changes and submit a pull request.
+4. Commit your changes and open a pull request against `dev`.
 
 ## Author
 

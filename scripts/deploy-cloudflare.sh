@@ -6,50 +6,74 @@
 #
 #   pnpm deploy:cloudflare
 #
-# Configuration comes from environment variables, all optional:
-#   HEPTADEC_D1_NAME        D1 database name          (default: heptadec)
-#   HEPTADEC_IMAGE_BUCKET   R2 bucket for logos/avatars (default: heptadec-images)
+# The deployment's own values come from the environment: the gitignored .env on
+# a laptop, repository secrets in CI.
+#   CLOUDFLARE_ACCOUNT_ID   the account to deploy into
+#   CLOUDFLARE_D1_DATABASE_ID  the D1 database; created when it is missing
+#   R2_BUCKET_NAME          the bucket holding logos and avatars
+#   R2_PUBLIC_ID            the bucket's managed r2.dev domain
+#   PUBLIC_URL              the address users open
+#   RESEND_FROM             the sender address
 #   BETTER_AUTH_SECRET      set once, then reused forever
 #   HEPTADEC_SECRET_KEY     set once, then reused forever — losing it breaks
 #                           every stored data-source credential
-#   CLOUDFLARE_ACCOUNT_ID   the account to deploy into. Only needed when your
-#                           login covers more than one; read from .env if it is
-#                           not already in the environment.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-D1_NAME="${HEPTADEC_D1_NAME:-heptadec}"
-BUCKET_NAME="${HEPTADEC_IMAGE_BUCKET:-heptadec-images}"
-CONFIG="apps/api/wrangler.jsonc"
 WRANGLER=(pnpm --filter @heptadec/api exec wrangler)
-
-# The account is deployment-specific, so its id is never in the repo — but a
-# login covering more than one account makes wrangler refuse to guess, which
-# would turn the deploy back into a command with an environment prefix. Reading
-# the id from the gitignored .env keeps it one command. Only this key is read:
-# sourcing the file would hand .env's development secrets to the steps below,
-# which push secrets into the worker.
-if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] && [ -f .env ]; then
-  CLOUDFLARE_ACCOUNT_ID="$(sed -n 's/^CLOUDFLARE_ACCOUNT_ID=//p' .env | tail -n 1)"
-  CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID%\"}"
-  CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID#\"}"
-  if [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
-    echo "Deploying into the account in .env: $CLOUDFLARE_ACCOUNT_ID"
-    export CLOUDFLARE_ACCOUNT_ID
-  fi
-fi
 
 say() {
   printf '\n\033[1m%s\033[0m\n' "$1"
 }
 
 random_secret() {
-  node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'
+  node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'
 }
 
-say "1/7 Checking your Cloudflare login"
+# One key out of .env, so the values the deployment needs reach the steps
+# below without handing .env's other secrets to the ones that push secrets.
+read_env() {
+  [ -f .env ] || return 0
+  sed -n "s/^$1=//p" .env | tail -n 1 | sed 's/^"//; s/"$//'
+}
+
+export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-$(read_env CLOUDFLARE_ACCOUNT_ID)}"
+export CLOUDFLARE_D1_DATABASE_ID="${CLOUDFLARE_D1_DATABASE_ID:-$(read_env CLOUDFLARE_D1_DATABASE_ID)}"
+export R2_BUCKET_NAME="${R2_BUCKET_NAME:-$(read_env R2_BUCKET_NAME)}"
+export R2_PUBLIC_ID="${R2_PUBLIC_ID:-$(read_env R2_PUBLIC_ID)}"
+export PUBLIC_URL="${PUBLIC_URL:-$(read_env PUBLIC_URL)}"
+export RESEND_FROM="${RESEND_FROM:-$(read_env RESEND_FROM)}"
+export BACHS_BASE_URL="${BACHS_BASE_URL:-$(read_env BACHS_BASE_URL)}"
+export BACHS_SECRET_KEY="${BACHS_SECRET_KEY:-$(read_env BACHS_SECRET_KEY)}"
+export BACHS_CURRENCY="${BACHS_CURRENCY:-$(read_env BACHS_CURRENCY)}"
+export BACHS_PRODUCT_MONTHLY="${BACHS_PRODUCT_MONTHLY:-$(read_env BACHS_PRODUCT_MONTHLY)}"
+export BACHS_PRODUCT_YEARLY="${BACHS_PRODUCT_YEARLY:-$(read_env BACHS_PRODUCT_YEARLY)}"
+export BACHS_PRICE_MONTHLY="${BACHS_PRICE_MONTHLY:-$(read_env BACHS_PRICE_MONTHLY)}"
+export BACHS_PRICE_YEARLY="${BACHS_PRICE_YEARLY:-$(read_env BACHS_PRICE_YEARLY)}"
+
+if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+  echo "CLOUDFLARE_ACCOUNT_ID is not set. Put it in .env or in the environment."
+  exit 1
+fi
+
+# A value the deployment has to keep between runs is written back to .env, so
+# the next run starts from it rather than from a fresh account.
+remember() {
+  local name="$1"
+  local value="$2"
+  if [ ! -f .env ]; then
+    return
+  fi
+  if grep -q "^$name=" .env; then
+    sed -i "s|^$name=.*|$name=$value|" .env
+  else
+    printf '\n%s=%s\n' "$name" "$value" >>.env
+  fi
+}
+
+say "1/8 Checking your Cloudflare login"
 if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   echo "Not logged in yet. Run this once, then re-run the deploy:"
   echo
@@ -58,74 +82,76 @@ if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-# Wrangler refuses to choose between several accounts, and it only says so at
-# the first step that touches one — which is well past the build. Check now, so
-# the failure is the first thing you see rather than the fifth.
-if ! "${WRANGLER[@]}" d1 list >/dev/null 2>&1; then
-  echo "Your Cloudflare login covers more than one account, and wrangler will"
-  echo "not pick one for you. Re-run the deploy with the account you want:"
-  echo
-  echo "    CLOUDFLARE_ACCOUNT_ID=<your account id> pnpm deploy:cloudflare"
-  echo
-  echo "or put CLOUDFLARE_ACCOUNT_ID=<your account id> in .env (gitignored),"
-  echo "and this command will pick it up on its own:"
-  echo
-  echo "    pnpm deploy:cloudflare"
-  echo
-  exit 1
-fi
-
-say "2/7 Building the web app"
-pnpm --filter @heptadec/web build
-
-say "3/7 Ensuring the D1 database exists"
-
-# The recorded id belongs to whoever created it, so a fresh account has to make
-# its own database and take the new id down. Creating is the only way to tell
-# the two apart: wrangler refuses an existing name and prints nothing usable.
-write_database_id() {
-  node -e '
-    const fs = require("fs");
-    const [file, id] = process.argv.slice(1);
-    const source = fs.readFileSync(file, "utf8");
-    const written = /"database_id"\s*:/.test(source)
-      ? source.replace(/"database_id"\s*:\s*"[^"]*"/, `"database_id": "${id}"`)
-      : source.replace(/("[ \t]*"database_name"[ \t]*:[^\n]*,)/, `$1\n      "database_id": "${id}",`);
-    if (written === source) {
-      console.error("Could not write database_id into " + file);
-      process.exit(1);
-    }
-    fs.writeFileSync(file, written);
-  ' "$CONFIG" "$1"
-}
-
-recorded="$(grep -oE '"database_id":[[:space:]]*"[^"]+"' "$CONFIG" | head -1 | sed 's/.*"database_id":[[:space:]]*"\([^"]*\)".*/\1/')"
-if created="$("${WRANGLER[@]}" d1 create "$D1_NAME" </dev/null 2>&1)"; then
-  database_id="$(printf '%s' "$created" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1 || true)"
-  if [ -z "$database_id" ]; then
-    echo "Created the database but could not read its id. Add this to $CONFIG:"
+say "2/8 Ensuring the D1 database exists"
+if [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
+  created="$("${WRANGLER[@]}" d1 create heptadec </dev/null 2>&1)" || {
+    echo "Could not create the database. Create it and set CLOUDFLARE_D1_DATABASE_ID:"
+    echo
+    printf '%s\n' "$created"
+    exit 1
+  }
+  CLOUDFLARE_D1_DATABASE_ID="$(printf '%s' "$created" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)"
+  if [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
+    echo "Created the database but could not read its id. Set it yourself:"
     printf '%s\n' "$created"
     exit 1
   fi
-  write_database_id "$database_id"
-  echo "Created $D1_NAME and recorded its id in $CONFIG"
-elif [ -n "$recorded" ]; then
-  echo "Already exists, keeping the id recorded in $CONFIG: $recorded"
+  remember CLOUDFLARE_D1_DATABASE_ID "$CLOUDFLARE_D1_DATABASE_ID"
+  echo "Created heptadec and recorded its id in .env"
 else
-  echo "$D1_NAME already exists but $CONFIG records no id for it."
-  echo "Run this and paste the database_id into $CONFIG:"
-  echo "    ${WRANGLER[*]} d1 create $D1_NAME"
+  echo "Using the database in CLOUDFLARE_D1_DATABASE_ID"
+fi
+
+say "3/8 Ensuring the image bucket exists"
+if [ -z "$R2_BUCKET_NAME" ]; then
+  echo "R2_BUCKET_NAME is not set. Put the bucket's name in .env."
   exit 1
 fi
-
-say "4/7 Ensuring the image bucket exists"
-if "${WRANGLER[@]}" r2 bucket create "$BUCKET_NAME" >/dev/null 2>&1; then
-  echo "Created $BUCKET_NAME"
+if "${WRANGLER[@]}" r2 bucket create "$R2_BUCKET_NAME" >/dev/null 2>&1; then
+  echo "Created $R2_BUCKET_NAME"
 else
-  echo "Already exists: $BUCKET_NAME"
+  echo "Already exists: $R2_BUCKET_NAME"
 fi
 
-say "5/7 Setting secrets that are not already set"
+# The bucket is read from its public domain, so the domain is on and its id
+# is known. The id is the bucket's, which the domain's host name carries.
+domain="$("${WRANGLER[@]}" r2 bucket dev-url enable "$R2_BUCKET_NAME" 2>&1 | grep -oE 'pub-[a-f0-9]+' | head -1 || true)"
+if [ -n "$domain" ]; then
+  R2_PUBLIC_ID="${domain#pub-}"
+  remember R2_PUBLIC_ID "$R2_PUBLIC_ID"
+  export R2_PUBLIC_ID
+  echo "Reading images from https://$domain.r2.dev"
+fi
+
+# The browser PUTs an upload straight to the bucket, and the browser only lets
+# it when the bucket answers the preflight. A bucket with no CORS rule answers
+# "CORS not configured" and the upload fails in the browser, not in the API.
+say "4/8 Allowing the browser to upload to the bucket"
+if [ -n "$PUBLIC_URL" ]; then
+  cors_file="$(mktemp)"
+  cat >"$cors_file" <<JSON
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["$PUBLIC_URL"],
+        "methods": ["GET", "HEAD", "PUT"],
+        "headers": ["content-type"]
+      },
+      "exposeHeaders": ["etag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
+JSON
+  "${WRANGLER[@]}" r2 bucket cors set "$R2_BUCKET_NAME" --file "$cors_file" --force
+  rm -f "$cors_file"
+  echo "Uploads allowed from $PUBLIC_URL"
+else
+  echo "PUBLIC_URL is not set: uploads from a browser are blocked."
+fi
+
+say "5/8 Setting secrets that are not already set"
 ensure_secret() {
   local name="$1"
   local value="$2"
@@ -154,20 +180,11 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
-# Images are read from the bucket's public URL, which is a property of the bucket
-# and not of this deployment, so it is checked rather than configured here.
-public_id="$(grep -oE '"R2PublicId"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG" | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')"
-if [ -n "$public_id" ] && [ "$public_id" != "PASTE_YOUR_R2_PUBLIC_ID_HERE" ]; then
-  echo "Reading images from https://pub-$public_id.r2.dev"
-  echo "  if avatars 404, public access is off on the bucket:"
-  echo "      cf r2 buckets domains managed update $BUCKET_NAME --enabled true"
-else
-  echo "R2PublicId not set: images will be proxied through the API instead,"
-  echo "  which works but costs a request per image."
-fi
+say "6/8 Checking the advertised prices against Bachs"
+node scripts/check-bachs-prices.mjs
 
-say "6/7 Applying database migrations"
-"${WRANGLER[@]}" d1 migrations apply "$D1_NAME" --remote
+say "7/8 Applying database migrations"
+pnpm db:migrate:d1
 
-say "7/7 Deploying"
-"${WRANGLER[@]}" deploy
+say "8/8 Deploying"
+pnpm deploy:worker

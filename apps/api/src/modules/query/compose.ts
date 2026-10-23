@@ -1,5 +1,6 @@
 import { BadRequestException } from "../../common/exceptions";
 import type { SqlDialect } from "../data-source/contracts";
+import { quoteIdentifier } from "../data-source/sql-quoting";
 import type { IStoredConnection } from "../data-source/connection";
 import type { FilterOp, IQueryFilter, IQueryRefine, IQuerySort } from "./contracts";
 
@@ -18,23 +19,6 @@ const FILTER_OPS: Record<string, FilterOp> = {
   "is null": "is null",
   "is not null": "is not null",
 };
-
-export function dialectOf(kind: IStoredConnection["kind"]): SqlDialect | null {
-  switch (kind) {
-    case "postgres":
-      return "postgres";
-    case "mysql":
-    case "mariadb":
-      return "mysql";
-    case "clickhouse":
-      return "clickhouse";
-    case "sqlite":
-    case "libsql":
-      return "sqlite";
-    default:
-      return null;
-  }
-}
 
 export function readQueryRefine(body: Record<string, unknown>): IQueryRefine | null {
   const raw = body.refine;
@@ -118,13 +102,6 @@ export function composeStatement(
     statement += ` ORDER BY ${quoteIdentifier(dialect, sort.column)} ${sort.dir === "asc" ? "ASC" : "DESC"}`;
   }
   return `${statement} LIMIT 100`;
-}
-
-function quoteIdentifier(dialect: SqlDialect, name: string): string {
-  if (dialect === "mysql" || dialect === "clickhouse") {
-    return `\`${name.replace(/`/g, "``")}\``;
-  }
-  return `"${name.replace(/"/g, '""')}"`;
 }
 
 function castToText(dialect: SqlDialect, column: string): string {

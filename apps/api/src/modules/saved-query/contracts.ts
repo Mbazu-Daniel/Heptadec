@@ -39,3 +39,9 @@ export interface IQueryVersion {
 export interface IQueryVersionListResponse {
   versions: IQueryVersion[];
 }
+
+/** What an edit changes. A field left out keeps what the query had. */
+export interface ISavedQueryChange {
+  name?: string;
+  sql?: string;
+}

@@ -1,5 +1,6 @@
 import { d1Database } from "@heptadec/db";
 import { buildApp } from "./app";
+import type { IWorkerEnv } from "./common/config/deployment";
 import { runDueJobs } from "./modules/scheduler";
 
 const app = buildApp({ compressResponses: false });
@@ -15,22 +16,14 @@ function isWorkerPath(pathname: string): boolean {
   );
 }
 
-interface IWorkerEnv {
-  DB: D1Database;
-  ASSETS: Fetcher;
-  IMAGES?: R2Bucket;
-}
-
 export default {
   fetch: async (request: Request, env: IWorkerEnv): Promise<Response> => {
     const { pathname } = new URL(request.url);
+    const { ASSETS, DB, IMAGES, ...vars } = env;
     if (!isWorkerPath(pathname)) {
-      return env.ASSETS.fetch(request);
+      return ASSETS.fetch(request);
     }
-    return app.fetch(request, {
-      db: d1Database(env.DB),
-      images: env.IMAGES,
-    });
+    return app.fetch(request, { db: d1Database(DB), images: IMAGES, ...vars });
   },
   scheduled: async (_event: ScheduledController, env: IWorkerEnv): Promise<void> => {
     await runDueJobs(d1Database(env.DB), new Date());

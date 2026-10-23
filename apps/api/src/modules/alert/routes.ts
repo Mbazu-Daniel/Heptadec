@@ -16,7 +16,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import {
   isAlertOperator,
   type AlertOperator,
@@ -133,11 +133,8 @@ export function alertRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That alert rule could not be created");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "alert_rule.created",
       targetKind: "alert_rule",
       targetId: created.id,
@@ -206,11 +203,8 @@ export function alertRoutes(): Hono<IAuthVars> {
     if (edited === undefined) {
       throw new NotFoundException("That alert rule could not be changed");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "alert_rule.updated",
       targetKind: "alert_rule",
       targetId: edited.id,
@@ -254,11 +248,8 @@ export function alertRoutes(): Hono<IAuthVars> {
         ),
       );
     await organization.db.delete(alertRule).where(eq(alertRule.id, found.id));
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "alert_rule.deleted",
       targetKind: "alert_rule",
       targetId: found.id,

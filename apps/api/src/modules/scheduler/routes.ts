@@ -29,10 +29,7 @@ import {
 import {
   can,
 } from "../rbac/authorize";
-import {
-  recordAudit,
-  auditActor,
-} from "../audit";
+import { recordAudit } from "../audit";
 import {
   canBeSaved,
   engineOf,
@@ -155,11 +152,8 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule could not be created");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "scheduled_job.created",
       targetKind: "scheduled_job",
       targetId: created.id,
@@ -226,11 +220,8 @@ export function schedulerRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That schedule could not be changed");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "scheduled_job.updated",
       targetKind: "scheduled_job",
       targetId: edited.id,
@@ -262,11 +253,8 @@ export function schedulerRoutes(): Hono<IAuthVars> {
     if (removed.length === 0) {
       throw new NotFoundException("That schedule does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "scheduled_job.deleted",
       targetKind: "scheduled_job",
       targetId: removed[0]!.id,

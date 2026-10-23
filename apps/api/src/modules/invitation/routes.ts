@@ -15,7 +15,7 @@ import {
 import { isRole, type Role } from "../rbac/permissions";
 import { roleOf } from "../rbac/roles";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import type {
   IAcceptInvitationResponse,
   IInvitationListResponse,
@@ -116,11 +116,8 @@ export function invitationRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = await auditActor(c, row.organizationId);
-    await recordAudit(c.get("db"), {
+    await recordAudit(c, {
       organizationId: row.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "invitation.accepted",
       targetKind: "invitation",
       targetId: row.id,
@@ -193,11 +190,8 @@ export function invitationRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "invitation.cancelled",
       targetKind: "invitation",
       targetId: invitationId,

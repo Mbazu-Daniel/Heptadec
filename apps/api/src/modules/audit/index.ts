@@ -1,2 +1,2 @@
 export { auditRoutes } from "./routes";
-export { auditActor, recordAudit } from "./record";
+export { recordAudit, recordAuditFor } from "./record";

@@ -13,7 +13,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { deleteSavedQueryRows } from "../../common/ownership";
 import type {
   ICreateSavedQueryRequest,
@@ -124,11 +124,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       name: request.name,
       sql: request.sql,
     });
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.created",
       targetKind: "saved_query",
       targetId: created.id,
@@ -216,11 +213,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     };
 
     const row = await editSavedQuery(organization, existing.id, request);
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.updated",
       targetKind: "saved_query",
       targetId: row.id,
@@ -242,11 +236,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That saved query does not exist");
     }
     await deleteSavedQueryRows(organization, existing.id);
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.deleted",
       targetKind: "saved_query",
       targetId: existing.id,
@@ -328,11 +319,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.restored",
       targetKind: "saved_query",
       targetId: row.id,

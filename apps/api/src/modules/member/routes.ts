@@ -14,7 +14,7 @@ import { roleOf } from "../rbac/roles";
 import { avatarKeyPrefixFor } from "../images/contracts";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import type { IMemberProfileResponse, IMembersResponse } from "./contracts";
 
 const { member, user } = schema;
@@ -155,11 +155,8 @@ export function memberRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "member.role_updated",
       targetKind: "member",
       targetId: c.req.param("id"),
@@ -182,11 +179,8 @@ export function memberRoutes(): Hono<IAuthVars> {
       headers: c.req.raw.headers,
     });
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "member.removed",
       targetKind: "member",
       targetId: c.req.param("id"),

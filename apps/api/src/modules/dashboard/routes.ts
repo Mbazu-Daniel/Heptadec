@@ -16,7 +16,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { deleteDashboardRows } from "../../common/ownership";
 import { materializeResult } from "../query-result/cache";
 import { widgetData } from "./widget-data";
@@ -115,11 +115,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That dashboard could not be created");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "dashboard.created",
       targetKind: "dashboard",
       targetId: created.id,
@@ -180,11 +177,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That dashboard does not exist");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "dashboard.updated",
       targetKind: "dashboard",
       targetId: updated.id,
@@ -205,11 +199,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That dashboard does not exist");
     }
     await deleteDashboardRows(organization, found.id);
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "dashboard.deleted",
       targetKind: "dashboard",
       targetId: found.id,
@@ -267,11 +258,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That chart could not be created");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "widget.created",
       targetKind: "widget",
       targetId: created.id,
@@ -336,11 +324,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That chart does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "widget.updated",
       targetKind: "widget",
       targetId: row.id,
@@ -362,11 +347,8 @@ export function dashboardRoutes(): Hono<IAuthVars> {
     }
 
     await organization.db.delete(widget).where(eq(widget.id, found.id));
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "widget.deleted",
       targetKind: "widget",
       targetId: found.id,

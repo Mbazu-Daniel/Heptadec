@@ -24,7 +24,7 @@ import { driverFailure } from "../../common/driver-error";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import {
@@ -158,11 +158,8 @@ export function aiRoutes(): Hono<IAuthVars> {
       createdAt: row.createdAt.toISOString(),
     };
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "ai_provider.created",
       targetKind: "ai_provider",
       targetId: row.id,
@@ -196,11 +193,8 @@ export function aiRoutes(): Hono<IAuthVars> {
       await promoteAnother(organization);
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "ai_provider.deleted",
       targetKind: "ai_provider",
       targetId: found.id,

@@ -24,7 +24,7 @@ import { driverFailure } from "../../common/driver-error";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import {
@@ -34,6 +34,7 @@ import {
 import { canBeAsked, engineOf } from "../data-source/engines";
 import { introspectSchema } from "../schema/introspect";
 import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
+import { baseUrlFor, speaksProtocol } from "./transport";
 import { quickwitContext, redisContext, schemaContext } from "./context";
 import { readStatement, streamQuery } from "./generate";
 import {
@@ -91,7 +92,7 @@ export function aiRoutes(): Hono<IAuthVars> {
         isDefault: row.isDefault,
         createdAt: row.createdAt.toISOString(),
       })),
-      catalog: AI_PROVIDERS,
+      catalog: AI_PROVIDERS.filter(speaksProtocol),
     };
     return c.json(body);
   });
@@ -106,6 +107,11 @@ export function aiRoutes(): Hono<IAuthVars> {
     const spec = providerSpec(provider);
     if (spec === null) {
       throw new BadRequestException("That provider is not one we know");
+    }
+    if (!speaksProtocol(spec)) {
+      throw new BadRequestException(
+        `${spec.label} is not supported yet — its API does not speak the protocol this app speaks`,
+      );
     }
     const model = readString(payload, "model", "Name the model to use", MAX_MODEL);
     const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
@@ -152,11 +158,8 @@ export function aiRoutes(): Hono<IAuthVars> {
       createdAt: row.createdAt.toISOString(),
     };
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "ai_provider.created",
       targetKind: "ai_provider",
       targetId: row.id,
@@ -190,11 +193,8 @@ export function aiRoutes(): Hono<IAuthVars> {
       await promoteAnother(organization);
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "ai_provider.deleted",
       targetKind: "ai_provider",
       targetId: found.id,
@@ -231,6 +231,11 @@ export function aiRoutes(): Hono<IAuthVars> {
     const spec = providerSpec(provider);
     if (spec === null) {
       throw new BadRequestException("That provider is not one we know");
+    }
+    if (!speaksProtocol(spec)) {
+      throw new BadRequestException(
+        `${spec.label} is not supported yet — its API does not speak the protocol this app speaks`,
+      );
     }
     const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
     const config: IModelConfig = {
@@ -412,13 +417,13 @@ function providerBaseUrl(
   payload: Record<string, unknown>,
 ): string | null {
   if (!spec.needsBaseUrl) {
-    return spec.baseUrl === "" ? null : spec.baseUrl;
+    return baseUrlFor(spec, null);
   }
   const given = readString(payload, "baseUrl", "That provider needs a base URL", 200);
   if (!/^https?:\/\//.test(given)) {
     throw new BadRequestException("The base URL must start with http:// or https://");
   }
-  return given.replace(/\/+$/, "");
+  return baseUrlFor(spec, given);
 }
 
 async function modelsAnswer(

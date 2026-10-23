@@ -9,7 +9,7 @@ const CHART_SQL = /^\s*(select|with)\b/i;
 
 const WRITING_MONGO_STAGES = ["$out", "$merge"];
 
-const READ_ONLY_REDIS_COMMANDS = new Set([
+export const READ_ONLY_REDIS_COMMANDS = new Set([
   "exists", "keys", "scan", "type", "randomkey", "object", "dbsize", "ttl",
   "pttl", "command", "info",
   "get", "getrange", "strlen", "bitcount", "bitpos", "substr",
@@ -24,6 +24,15 @@ const READ_ONLY_REDIS_COMMANDS = new Set([
   "xlen", "xrange", "xrevrange", "xread", "xinfo", "xpending",
   "ping", "echo", "wait",
 ]);
+
+// The commands the model is told about. They are the read-only ones, minus the
+// two that block: a blocking read would hold the connection until the
+// statement times out.
+const BLOCKING_REDIS_COMMANDS = new Set(["xread", "wait"]);
+
+export const REDIS_COMMANDS_FOR_THE_MODEL = [...READ_ONLY_REDIS_COMMANDS]
+  .filter((name) => !BLOCKING_REDIS_COMMANDS.has(name))
+  .map((name) => name.toUpperCase());
 
 export function assertSqlReads(statement: string, purpose: ReadPurpose): void {
   const allowed = purpose === "draft-preview" ? CHART_SQL : RUN_SQL;

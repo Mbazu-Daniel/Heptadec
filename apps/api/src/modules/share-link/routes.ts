@@ -20,7 +20,7 @@ import {
 } from "../../common/session/current-organization";
 import { can } from "../rbac/authorize";
 import { entitlementFor } from "../billing/entitlement";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { materializeResult } from "../query-result/cache";
 import { widgetPoints } from "../dashboard/widget-data";
 import type { IQueryResponse } from "../query/contracts";
@@ -230,11 +230,8 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That share link could not be created");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "share_link.created",
       targetKind: "share_link",
       targetId: row.id,
@@ -275,11 +272,8 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That share link does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "share_link.refreshed",
       targetKind: "share_link",
       targetId: row.id,
@@ -300,11 +294,8 @@ export function shareLinkRoutes(): Hono<IAuthVars> {
     }
 
     await organization.db.delete(shareLink).where(eq(shareLink.id, found.id));
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "share_link.deleted",
       targetKind: "share_link",
       targetId: found.id,

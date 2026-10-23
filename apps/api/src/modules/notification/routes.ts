@@ -13,7 +13,7 @@ import {
 } from "../../common/session/current-organization";
 import { BadRequestException, NotFoundException } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import {
   isNotificationKind,
@@ -86,11 +86,8 @@ export function notificationRoutes(): Hono<IAuthVars> {
     if (created === undefined) {
       throw new NotFoundException("That channel could not be created");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "notification_channel.saved",
       targetKind: "notification_channel",
       targetId: created.id,
@@ -142,11 +139,8 @@ export function notificationRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That channel could not be saved");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "notification_channel.saved",
       targetKind: "notification_channel",
       targetId: row.id,
@@ -176,11 +170,8 @@ export function notificationRoutes(): Hono<IAuthVars> {
     if (removed.length === 0) {
       throw new NotFoundException("That channel does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "notification_channel.deleted",
       targetKind: "notification_channel",
       targetId: removed[0]!.id,

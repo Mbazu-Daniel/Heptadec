@@ -11,7 +11,7 @@ import { sendPasswordResetEmail } from "../../modules/auth/password-reset";
 import { ac, roles } from "../../modules/rbac/permissions";
 import { sendInvitationEmail } from "../../modules/invitation/mailer";
 import {
-  auditActorOf,
+  recordAuditFor,
   recordAudit,
 } from "../../modules/audit/record";
 import { nameFromEmail } from "../helpers/name";
@@ -45,6 +45,7 @@ export function authFor(db: HeptadecDatabase): HeptadecAuth {
 }
 
 function buildAuth(db: HeptadecDatabase) {
+  const cookieHost = new URL(config.betterAuthUrl).hostname;
   return betterAuth({
     appName: "Heptadec",
     baseURL: config.betterAuthUrl,
@@ -97,11 +98,8 @@ function buildAuth(db: HeptadecDatabase) {
         sendInvitationEmail,
         organizationHooks: {
           afterCreateOrganization: async ({ organization, user }) => {
-            const actor = auditActorOf(user);
-            await recordAudit(db, {
+            await recordAuditFor(user, db, {
               organizationId: organization.id,
-              actorId: actor.id,
-              actorLabel: actor.label,
               event: "organization.created",
               targetKind: "organization",
               targetId: organization.id,
@@ -112,11 +110,8 @@ function buildAuth(db: HeptadecDatabase) {
             if (organization === null || organization === undefined) {
               return;
             }
-            const actor = auditActorOf(user);
-            await recordAudit(db, {
+            await recordAuditFor(user, db, {
               organizationId: organization.id,
-              actorId: actor.id,
-              actorLabel: actor.label,
               event: "organization.updated",
               targetKind: "organization",
               targetId: organization.id,
@@ -124,11 +119,8 @@ function buildAuth(db: HeptadecDatabase) {
             });
           },
           afterCreateInvitation: async ({ invitation, inviter }) => {
-            const actor = auditActorOf(inviter);
-            await recordAudit(db, {
+            await recordAuditFor(inviter, db, {
               organizationId: invitation.organizationId,
-              actorId: actor.id,
-              actorLabel: actor.label,
               event: "invitation.created",
               targetKind: "invitation",
               targetId: invitation.id,
@@ -157,9 +149,13 @@ function buildAuth(db: HeptadecDatabase) {
       database: {
         generateId: () => crypto.randomUUID(),
       },
+      // A cookie scoped to "localhost" is dropped by the browser on any other
+      // host, so a deployed origin keeps the cookie to itself. Only the local
+      // development origins share it, where the web app and the API answer on
+      // different ports.
       crossSubDomainCookies: {
-        enabled: true,
-        domain: "localhost",
+        enabled: cookieHost.endsWith("localhost"),
+        domain: cookieHost.endsWith("localhost") ? cookieHost : undefined,
       },
     },
   });

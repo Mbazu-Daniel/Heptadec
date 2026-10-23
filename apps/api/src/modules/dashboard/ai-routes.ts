@@ -34,6 +34,7 @@ import { assertSqlReads } from "../query/read-policy";
 import type { IQueryResponse } from "../query/contracts";
 import { gridNumber } from "../query/contracts";
 import { cacheResult, cachedResult } from "../query-result/cache";
+import { createSavedQuery, editSavedQuery } from "../saved-query/edit";
 import { complete } from "../ai/generate";
 import { chosenProvider } from "../ai/provider";
 import { runTurn } from "../ai/turn";
@@ -62,7 +63,7 @@ import type {
   IWidget,
 } from "./contracts";
 
-const { dashboard, dashboardDataSource, dataSource, queryVersion, savedQuery, widget } =
+const { dashboard, dashboardDataSource, dataSource, savedQuery, widget } =
   schema;
 
 const MAX_NAME = 120;
@@ -514,21 +515,11 @@ async function persistChart(
 ): Promise<string> {
   const now = new Date();
 
-  const inserted = await organization.db
-    .insert(savedQuery)
-    .values({
-      organizationId: organization.organizationId,
-      dataSourceId: draft.sourceId,
-      name: draft.title,
-      sql: draft.sql,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  const query = inserted[0];
-  if (query === undefined) {
-    throw new BadRequestException("That chart's query could not be saved");
-  }
+  const query = await createSavedQuery(organization, {
+    dataSourceId: draft.sourceId,
+    name: draft.title,
+    sql: draft.sql,
+  });
   await cacheResult(organization.db, organization.organizationId, query.id, draft.grid);
 
   const placed = await organization.db
@@ -652,17 +643,7 @@ async function updateChart(
     analysed,
   );
 
-  await organization.db.insert(queryVersion).values({
-    organizationId: query.organizationId,
-    savedQueryId: query.id,
-    name: query.name,
-    sql: query.sql,
-    createdAt: now,
-  });
-  await organization.db
-    .update(savedQuery)
-    .set({ sql: draft.sql, updatedAt: now })
-    .where(eq(savedQuery.id, query.id));
+  await editSavedQuery(organization, query.id, { sql: draft.sql });
   await cacheResult(organization.db, organization.organizationId, query.id, draft.grid);
   await organization.db
     .update(widget)

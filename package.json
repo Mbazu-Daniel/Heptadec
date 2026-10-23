@@ -20,9 +20,10 @@
     "seed:test": "./scripts/seed-test.sh",
     "db:generate": "pnpm --filter @heptadec/db run generate",
     "db:migrate": "pnpm --filter @heptadec/db run migrate",
-    "db:migrate:d1": "pnpm --filter @heptadec/api run db:migrate:d1",
+    "config:worker": "node scripts/render-wrangler-config.mjs",
+    "db:migrate:d1": "pnpm run config:worker && pnpm --filter @heptadec/api run db:migrate:d1",
     "deploy:cloudflare": "./scripts/deploy-cloudflare.sh",
-    "deploy:worker": "pnpm --filter @heptadec/api run deploy:worker"
+    "deploy:worker": "pnpm run config:worker && pnpm --filter @heptadec/api run deploy:worker"
   },
   "devDependencies": {
     "wrangler": "^4.149.0"

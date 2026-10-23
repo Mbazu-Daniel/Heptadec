@@ -4,7 +4,7 @@ import {
   NotFoundException,
   PaymentRequiredException,
 } from "../../common/exceptions";
-import { billingConfigured } from "./catalog";
+import { billingConfigured, cadenceForProduct } from "./catalog";
 
 const { billingSubscription, organization } = schema;
 
@@ -47,7 +47,10 @@ export async function entitlementFor(
   }
 
   const subscription = found.subscription;
-  if (subscription !== null) {
+  // A subscription to one of this app's own products is what pays for access. A
+  // subscription to anything else on the same Bachs account is somebody else's
+  // sale, and it leaves the organization on its trial.
+  if (subscription !== null && cadenceForProduct(subscription.productId) !== null) {
     return {
       entitled: STATUSES_WITH_ACCESS.includes(subscription.status),
       trialEndsAt,

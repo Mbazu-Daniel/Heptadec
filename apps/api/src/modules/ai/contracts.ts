@@ -1,5 +1,6 @@
 import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
 import type { QueryLanguage } from "../data-source/contracts";
+import type { IAiProviderSpec } from "./catalog";
 
 export interface IAiProvider {
   id: string;
@@ -14,13 +15,7 @@ export interface IAiProvider {
 
 export interface IAiProviderListResponse {
   providers: IAiProvider[];
-  catalog: Array<{
-    id: string;
-    label: string;
-    baseUrl: string;
-    needsBaseUrl: boolean;
-    exampleBaseUrl?: string;
-  }>;
+  catalog: IAiProviderSpec[];
 }
 
 export interface IAiModel {
@@ -85,4 +80,36 @@ export interface IGenerateQueryResponse {
   providerName: string;
   model: string;
   durationMs: number;
+}
+
+/**
+ * The Answer's stream: the phases it goes through, in the order they arrive.
+ *
+ * The server writes these names and the web client reads them back, so they
+ * live here — the one place the two sides agree on.
+ */
+export const ANSWER_EVENTS = {
+  status: "status",
+  delta: "delta",
+  skipped: "skipped",
+  problem: "problem",
+  done: "done",
+} as const;
+
+export type AnswerEvent = (typeof ANSWER_EVENTS)[keyof typeof ANSWER_EVENTS];
+
+export interface IAnswerStatus {
+  message: string;
+}
+
+export interface IAnswerDelta {
+  text: string;
+}
+
+export interface IAnswerSkipped {
+  titles: string[];
+}
+
+export interface IAnswerProblem {
+  message: string;
 }

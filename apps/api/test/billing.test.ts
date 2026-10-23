@@ -208,7 +208,7 @@ describe("Bachs subscription webhooks", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       configured: boolean;
-      plans: Array<{ cadence: string; amount: string }>;
+      plans: Array<{ cadence: string; amount: string; currency: string }>;
       subscription: {
         status: string;
         cadence: string | null;
@@ -216,9 +216,9 @@ describe("Bachs subscription webhooks", () => {
       } | null;
     };
     expect(body.configured).toBe(true);
-    expect(body.plans.map((plan) => [plan.cadence, plan.amount])).toEqual([
-      ["monthly", "5.00"],
-      ["yearly", "50.00"],
+    expect(body.plans.map((plan) => [plan.cadence, plan.amount, plan.currency])).toEqual([
+      ["monthly", "7500.00", "NGN"],
+      ["yearly", "75000.00", "NGN"],
     ]);
     expect(body.subscription?.status).toBe("past_due");
     expect(body.subscription?.cadence).toBe("monthly");

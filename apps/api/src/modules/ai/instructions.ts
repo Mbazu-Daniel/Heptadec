@@ -1,4 +1,5 @@
 import type { SqlDialect } from "../data-source/contracts";
+import { REDIS_COMMANDS_FOR_THE_MODEL } from "../query/read-policy";
 
 const DIALECTS: Record<SqlDialect, { engine: string; quote: string }> = {
   postgres: { engine: "PostgreSQL", quote: `double quotes ("name")` },
@@ -197,13 +198,7 @@ fence. For example: HGETALL event:42
   word UNANSWERABLE.
 
 ## Allowed commands
-SCAN, TYPE, GET, STRLEN, EXISTS, TTL, DBSIZE, KEYS, RANDOMKEY, INFO,
-HGET, HGETALL, HKEYS, HVALS, HLEN, HEXISTS, HSCAN, HSTRLEN, HRANDFIELD,
-LINDEX, LLEN, LRANGE, LPOS,
-SCARD, SDIFF, SINTER, SISMEMBER, SMEMBERS, SRANDMEMBER, SSCAN, SUNION,
-ZCARD, ZCOUNT, ZLEXCOUNT, ZRANGE, ZRANGEBYLEX, ZRANGEBYSCORE, ZRANK,
-ZREVRANGE, ZREVRANGEBYSCORE, ZREVRANK, ZREVRANGEBYLEX, ZSCAN, ZSCORE,
-XLEN, XRANGE, XREVRANGE, XINFO, XPENDING
+${REDIS_COMMANDS_FOR_THE_MODEL.join(", ")}
 
 ## Key space
 `;

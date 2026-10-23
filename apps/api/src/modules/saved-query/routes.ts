@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
 import { schema } from "@heptadec/db";
+import { createSavedQuery, editSavedQuery } from "./edit";
 import {
   requireSession,
   type IAuthVars,
@@ -12,7 +13,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { can } from "../rbac/authorize";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { deleteSavedQueryRows } from "../../common/ownership";
 import type {
   ICreateSavedQueryRequest,
@@ -118,28 +119,13 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       sql: readString(body, "sql", "Write the statement to save", MAX_SQL),
     };
 
-    const now = new Date();
-    const inserted = await organization.db
-      .insert(savedQuery)
-      .values({
-        organizationId: organization.organizationId,
-        dataSourceId: source.id,
-        name: request.name,
-        sql: request.sql,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    const created = inserted[0];
-    if (created === undefined) {
-      throw new NotFoundException("That saved query could not be created");
-    }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    const created = await createSavedQuery(organization, {
+      dataSourceId: source.id,
+      name: request.name,
+      sql: request.sql,
+    });
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.created",
       targetKind: "saved_query",
       targetId: created.id,
@@ -226,37 +212,9 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       sql: readOptionalString(body, "sql", "Write the statement to save", MAX_SQL),
     };
 
-    const nextName = request.name ?? existing.name;
-    const nextSql = request.sql ?? existing.sql;
-    if (nextName === existing.name && nextSql === existing.sql) {
-      const response: ISavedQueryResponse = { savedQuery: toISavedQuery(existing) };
-      return c.json(response);
-    }
-
-    const now = new Date();
-    await organization.db.insert(queryVersion).values({
-      organizationId: existing.organizationId,
-      savedQueryId: existing.id,
-      name: existing.name,
-      sql: existing.sql,
-      createdAt: now,
-    });
-
-    const updated = await organization.db
-      .update(savedQuery)
-      .set({ name: nextName, sql: nextSql, updatedAt: now })
-      .where(eq(savedQuery.id, existing.id))
-      .returning();
-
-    const row = updated[0];
-    if (row === undefined) {
-      throw new NotFoundException("That saved query does not exist");
-    }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    const row = await editSavedQuery(organization, existing.id, request);
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.updated",
       targetKind: "saved_query",
       targetId: row.id,
@@ -278,11 +236,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That saved query does not exist");
     }
     await deleteSavedQueryRows(organization, existing.id);
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.deleted",
       targetKind: "saved_query",
       targetId: existing.id,
@@ -364,11 +319,8 @@ export function savedQueryRoutes(): Hono<IAuthVars> {
     if (row === undefined) {
       throw new NotFoundException("That saved query does not exist");
     }
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "saved_query.restored",
       targetKind: "saved_query",
       targetId: row.id,

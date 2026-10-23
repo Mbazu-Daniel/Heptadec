@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { IAuthVars } from "../../common/middleware/require-session";
+import { ANSWER_EVENTS } from "./contracts";
 
 export interface ITurn {
   readonly startedAt: number;
@@ -33,11 +34,11 @@ export function runTurn(
 
     const turn: ITurn = {
       startedAt,
-      status: (message) => write("status", { message }),
-      delta: (text) => write("delta", { text }),
-      skipped: (titles) => write("skipped", { titles }),
-      problem: (message) => write("problem", { message }),
-      done: (payload) => write("done", payload),
+      status: (message) => write(ANSWER_EVENTS.status, { message }),
+      delta: (text) => write(ANSWER_EVENTS.delta, { text }),
+      skipped: (titles) => write(ANSWER_EVENTS.skipped, { titles }),
+      problem: (message) => write(ANSWER_EVENTS.problem, { message }),
+      done: (payload) => write(ANSWER_EVENTS.done, payload),
     };
 
     try {

@@ -14,7 +14,7 @@ import {
 } from "../../common/exceptions";
 import { readBody, readString } from "../../common/http/body";
 import { requireOwner } from "../rbac/owner";
-import { recordAudit, auditActor } from "../audit";
+import { recordAudit } from "../audit";
 import { authenticateMcpKey } from "./auth";
 import {
   MCP_CONFIG_ID,
@@ -90,11 +90,8 @@ export function mcpRoutes(): Hono<IAuthVars> {
       token: created.key,
     };
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "mcp_token.created",
       targetKind: "mcp_token",
       targetId: created.id,
@@ -139,11 +136,8 @@ export function mcpRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That MCP token does not exist");
     }
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "mcp_token.revoked",
       targetKind: "mcp_token",
       targetId: result.id,

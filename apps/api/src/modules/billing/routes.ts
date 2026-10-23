@@ -14,7 +14,7 @@ import {
   UnauthorizedException,
 } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
-import { auditActor, recordAudit } from "../audit";
+import { recordAudit } from "../audit";
 import { billingConfigured, billingPlans, cadenceForProduct, productIdFor } from "./catalog";
 import { createCheckoutSession } from "./client";
 import { entitlementFor } from "./entitlement";
@@ -81,11 +81,8 @@ export function billingRoutes(): Hono<IAuthVars> {
       organizationId: organization.organizationId,
     });
 
-    const actor = await auditActor(c);
-    await recordAudit(organization.db, {
+    await recordAudit(c, {
       organizationId: organization.organizationId,
-      actorId: actor.id,
-      actorLabel: actor.label,
       event: "billing.checkout_started",
       targetKind: "billing_subscription",
       targetLabel: cadence,

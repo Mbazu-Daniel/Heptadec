@@ -36,9 +36,9 @@ impl.html
 .agents/
 skills-lock.json
 
-# The real Cloudflare config holds a D1 database id and bucket name that belong
-# to whoever created them, so it is never committed. Copy the example and fill
-# it in for your own account.
+# The Worker's own configuration names this project's account and its D1
+# database, so it is written from the environment and never committed. The
+# template beside it is what the repository holds.
 apps/api/wrangler.jsonc
 
 # This machine moves the test stack onto ports another project is using. It is

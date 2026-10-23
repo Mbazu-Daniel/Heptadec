@@ -3,6 +3,7 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-10",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "__CLOUDFLARE_ACCOUNT_ID__",
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }
@@ -16,28 +17,31 @@
     {
       "binding": "DB",
       "database_name": "heptadec",
-      "database_id": "PASTE_YOUR_D1_DATABASE_ID_HERE",
+      "database_id": "__CLOUDFLARE_D1_DATABASE_ID__",
       "migrations_dir": "../../packages/db/drizzle"
     }
   ],
   "r2_buckets": [
     {
       "binding": "IMAGES",
-      "bucket_name": "heptadec-images"
+      "bucket_name": "__R2_BUCKET_NAME__"
     }
   ],
   "triggers": {
     "crons": ["* * * * *"]
   },
   "vars": {
-    "R2BucketName": "heptadec-images",
-    "R2PublicId": "PASTE_YOUR_R2_PUBLIC_ID_HERE",
-    "R2CustomDomain": "",
-    "CLOUDFLARE_ACCOUNT_ID": "PASTE_YOUR_CLOUDFLARE_ACCOUNT_ID_HERE",
-    "BETTER_AUTH_URL": "https://your-worker.your-subdomain.workers.dev",
-    "WEB_URL": "https://your-worker.your-subdomain.workers.dev",
-    "BACHS_BASE_URL": "https://api.bachs.io",
-    "BACHS_PRODUCT_MONTHLY": "",
-    "BACHS_PRODUCT_YEARLY": ""
+    "CLOUDFLARE_ACCOUNT_ID": "__CLOUDFLARE_ACCOUNT_ID__",
+    "R2_BUCKET_NAME": "__R2_BUCKET_NAME__",
+    "R2_PUBLIC_ID": "__R2_PUBLIC_ID__",
+    "BETTER_AUTH_URL": "__PUBLIC_URL__",
+    "WEB_URL": "__PUBLIC_URL__",
+    "RESEND_FROM": "__RESEND_FROM__",
+    "BACHS_BASE_URL": "__BACHS_BASE_URL__",
+    "BACHS_PRODUCT_MONTHLY": "__BACHS_PRODUCT_MONTHLY__",
+    "BACHS_PRODUCT_YEARLY": "__BACHS_PRODUCT_YEARLY__",
+    "BACHS_CURRENCY": "__BACHS_CURRENCY__",
+    "BACHS_PRICE_MONTHLY": "__BACHS_PRICE_MONTHLY__",
+    "BACHS_PRICE_YEARLY": "__BACHS_PRICE_YEARLY__"
   }
 }

@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  account,
+  user,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import {
   requireSession,
@@ -14,8 +18,6 @@ import {
   type ProviderId,
 } from "./contracts";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
-
-const { account, user } = schema;
 
 function enabledProviders(db: IAuthVars["Bindings"]["db"]): IProvider[] {
   const enabled = Object.keys(

@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  invitation,
+  organization,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import {
   requireSession,
@@ -21,8 +25,6 @@ import type {
   IInvitationListResponse,
   IInvitationPreviewResponse,
 } from "./contracts";
-
-const { invitation, organization } = schema;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

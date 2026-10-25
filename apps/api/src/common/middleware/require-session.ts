@@ -1,6 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { member, type HeptadecDatabase } from "@heptadec/db";
 import { authFor, type AuthSession } from "../config/better-auth";
 import { UnauthorizedException } from "../exceptions";
 import type { IDeploymentBindings } from "../config/deployment";
@@ -18,8 +18,6 @@ export interface IAuthVars {
   };
   Bindings: IDeploymentBindings;
 }
-
-const { member } = schema;
 
 export const requireSession = createMiddleware<IAuthVars>(async (c, next) => {
   // The Subscription Gate reads the session before the route does, so the

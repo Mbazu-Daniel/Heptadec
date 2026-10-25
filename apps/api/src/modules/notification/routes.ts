@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  notificationChannel,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import type { NotificationChannelRow } from "@heptadec/db";
 import {
   requireSession,
@@ -24,8 +27,6 @@ import {
   type INotificationConfig,
   type NotificationKind,
 } from "./contracts";
-
-const { notificationChannel } = schema;
 
 const MAX_NAME = 80;
 const MAX_VALUE = 2_048;

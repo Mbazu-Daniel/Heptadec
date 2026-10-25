@@ -6,7 +6,8 @@ import {
   eq,
 } from "drizzle-orm";
 import {
-  schema,
+  dataSource,
+  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,
@@ -58,8 +59,6 @@ import {
   type IUpdateDataSourceResponse,
 } from "./contracts";
 import type { DataSourceRow } from "@heptadec/db";
-
-const { dataSource } = schema;
 
 function toIDataSource(row: DataSourceRow): IDataSource {
   return {

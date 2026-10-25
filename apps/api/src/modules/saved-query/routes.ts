@@ -1,6 +1,11 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  dataSource,
+  queryVersion,
+  savedQuery,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { createSavedQuery, editSavedQuery } from "./edit";
 import {
   requireSession,
@@ -24,8 +29,6 @@ import type {
   ISavedQueryResponse,
   IUpdateSavedQueryRequest,
 } from "./contracts";
-
-const { dataSource, queryVersion, savedQuery } = schema;
 
 const MAX_NAME = 120;
 

@@ -1,5 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  alertRule,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import type { AlertRuleRow } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { materializeResult } from "../query-result/cache";
@@ -8,8 +11,6 @@ import { breachMessage, breaches } from "./contracts";
 import { deliverBreach } from "./deliver";
 import { gridNumber } from "../query/contracts";
 import type { IQueryResponse } from "../query/contracts";
-
-const { alertRule } = schema;
 
 /**
  * The whole of what a run does about alerts: make the run — the query's grid,

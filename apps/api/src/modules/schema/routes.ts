@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import { dataSource, type HeptadecDatabase } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -14,8 +14,6 @@ import { storedFromRow } from "../data-source/connection";
 import { can } from "../rbac/authorize";
 import { introspectSchema } from "./introspect";
 import type { ISchemaResponse } from "./contracts";
-
-const { dataSource } = schema;
 
 export function schemaRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();

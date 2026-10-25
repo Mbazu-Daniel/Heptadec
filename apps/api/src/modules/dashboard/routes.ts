@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  dashboard,
+  widget,
+  savedQuery,
+  dashboardDataSource,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -29,8 +35,6 @@ import {
   toWidget,
 } from "./detail";
 import type { ChartType, ICreateDashboardRequest } from "./contracts";
-
-const { dashboard, widget, savedQuery, dashboardDataSource } = schema;
 
 const MAX_NAME = 120;
 

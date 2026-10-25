@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { schema } from "@heptadec/db";
+import { dataSource, type HeptadecDatabase } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -17,8 +17,6 @@ import { savedConnection, storedFromRow } from "../data-source/connection";
 import { explainPostgresQuery } from "./postgres";
 import { runnerOf } from "./runners";
 import type { IExplainResponse } from "./contracts";
-
-const { dataSource } = schema;
 
 export function queryRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();

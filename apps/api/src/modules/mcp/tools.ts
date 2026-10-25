@@ -3,7 +3,8 @@ import {
 } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
-  schema,
+  dataSource,
+  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   oneRow,
@@ -28,8 +29,6 @@ import {
 } from "./capabilities";
 import { applyBudget, MAX_BYTES } from "../query/budget";
 import { assertSqlReads } from "../query/read-policy";
-
-const { dataSource } = schema;
 
 const MCP_MAX_ROWS = 1_000;
 

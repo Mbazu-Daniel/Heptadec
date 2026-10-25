@@ -1,6 +1,11 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  dashboard,
+  shareLink,
+  widget,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -32,8 +37,6 @@ import type {
   ISharedDashboard,
   ISharedDashboardResponse,
 } from "./contracts";
-
-const { dashboard, shareLink, widget } = schema;
 
 const MAX_EXPIRY_DAYS = 365;
 

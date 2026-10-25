@@ -1,11 +1,10 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import { scheduledJob, type HeptadecDatabase } from "@heptadec/db";
 import { organizationScope } from "../../common/session/current-organization";
 import { checkRunAlerts } from "../alert/evaluate";
 import { entitlementFor, type IEntitlement } from "../billing/entitlement";
+import { checkBillingReminders } from "../billing/reminder";
 import { nextRunAfter, parseCron } from "./cron";
-
-const { scheduledJob } = schema;
 
 const LEASE_MS = 5 * 60_000;
 
@@ -28,6 +27,8 @@ export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void>
     const entitlement = await entitlementFor(db, job.organizationId);
     await runOne(db, job, now, entitlement);
   }
+
+  await checkBillingReminders(db, now);
 }
 
 async function claim(db: HeptadecDatabase, job: IJob, now: Date): Promise<boolean> {

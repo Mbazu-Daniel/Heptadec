@@ -1,5 +1,14 @@
 import { BadRequestException } from "../../common/exceptions";
 
+/**
+ * One reader for a Bachs delivery. Subscription and payment events are two
+ * kind sets over the same envelope; the field readers below are that
+ * envelope's vocabulary, and this file is their only home. A delivery whose
+ * type this deployment does not handle reads as null, and other malformed
+ * deliveries are refused with the path that went missing, because the
+ * at-least-once stream must fail loudly rather than be guessed.
+ */
+
 export const SUBSCRIPTION_EVENT_TYPES = [
   "customer.subscription.created",
   "customer.subscription.updated",
@@ -45,9 +54,57 @@ export function readSubscriptionEvent(raw: string): ISubscriptionEvent | null {
 export function isSubscriptionEventType(
   value: unknown,
 ): value is SubscriptionEventType {
+  return isEventType(value, SUBSCRIPTION_EVENT_TYPES);
+}
+
+export const PAYMENT_EVENT_TYPES = [
+  "checkout.completed",
+  "payment.completed",
+  "collection.succeeded",
+] as const;
+
+export type PaymentEventType = (typeof PAYMENT_EVENT_TYPES)[number];
+
+export interface IPaymentEvent {
+  occurredAt: Date;
+  organizationId: string;
+  checkoutId: string;
+  customerId: string;
+  amount: string;
+  currency: string;
+  status: string;
+}
+
+export function readPaymentEvent(raw: string): IPaymentEvent | null {
+  const event = record(JSON.parse(raw), "the delivery");
+  if (!isPaymentEventType(event.type)) {
+    return null;
+  }
+  const data = record(event.data, "data");
+  const customer = record(data.customer, "data.customer");
+  const metadata = record(data.metadata, "data.metadata");
+  return {
+    occurredAt: moment(event.created_at, "created_at"),
+    organizationId: text(metadata.organization_id, "data.metadata.organization_id"),
+    checkoutId: text(data.checkout_id, "data.checkout_id"),
+    customerId: text(customer.customer_id, "data.customer.customer_id"),
+    amount: text(data.amount, "data.amount"),
+    currency: text(data.currency, "data.currency"),
+    status: text(data.status, "data.status"),
+  };
+}
+
+export function isPaymentEventType(value: unknown): value is PaymentEventType {
+  return isEventType(value, PAYMENT_EVENT_TYPES);
+}
+
+function isEventType<K extends string>(
+  value: unknown,
+  types: readonly K[],
+): value is K {
   return (
     typeof value === "string" &&
-    (SUBSCRIPTION_EVENT_TYPES as readonly string[]).includes(value)
+    (types as readonly string[]).includes(value)
   );
 }
 

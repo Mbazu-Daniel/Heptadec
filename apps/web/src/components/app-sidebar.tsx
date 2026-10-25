@@ -1,19 +1,10 @@
 import { useEffect, useState } from "react";
 import type { IMembership } from "@heptadec/api/organization-contracts";
 import {
-  IconChartBar,
-  IconClock,
-  IconCreditCard,
-  IconDatabase,
   IconDots,
-  IconHistory,
-  IconKey,
   IconLogout,
-  IconPlugConnected,
-  IconSend,
   IconSettings,
   IconUser,
-  IconUsers,
 } from "@tabler/icons-react";
 import { ThemeSwitch } from "./ui/theme-switch";
 import {
@@ -32,18 +23,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Avatar } from "./ui/feedback";
 import { OrgSwitcher } from "./OrgSwitcher";
-
-export type WorkspaceView =
-  | "sources"
-  | "dashboards"
-  | "monitoring"
-  | "notifications"
-  | "ai"
-  | "mcp"
-  | "team"
-  | "audit"
-  | "billing"
-  | "organization";
+import { WORKSPACE_SECTIONS, type WorkspaceView } from "./workspace-sections";
 
 interface IAppSidebarProps {
   view: WorkspaceView;
@@ -248,129 +228,25 @@ export function AppSidebar({
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "dashboards"}
-                  tooltip="Dashboards"
-                  onClick={() => onViewChange("dashboards")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconChartBar
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>Dashboards</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "sources"}
-                  tooltip="Data Sources"
-                  onClick={() => onViewChange("sources")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconDatabase
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>Data Sources</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "monitoring"}
-                  tooltip="Monitoring"
-                  onClick={() => onViewChange("monitoring")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconClock
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>Monitoring</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "notifications"}
-                  tooltip="Notification channels"
-                  onClick={() => onViewChange("notifications")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconSend
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>Notifications</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "ai"}
-                  tooltip="AI providers"
-                  onClick={() => onViewChange("ai")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconKey
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>AI providers</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "mcp"}
-                  tooltip="MCP"
-                  onClick={() => onViewChange("mcp")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconPlugConnected
-                    size={20}
-                    strokeWidth={1.5}
-                    className="shrink-0"
-                  />
-                  <span>MCP</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "team"}
-                  tooltip="Teams"
-                  onClick={() => onViewChange("team")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconUsers size={20} strokeWidth={1.5} className="shrink-0" />
-                  <span>Teams</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "audit"}
-                  tooltip="Audit log"
-                  onClick={() => onViewChange("audit")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconHistory size={20} strokeWidth={1.5} className="shrink-0" />
-                  <span>Audit log</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={view === "billing"}
-                  tooltip="Billing"
-                  onClick={() => onViewChange("billing")}
-                  className={NAV_ITEM_CLASSNAME}
-                >
-                  <IconCreditCard size={20} strokeWidth={1.5} className="shrink-0" />
-                  <span>Billing</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {WORKSPACE_SECTIONS.filter((section) => section.inMenu).map(
+                (section) => (
+                  <SidebarMenuItem key={section.view}>
+                    <SidebarMenuButton
+                      isActive={view === section.view}
+                      tooltip={section.label}
+                      onClick={() => onViewChange(section.view)}
+                      className={NAV_ITEM_CLASSNAME}
+                    >
+                      <section.icon
+                        size={20}
+                        strokeWidth={1.5}
+                        className="shrink-0"
+                      />
+                      <span>{section.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ),
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

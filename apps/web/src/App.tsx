@@ -370,6 +370,20 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
             />
           }
         />
+        <Route
+          path=":section"
+          element={
+            <Dashboard
+              me={me!}
+              memberships={orgs?.organizations ?? []}
+              onSwitchOrganization={onOpenOrganization}
+              onCreateOrganization={() => navigate("/organization?new=1")}
+              onOpenProfile={() => navigate("/profile")}
+              onOrganizationChanged={reload}
+              onSignOut={onSignOut}
+            />
+          }
+        />
         <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/invite/:id" element={<InviteRoute me={me} orgs={orgs} reload={reload} />} />

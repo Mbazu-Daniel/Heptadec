@@ -276,8 +276,8 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                 title="Nothing is being watched"
                 body={
                   queries.length === 0
-                    ? "Save a query first — a schedule keeps its result fresh, and an alert tells you when a column crosses a threshold."
-                    : "Pick a saved query and put it on a timer. Its result stays fresh, and you can add an alert to be told when a column crosses a threshold."
+                    ? "Save a query first."
+                    : "Pick a saved query and put it on a timer."
                 }
                 action={
                   // A query is written on the source it reads, so an empty
@@ -414,8 +414,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                   Not running
                                 </p>
                                 <p className="mt-1 text-[11px] text-muted-foreground">
-                                  Nothing checks this query yet — its alerts
-                                  cannot fire until it is on a timer.
+                                  Nothing checks this query yet.
                                 </p>
                               </div>
                               <Button
@@ -455,8 +454,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                             </div>
                             {entry.rules.length === 0 ? (
                               <p className="text-[11px] text-muted-foreground">
-                                None — add one to be told when this column
-                                crosses a threshold.
+                                None yet — add one.
                               </p>
                             ) : (
                               <ul className="grid gap-2">
@@ -484,7 +482,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                         <StatusPill tone={rule.scheduled ? "ok" : "warning"}>
                                           {rule.scheduled
                                             ? "Checks each scheduled run"
-                                            : "Not scheduled — its query has no timer"}
+                                            : "Not scheduled"}
                                         </StatusPill>
                                         {channelCount === null ? (
                                           <StatusPill tone="muted">
@@ -492,7 +490,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                           </StatusPill>
                                         ) : channelCount === 0 ? (
                                           <StatusPill tone="warning">
-                                            Not delivering — no channel connected
+                                            Not delivering
                                           </StatusPill>
                                         ) : (
                                           <StatusPill tone="muted">

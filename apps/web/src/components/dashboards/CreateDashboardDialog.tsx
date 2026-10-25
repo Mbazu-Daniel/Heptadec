@@ -211,14 +211,12 @@ export function CreateDashboardDialog({
         </label>
         {(providerCount ?? 0) === 0 && (
           <p className="text-xs text-muted-foreground">
-            Add an AI provider under AI providers to use this. You can still
-            create an empty dashboard and add charts by hand.
+            Add an AI provider to build it with AI; you can still create it empty.
           </p>
         )}
         {analysable === false && chosen.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            None of these can be described in full yet, so nothing on the dashboard can be
-            built by AI. It will be created with them connected.
+            These sources are not AI-ready yet; the dashboard starts empty.
           </p>
         )}
 

@@ -69,7 +69,7 @@ export function Dashboards({
             ) : dashboards.length === 0 ? (
               <EmptyState
                 title="No dashboards"
-                body="Create one, connect the data it should read from, and let AI plot the first charts."
+                body="Keep it empty, or build one with AI."
               />
             ) : (
               <table className={TABLE_CLASSNAME}>

@@ -186,8 +186,7 @@ export function PipelineRunner({
           className="mt-2 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
         />
         <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-          A JSON list of stages · ⌘/Ctrl + Enter runs it · clicking a collection
-          loads its first documents
+          A JSON list of stages · ⌘/Ctrl + Enter runs it
         </p>
       </div>
 
@@ -202,7 +201,7 @@ export function PipelineRunner({
         ) : result.rows.length === 0 ? (
           <EmptyState
             title="No documents"
-            body="That pipeline ran fine but returned nothing."
+            body="Ran fine — returned nothing."
           />
         ) : (
           <table className={TABLE_CLASSNAME} aria-label="Pipeline results">

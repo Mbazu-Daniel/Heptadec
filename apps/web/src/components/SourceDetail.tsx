@@ -307,8 +307,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
               className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
             />
             <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-              Read commands only — GET, SCAN, HGETALL, TTL, TYPE. A write is
-              refused before it is sent.
+              Read commands only — writes are refused.
             </p>
             {drafted ? (
               <Alert tone="success" className="mt-3">
@@ -424,7 +423,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
             ) : preview.rows.length === 0 ? (
               <EmptyState
                 title="No rows"
-                body="This object exists but returned nothing to show."
+                body="Nothing to show."
               />
             ) : (
               <ResultGrid grid={preview} label="Preview rows" />

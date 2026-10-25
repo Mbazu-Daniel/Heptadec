@@ -226,7 +226,6 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
             ) : visible.length === 0 ? (
               <EmptyState
                 title="Nobody matches"
-                body="No one matches the current search and role filter."
               />
             ) : (
               <table className={TABLE_CLASSNAME} aria-label="Members">

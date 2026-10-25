@@ -412,7 +412,7 @@ export function QueryRunner({
         {drafted ? (
           <div className="flex items-center gap-2">
             <Alert tone="success">
-              A statement is ready. It runs only when you add it.
+              Ready to add.
             </Alert>
             <Button
               onClick={addToQuery}
@@ -450,7 +450,7 @@ export function QueryRunner({
         ) : result.rows.length === 0 ? (
           <EmptyState
             title="No rows"
-            body="That statement ran fine but returned nothing."
+            body="Ran fine — returned nothing."
           />
         ) : (
           <table className={TABLE_CLASSNAME} aria-label="Query results">

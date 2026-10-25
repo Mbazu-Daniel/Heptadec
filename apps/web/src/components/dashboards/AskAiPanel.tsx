@@ -134,8 +134,7 @@ export function AskAiPanel({
         </div>
         {analysable.length === 0 && (
           <p className="text-xs text-muted-foreground">
-            Only Postgres sources can be analysed yet, so there is nothing for
-            the AI to read here.
+            Only Postgres sources can be analysed yet.
           </p>
         )}
 

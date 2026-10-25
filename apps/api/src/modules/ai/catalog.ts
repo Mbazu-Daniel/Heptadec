@@ -1,5 +1,34 @@
 import type { AiProtocol } from "./transport";
 
+import modelsApi from "./models-api.json";
+
+const DEFAULT_BASE_URLS: Record<string, string> = {
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  anthropic: "https://api.anthropic.com/v1",
+  google: "https://generativelanguage.googleapis.com/v1beta/openai",
+  deepseek: "https://api.deepseek.com/v1",
+  mistral: "https://api.mistral.ai/v1",
+  xai: "https://api.x.ai/v1",
+  cerebras: "https://api.cerebras.ai/v1",
+  togetherai: "https://api.together.xyz/v1",
+  together: "https://api.together.xyz/v1",
+  fireworks: "https://api.fireworks.ai/inference/v1",
+  ollama: "http://localhost:11434/v1",
+};
+
+interface IModelsDevProvider {
+  id: string;
+  name: string;
+  api?: string | null;
+  npm?: string | null;
+  models?: Record<string, unknown> | null;
+}
+
+function protocolFor(npm: string | null | undefined): AiProtocol | "anthropic" {
+  return npm === "@ai-sdk/anthropic" ? "anthropic" : "openai-compatible";
+}
+
 export interface IAiProviderSpec {
   id: string;
   label: string;
@@ -8,111 +37,36 @@ export interface IAiProviderSpec {
   exampleBaseUrl?: string;
   /** The wire protocol this provider speaks. */
   protocol: AiProtocol | "anthropic";
+  /** Static model ids sourced from Mastra, so the form can offer them without a key. */
+  models?: readonly string[];
 }
 
-export const AI_PROVIDERS: IAiProviderSpec[] = [
-  {
-    id: "groq",
-    label: "Groq",
-    baseUrl: "https://api.groq.com/openai/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    baseUrl: "https://api.openai.com/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    baseUrl: "https://api.anthropic.com/v1",
-    needsBaseUrl: false,
-    protocol: "anthropic",
-  },
-  {
-    id: "google",
-    label: "Google",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    baseUrl: "https://api.deepseek.com/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "mistral",
-    label: "Mistral",
-    baseUrl: "https://api.mistral.ai/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "xai",
-    label: "xAI",
-    baseUrl: "https://api.x.ai/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    baseUrl: "https://openrouter.ai/api/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "cerebras",
-    label: "Cerebras",
-    baseUrl: "https://api.cerebras.ai/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "together",
-    label: "Together AI",
-    baseUrl: "https://api.together.xyz/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "fireworks",
-    label: "Fireworks AI",
-    baseUrl: "https://api.fireworks.ai/inference/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "ollama",
-    label: "Ollama (local)",
-    baseUrl: "http://localhost:11434/v1",
-    needsBaseUrl: false,
-    protocol: "openai-compatible",
-  },
-  {
-    id: "cloudflare",
-    label: "Cloudflare AI Gateway",
-    baseUrl: "",
-    needsBaseUrl: true,
-    exampleBaseUrl:
-      "https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/openai",
-    protocol: "openai-compatible",
-  },
-  {
-    id: "openai-compatible",
-    label: "Any OpenAI-compatible endpoint",
-    baseUrl: "",
-    needsBaseUrl: true,
-    exampleBaseUrl: "https://your-gateway.example.com/v1",
-    protocol: "openai-compatible",
-  },
-];
+function toSpec(provider: IModelsDevProvider): IAiProviderSpec {
+  const baseUrl = provider.api ?? DEFAULT_BASE_URLS[provider.id] ?? "";
+  return {
+    id: provider.id,
+    label: provider.name || provider.id,
+    baseUrl,
+    needsBaseUrl: baseUrl === "",
+    protocol: protocolFor(provider.npm),
+    models: provider.models ? Object.keys(provider.models) : undefined,
+  };
+}
+
+export const AI_PROVIDERS: IAiProviderSpec[] = (
+  Object.values(modelsApi) as IModelsDevProvider[]
+)
+  .map(toSpec)
+  .concat([
+    {
+      id: "openai-compatible",
+      label: "Any OpenAI-compatible endpoint",
+      baseUrl: "",
+      needsBaseUrl: true,
+      exampleBaseUrl: "https://your-gateway.example.com/v1",
+      protocol: "openai-compatible",
+    },
+  ]);
 
 export function providerSpec(id: string): IAiProviderSpec | null {
   return AI_PROVIDERS.find((entry) => entry.id === id) ?? null;

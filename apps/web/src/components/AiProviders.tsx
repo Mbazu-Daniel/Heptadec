@@ -18,7 +18,7 @@ import { Button } from "./ui/button";
 import { Alert, EmptyState } from "./ui/feedback";
 import { FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
-import { Select } from "./ui/select";
+import { SearchableSelect } from "./ui/searchable-select";
 import {
   SMALL_BUTTON_CLASSNAME,
   TABLE_CELL_CLASSNAME,
@@ -147,6 +147,15 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setModelsNote(null);
     setModel("");
     const spec = catalog.find((entry) => entry.id === next);
+    console.log("chooseProvider", next, "models:", spec?.models?.length, spec);
+    if (spec?.models && spec.models.length > 0) {
+      const listed = spec.models.map((id) => ({ id, label: null }));
+      setModels(listed);
+      setModelSource("provider");
+      setModel(listed[0]?.id ?? "");
+      setModelsNote(`${listed.length} models (Mastra)`);
+      return;
+    }
     if (spec !== undefined && !spec.needsBaseUrl && apiKey.trim() !== "") {
       void loadDraftModels(next, "");
     }
@@ -212,7 +221,6 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
           <div className={VIEW_CLASSNAME}>
             <EmptyState
               title="Owners only"
-              body="AI providers are managed by an owner of this organization."
             />
           </div>
         }
@@ -238,21 +246,6 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
           <div className="grid gap-3 border-b border-border px-6 pb-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <FieldGroup>
-                <FieldLabel htmlFor="ai-provider">Provider</FieldLabel>
-                <Select
-                  options={catalog.map((entry) => ({
-                    value: entry.id,
-                    label: entry.label,
-                  }))}
-                  value={provider === "" ? null : provider}
-                  onValueChange={(next) => {
-                    chooseProvider(next ?? "");
-                  }}
-                  placeholder="Choose a provider"
-                  clearable={false}
-                />
-              </FieldGroup>
-              <FieldGroup>
                 <FieldLabel htmlFor="ai-name">Name</FieldLabel>
                 <Input
                   id="ai-name"
@@ -262,22 +255,28 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                 />
               </FieldGroup>
               <FieldGroup>
+                <FieldLabel htmlFor="ai-provider">Provider</FieldLabel>
+                <SearchableSelect
+                  options={catalog.map((entry) => ({
+                    value: entry.id,
+                    label: entry.label,
+                  }))}
+                  value={provider}
+                  onValueChange={chooseProvider}
+                  placeholder="Choose a provider"
+                />
+              </FieldGroup>
+              <FieldGroup>
                 <FieldLabel htmlFor="ai-model">Model</FieldLabel>
                 {modelSource === "provider" && models !== null ? (
-                  <Select
+                  <SearchableSelect
                     options={models.map((entry) => ({
                       value: entry.id,
-                      label:
-                        entry.label === null
-                          ? entry.id
-                          : `${entry.label} · ${entry.id}`,
+                      label: entry.label === null ? entry.id : `${entry.label} · ${entry.id}`,
                     }))}
-                    value={model === "" ? null : model}
-                    onValueChange={(next) => {
-                      setModel(next ?? "");
-                    }}
+                    value={model}
+                    onValueChange={setModel}
                     placeholder="Choose a model"
-                    clearable={false}
                   />
                 ) : (
                   <Input

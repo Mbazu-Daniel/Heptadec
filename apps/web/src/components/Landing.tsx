@@ -121,30 +121,36 @@ function GitHubStars({ label }: { label?: string }) {
       signal: controller.signal,
       headers: { accept: "application/vnd.github+json" },
     })
-      .then(async (res) => (res.ok ? (await res.json()) : null))
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data;
+      })
       .then((body: { stargazers_count?: number } | null) => {
-        if (typeof body?.stargazers_count === "number") {
+        if (body?.stargazers_count !== undefined && typeof body.stargazers_count === "number") {
           setStars(body.stargazers_count);
         }
       })
       .catch(() => undefined);
-    return () => controller.abort();
+    // Timeout after 5 seconds to avoid blocking the page if GitHub API is slow
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, []);
 
   return (
-    <a
-      href={REPO_URL}
-      target="_blank"
-      rel="noreferrer"
-      aria-label="Star Heptadec on GitHub"
+    <span
       className={STAR_CLASS}
+      aria-label={label || "Star Heptadec on GitHub"}
     >
       <span className="material-symbols-outlined text-[19px]">star</span>
       {label === undefined ? null : <span>{label}</span>}
       {stars === null ? null : (
         <span className="font-mono tabular-nums">{stars}</span>
       )}
-    </a>
+    </span>
   );
 }
 

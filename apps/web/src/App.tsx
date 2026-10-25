@@ -342,10 +342,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         }
       />
       <Route
-        path="/app"
-        element={<Navigate to={me ? destinationFor(me, orgs) : "/signin"} replace />}
-      />
-      <Route
         path="/:orgSlug"
         element={
           me && isOnboarded(me) ? (

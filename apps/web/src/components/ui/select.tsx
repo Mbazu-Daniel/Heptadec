@@ -35,7 +35,7 @@ const SELECT_VALUE_CLASSNAME =
 const SELECT_PLACEHOLDER_CLASSNAME = "text-muted-foreground/60";
 
 const SELECT_LIST_CLASSNAME =
-  "max-h-60 overflow-y-auto border border-border bg-background p-1 text-sm text-foreground";
+  "max-h-60 overflow-y-auto border border-border bg-background p-1 text-sm text-foreground shadow-lg w-[var(--anchor-width)]";
 
 const SELECT_ITEM_CLASSNAME =
   "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-150 data-[selected=true]:bg-foreground data-[selected=true]:text-background data-[highlighted=true]:bg-accent data-[highlighted=true]:text-on-accent data-[disabled=true]:opacity-50 data-[disabled=true]:pointer-events-none";
@@ -86,29 +86,28 @@ export function Select({
       disabled={disabled}
       required={required}
     >
-      <div className={cn("relative w-full", className)}>
-        <Combobox.Trigger
-          className={SELECT_TRIGGER_CLASSNAME}
-          disabled={disabled}
-          data-placeholder={selectedOption === null ? "" : undefined}
-        >
-          <Combobox.Value>
-            {selectedOption ? (
-              <span className={cn(SELECT_VALUE_CLASSNAME, "truncate", selectedOption.label === "" ? SELECT_PLACEHOLDER_CLASSNAME : undefined)}>
-                {selectedOption.label === null ? selectedOption.value : selectedOption.label}
-              </span>
-            ) : (
-              <span className={cn(SELECT_VALUE_CLASSNAME, SELECT_PLACEHOLDER_CLASSNAME)}>{placeholder}</span>
-            )}
-          </Combobox.Value>
-          <IconChevronDown
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180"
-          />
-        </Combobox.Trigger>
+      <Combobox.Trigger
+        className={cn(SELECT_TRIGGER_CLASSNAME, className)}
+        disabled={disabled}
+        data-placeholder={selectedOption === null ? "" : undefined}
+      >
+        <Combobox.Value>
+          {selectedOption ? (
+            <span className={cn(SELECT_VALUE_CLASSNAME, "truncate", selectedOption.label === "" ? SELECT_PLACEHOLDER_CLASSNAME : undefined)}>
+              {selectedOption.label === null ? selectedOption.value : selectedOption.label}
+            </span>
+          ) : (
+            <span className={cn(SELECT_VALUE_CLASSNAME, SELECT_PLACEHOLDER_CLASSNAME)}>{placeholder}</span>
+          )}
+        </Combobox.Value>
+        <IconChevronDown
+          className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 data-[state=open]:rotate-180"
+        />
+      </Combobox.Trigger>
 
-        <Combobox.Positioner>
+      <Combobox.Portal>
+        <Combobox.Positioner sideOffset={4} positionMethod="absolute">
           <Combobox.Popup className={SELECT_LIST_CLASSNAME}>
-            <Combobox.Backdrop className="absolute inset-0 bg-black/10" />
             <Combobox.Input
               className={SELECT_INPUT_CLASSNAME}
               placeholder={placeholder}
@@ -166,7 +165,7 @@ export function Select({
             </Combobox.List>
           </Combobox.Popup>
         </Combobox.Positioner>
-      </div>
+      </Combobox.Portal>
     </Combobox.Root>
   );
 }

@@ -13,6 +13,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <Root />
+    <div className="root">
+      <Root />
+    </div>
   </StrictMode>,
 );

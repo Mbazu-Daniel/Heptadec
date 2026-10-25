@@ -16,6 +16,7 @@ import type {
 import type {
   BillingCadence,
   IBillingSummary,
+  IStartCheckoutRequest,
   IStartCheckoutResponse,
 } from "@heptadec/api/billing-contracts";
 import type { Role } from "@heptadec/api/rbac";
@@ -211,12 +212,8 @@ export function fetchBilling(): Promise<IBillingSummary> {
   return request<IBillingSummary>("/api/billing");
 }
 
-export function startCheckout(
-  cadence: BillingCadence,
-): Promise<IStartCheckoutResponse> {
-  return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", {
-    cadence,
-  });
+export function startCheckout(payload: IStartCheckoutRequest): Promise<IStartCheckoutResponse> {
+  return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", payload);
 }
 
 export async function uploadImage(target: ImageTarget, picture: Blob): Promise<string> {

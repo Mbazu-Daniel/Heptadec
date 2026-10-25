@@ -1,16 +1,25 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { IconBrandGithub, IconCreditCard, IconLock } from "@tabler/icons-react";
 import type {
-  IBillingPlan,
+  IBillingCharge,
   IBillingSummary,
+  IStartCheckoutRequest,
 } from "@heptadec/api/billing-contracts";
-import { fetchBilling } from "../api";
-import { useCheckout, type ICheckout } from "../checkout";
-import { Button } from "./ui/button";
+import { useBilling } from "../checkout";
 import { Alert } from "./ui/feedback";
-import { PLAN_CARD_CLASSNAME } from "./workspace";
+import { Button } from "./ui/button";
+import { PlanCard } from "./workspace";
 import { REPO_URL } from "./Landing";
+
+/** The checkout half of the billing state, past the summary the gate has
+ * already read. */
+export interface IPaywallBilling {
+  busy: boolean;
+  paid: boolean;
+  problem: string | null;
+  open: (request: IStartCheckoutRequest) => Promise<void>;
+}
 
 export function SubscriptionGate({
   isOwner,
@@ -23,25 +32,10 @@ export function SubscriptionGate({
   onSignOut: () => void;
   children: ReactNode;
 }) {
-  const [summary, setSummary] = useState<IBillingSummary | null>(null);
-  const [unreadable, setUnreadable] = useState(false);
+  const billing = useBilling();
 
-  const reload = useCallback(async () => {
-    try {
-      setSummary(await fetchBilling());
-    } catch {
-      setUnreadable(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const checkout = useCheckout(reload);
-
-  if (summary === null) {
-    return unreadable ? (
+  if (billing.summary === null) {
+    return billing.unreadable ? (
       <>{children}</>
     ) : (
       <div className="relative grid h-full place-items-center">
@@ -50,13 +44,18 @@ export function SubscriptionGate({
       </div>
     );
   }
-  if (summary.entitled) {
+  if (billing.summary.entitled) {
     return <>{children}</>;
   }
   return (
     <Paywall
-      summary={summary}
-      checkout={checkout}
+      summary={billing.summary}
+      billing={{
+        busy: billing.busy,
+        paid: billing.paid,
+        problem: billing.checkoutProblem,
+        open: billing.open,
+      }}
       isOwner={isOwner}
       others={others}
       onSignOut={onSignOut}
@@ -66,25 +65,22 @@ export function SubscriptionGate({
 
 function Paywall({
   summary,
-  checkout,
+  billing,
   isOwner,
   others,
   onSignOut,
 }: {
   summary: IBillingSummary;
-  checkout: ICheckout;
+  billing: IPaywallBilling;
   isOwner: boolean;
   others: Array<{ name: string; slug: string }>;
   onSignOut: () => void;
 }) {
-  const [problem, setProblem] = useState<string | null>(null);
-
-  async function subscribe(cadence: IBillingPlan["cadence"]): Promise<void> {
-    setProblem(null);
-    await checkout.start(cadence);
-  }
-
   const lapsed = summary.subscription;
+  const charges = summary.charges;
+  const paid = billing.paid;
+  const busy = billing.busy;
+  const problem = billing.problem;
 
   return (
     <div className="h-full overflow-auto">
@@ -108,10 +104,7 @@ function Paywall({
         )}
 
         {problem !== null ? <Alert className="mt-4 w-full">{problem}</Alert> : null}
-        {checkout.problem !== null ? (
-          <Alert className="mt-4 w-full">{checkout.problem}</Alert>
-        ) : null}
-        {checkout.paid ? (
+        {paid ? (
           <Alert className="mt-4 w-full">
             The payment went through. The product opens as soon as Bachs
             confirms it.
@@ -120,31 +113,64 @@ function Paywall({
 
         <div className="mt-6 grid w-full gap-2 sm:grid-cols-2">
           {summary.plans.map((plan) => (
-            <div key={plan.cadence} className={PLAN_CARD_CLASSNAME}>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-sm font-medium text-fg">
-                  {plan.label}
-                </span>
-                <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {plan.amount === "" ? null : `${plan.currency} ${plan.amount}`}
-                </span>
-              </div>
-              <p className="text-left text-xs text-muted-foreground">
-                {plan.note}
-              </p>
-              {isOwner ? (
-                <Button
-                  className="mt-auto self-start"
-                  disabled={checkout.busy}
-                  onClick={() => void subscribe(plan.cadence)}
-                >
-                  <IconCreditCard size={16} strokeWidth={1.5} />
-                  Subscribe
-                </Button>
-              ) : null}
-            </div>
+            <PlanCard
+              key={plan.cadence}
+              plan={plan}
+              action={
+                isOwner
+                  ? {
+                      disabled: busy,
+                      onClick: () => void billing.open({ cadence: plan.cadence }),
+                    }
+                  : null
+              }
+            />
           ))}
         </div>
+
+        {/* One-time charges in other currencies */}
+        {charges.length > 0 ? (
+          <div className="mt-4 w-full space-y-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              One-time charges
+            </p>
+            {charges.map((charge) => (
+              <div
+                key={`${charge.currency}-${charge.amount}`}
+                className="rounded-xl border border-border p-4"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-fg">{charge.label}</h4>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {charge.amount}
+                    <span className="ml-1">{charge.currency}</span>
+                  </span>
+                </div>
+                <p className="text-left text-xs text-muted-foreground">
+                  Pay instantly with your preferred payment method.
+                </p>
+                {isOwner ? (
+                  <Button
+                    className="mt-auto self-start"
+                    disabled={busy}
+                    onClick={() =>
+                      void billing.open({
+                        charge: {
+                          amount: charge.amount,
+                          currency: charge.currency,
+                          paymentMethods: charge.paymentMethods,
+                        },
+                      })
+                    }
+                  >
+                    <IconCreditCard size={16} strokeWidth={1.5} />
+                    Pay now
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="mt-8 w-full border-t border-border pt-6">
           <p className="text-sm font-medium text-fg">Heptadec is open source.</p>

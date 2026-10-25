@@ -1,38 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
-import { IconCreditCard } from "@tabler/icons-react";
+import {
+  IconCreditCard,
+} from "@tabler/icons-react";
 import type {
   IBillingPlan,
   IBillingSubscription,
-  IBillingSummary,
 } from "@heptadec/api/billing-contracts";
-import { fetchBilling, messageFor } from "../api";
-import { useCheckout } from "../checkout";
-import { Button } from "./ui/button";
+import { useBilling } from "../checkout";
 import { Alert, EmptyState } from "./ui/feedback";
-import { PLAN_CARD_CLASSNAME, VIEW_CLASSNAME, Workspace } from "./workspace";
+import { PlanCard, VIEW_CLASSNAME, Workspace } from "./workspace";
 
 export function Billing({ isOwner }: { isOwner: boolean }) {
-  const [summary, setSummary] = useState<IBillingSummary | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    setProblem(null);
-    try {
-      setSummary(await fetchBilling());
-    } catch (caught) {
-      setProblem(messageFor(caught, "The plan could not be loaded."));
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const checkout = useCheckout(reload);
-
-  async function subscribe(cadence: IBillingPlan["cadence"]): Promise<void> {
-    await checkout.start(cadence);
-  }
+  const billing = useBilling();
 
   if (!isOwner) {
     return (
@@ -41,7 +19,6 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
           <div className={VIEW_CLASSNAME}>
             <EmptyState
               title="Owners only"
-              body="A subscription is bought by an owner of this organization."
             />
           </div>
         }
@@ -49,15 +26,19 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
     );
   }
 
+  const summary = billing.summary;
+
   return (
     <Workspace
       view={
         <div className="mx-auto max-w-3xl">
-          {problem !== null ? <Alert className="mb-4">{problem}</Alert> : null}
-          {checkout.problem !== null ? (
-            <Alert className="mb-4">{checkout.problem}</Alert>
+          {billing.problem !== null ? (
+            <Alert className="mb-4">{billing.problem}</Alert>
           ) : null}
-          {checkout.paid ? (
+          {billing.checkoutProblem !== null ? (
+            <Alert className="mb-4">{billing.checkoutProblem}</Alert>
+          ) : null}
+          {billing.paid ? (
             <Alert className="mb-4">
               The payment went through. This plan is active once Bachs confirms
               it.
@@ -82,29 +63,17 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
               </h2>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {summary.plans.map((plan) => (
-                  <div key={plan.cadence} className={PLAN_CARD_CLASSNAME}>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm font-medium text-fg">
-                        {plan.label}
-                      </span>
-                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                        {plan.amount === "" ? null : `${plan.currency} ${plan.amount}`}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{plan.note}</p>
-                    <Button
-                      className="self-start"
-                      disabled={
-                        checkout.busy ||
+                  <PlanCard
+                    key={plan.cadence}
+                    plan={plan}
+                    action={{
+                      disabled:
+                        billing.busy ||
                         !summary.configured ||
-                        summary.subscription !== null
-                      }
-                      onClick={() => void subscribe(plan.cadence)}
-                    >
-                      <IconCreditCard size={16} strokeWidth={1.5} />
-                      Subscribe
-                    </Button>
-                  </div>
+                        summary.subscription !== null,
+                      onClick: () => void billing.open({ cadence: plan.cadence }),
+                    }}
+                  />
                 ))}
               </div>
             </>
@@ -126,7 +95,7 @@ function CurrentPlan({
     return (
       <EmptyState
         title="No subscription yet"
-        body="This organization is not subscribed. Choose a plan to turn the product on."
+        body="Choose a plan to turn the product on."
       />
     );
   }

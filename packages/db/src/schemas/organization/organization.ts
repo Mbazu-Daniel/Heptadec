@@ -10,6 +10,7 @@ export const organization = sqliteTable("organization", {
   logo: text("logo"),
   metadata: text("metadata"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  lastBillingReminderAt: integer("last_billing_reminder_at", { mode: "timestamp_ms" }),
 });
 
 export type OrganizationRow = typeof organization.$inferSelect;

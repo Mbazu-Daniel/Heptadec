@@ -1,12 +1,16 @@
 import { eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import {
+  billingSubscription,
+  billingPayment,
+  organization,
+  user,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   NotFoundException,
   PaymentRequiredException,
 } from "../../common/exceptions";
 import { billingConfigured, cadenceForProduct } from "./catalog";
-
-const { billingSubscription, billingPayment, organization, user } = schema;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -21,6 +25,7 @@ const PAYMENT_STATUSES_WITH_ACCESS = ["completed", "succeeded", "paid"];
 export interface IEntitlement {
   entitled: boolean;
   trialEndsAt: Date;
+  overLimit: boolean;
 }
 
 /**
@@ -64,17 +69,11 @@ export async function entitlementFor(
     throw new NotFoundException("That organization no longer exists");
   }
 
-  // Free-tier: check if user has exceeded organization limit
   const { overLimit } = await checkOrgLimit(db, organizationId);
-  if (overLimit) {
-    throw new PaymentRequiredException(
-      "Your free organization limit has been reached. Upgrade to a paid plan for more organizations.",
-    );
-  }
 
   const trialEndsAt = new Date(found.createdAt.getTime() + TRIAL_DAYS * DAY_MS);
   if (!billingConfigured()) {
-    return { entitled: true, trialEndsAt };
+    return { entitled: true, trialEndsAt, overLimit: false };
   }
 
   const subscription = found.subscription;
@@ -82,6 +81,7 @@ export async function entitlementFor(
     return {
       entitled: STATUSES_WITH_ACCESS.includes(subscription.status),
       trialEndsAt,
+      overLimit,
     };
   }
 
@@ -94,20 +94,22 @@ export async function entitlementFor(
 
   const latest = payments[0];
   if (latest !== undefined && PAYMENT_STATUSES_WITH_ACCESS.includes(latest.status)) {
-    return { entitled: true, trialEndsAt };
+    return { entitled: true, trialEndsAt, overLimit };
   }
 
-  return { entitled: Date.now() < trialEndsAt.getTime(), trialEndsAt };
+  return { entitled: Date.now() < trialEndsAt.getTime(), trialEndsAt, overLimit };
 }
 
 export async function requireEntitlement(
   db: HeptadecDatabase,
   organizationId: string,
 ): Promise<void> {
-  const { entitled } = await entitlementFor(db, organizationId);
+  const { entitled, overLimit } = await entitlementFor(db, organizationId);
   if (!entitled) {
     throw new PaymentRequiredException(
       "This organization's trial has ended and it has no active subscription",
     );
   }
+  // Note: overLimit is informational only - billing is NOT blocked
+  // The overLimit flag can be used to show upgrade prompts UI-side
 }

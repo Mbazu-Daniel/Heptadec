@@ -6,7 +6,7 @@ process.env.BACHS_BASE_URL = "https://sandbox-api.bachs.io";
 // Deliberately not dollars: the plans have to come from the environment, so
 // the prices below are what the app has to show.
 process.env.BACHS_CURRENCY = "NGN";
-process.env.BACHS_PRICE_MONTHLY = "7500.00";
-process.env.BACHS_PRICE_YEARLY = "75000.00";
+process.env.BACHS_PRICE_MONTHLY = "5000.00";
+process.env.BACHS_PRICE_YEARLY = "50000.00";
 process.env.BACHS_PRODUCT_MONTHLY = "prod_test_monthly";
 process.env.BACHS_PRODUCT_YEARLY = "prod_test_yearly";

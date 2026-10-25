@@ -4,7 +4,9 @@ import { BadGatewayException } from "../../common/exceptions";
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface ICheckoutRequest {
-  productId: string;
+  productId?: string;
+  pricing?: { currency: string; amount: string };
+  paymentMethodTypes?: string[];
   email: string;
   name: string;
   organizationId: string;
@@ -17,18 +19,28 @@ interface ICheckoutSession {
 export async function createCheckoutSession(
   request: ICheckoutRequest,
 ): Promise<string> {
+  const body: Record<string, unknown> = {
+    customer: { email: request.email, name: request.name },
+    metadata: { organization_id: request.organizationId },
+    ...returnUrls(),
+  };
+  if (request.productId) {
+    body.product_cart = [{ product_id: request.productId, quantity: 1 }];
+  }
+  if (request.pricing) {
+    body.pricing = request.pricing;
+  }
+  if (request.paymentMethodTypes) {
+    body.payment_method_types = request.paymentMethodTypes;
+  }
+
   const response = await fetch(`${config.bachs.baseUrl}/v1/checkout-sessions`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${config.bachs.secretKey}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      product_cart: [{ product_id: request.productId, quantity: 1 }],
-      customer: { email: request.email, name: request.name },
-      metadata: { organization_id: request.organizationId },
-      ...returnUrls(),
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 

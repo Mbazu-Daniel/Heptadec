@@ -1,13 +1,18 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { schema, type BillingSubscriptionRow, type HeptadecDatabase } from "@heptadec/db";
+import {
+  billingSubscription,
+  billingPayment,
+  type BillingSubscriptionRow,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { config } from "../../common/config/env";
 import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
-import { readBody, readString } from "../../common/http/body";
+import { readBody, readOptionalString, readString } from "../../common/http/body";
 import {
   BadRequestException,
   InternalServerException,
@@ -15,19 +20,19 @@ import {
 } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
-import { billingConfigured, billingPlans, cadenceForProduct, productIdFor } from "./catalog";
+import { billingConfigured, billingPlans, cadenceForProduct, productIdFor, createDisplayCharge } from "./catalog";
 import { createCheckoutSession } from "./client";
 import { entitlementFor } from "./entitlement";
-import { readSubscriptionEvent, type ISubscriptionEvent } from "./event";
+import { readPaymentEvent, readSubscriptionEvent, type IPaymentEvent, type ISubscriptionEvent } from "./event";
 import { isSignedDelivery } from "./signature";
 import {
   isBillingCadence,
+  type IBillingCharge,
+  IBillingPlan,
   type IBillingSubscription,
   type IBillingSummary,
   type IStartCheckoutResponse,
 } from "./contracts";
-
-const { billingSubscription } = schema;
 
 export function billingRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
@@ -45,11 +50,14 @@ export function billingRoutes(): Hono<IAuthVars> {
       organization.db,
       organization.organizationId,
     );
+    // Get plans with the target currency from query parameter, if provided
+    const targetCurrency = c.req.query("currency");
     const body: IBillingSummary = {
       configured: billingConfigured(),
       entitled: entitlement.entitled,
       trialEndsAt: entitlement.trialEndsAt.toISOString(),
-      plans: billingPlans(),
+      plans: billingPlans(targetCurrency),
+      charges: [],
       subscription: row === undefined ? null : toSubscription(row),
     };
     return c.json(body);
@@ -57,16 +65,22 @@ export function billingRoutes(): Hono<IAuthVars> {
 
   routes.post("/api/billing/checkout", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    requireOwner(c, "Only owners can start a subscription");
+    requireOwner(c, "Only owners can start a billing checkout");
 
     if (!billingConfigured()) {
       throw new BadRequestException("Billing is not configured on this deployment");
     }
 
     const body = readBody(await c.req.json(), "A plan is required");
-    const cadence = readString(body, "cadence", "Choose a plan", 16);
-    if (!isBillingCadence(cadence)) {
-      throw new BadRequestException(`${cadence} is not a plan`);
+    const cadence = readOptionalString(body, "cadence", "Choose a plan", 16);
+    const charge = body.charge as
+      | { amount: string; currency: string; paymentMethods?: string[] }
+      | undefined;
+
+    if (!cadence && (!charge || charge.amount === "" || charge.currency === "")) {
+      throw new BadRequestException(
+        "Provide cadence for a subscription, or amount + currency for a one-time charge",
+      );
     }
 
     const session = c.get("session");
@@ -74,19 +88,46 @@ export function billingRoutes(): Hono<IAuthVars> {
       throw new UnauthorizedException();
     }
 
-    const checkoutUrl = await createCheckoutSession({
-      productId: productIdFor(cadence),
-      email: session.user.email,
-      name: session.user.name,
-      organizationId: organization.organizationId,
-    });
-
-    await recordAudit(c, {
-      organizationId: organization.organizationId,
-      event: "billing.checkout_started",
-      targetKind: "billing_subscription",
-      targetLabel: cadence,
-    });
+    let checkoutUrl: string;
+    if (cadence !== undefined && isBillingCadence(cadence)) {
+      checkoutUrl = await createCheckoutSession({
+        productId: productIdFor(cadence),
+        email: session.user.email,
+        name: session.user.name,
+        organizationId: organization.organizationId,
+      });
+      await recordAudit(c, {
+        organizationId: organization.organizationId,
+        event: "billing.checkout_started",
+        targetKind: "billing_subscription",
+        targetLabel: cadence,
+      });
+    } else {
+      if (!charge) {
+        throw new BadRequestException(
+          "Provide cadence for a subscription, or amount + currency for a one-time charge",
+        );
+      }
+      // Convert the charge amount from USD to the target currency for display,
+      // but send the USD amount to Bachs (which charges in USD)
+      const checkoutPricing = createDisplayCharge(charge.amount, charge.currency);
+      checkoutUrl = await createCheckoutSession({
+        pricing: {
+          currency: checkoutPricing.currency,
+          amount: charge.amount, // Send USD amount to Bachs
+        },
+        paymentMethodTypes: charge.paymentMethods,
+        email: session.user.email,
+        name: session.user.name,
+        organizationId: organization.organizationId,
+      });
+      await recordAudit(c, {
+        organizationId: organization.organizationId,
+        event: "billing.charge_started",
+        targetKind: "billing_payment",
+        targetLabel: `${charge.currency} ${charge.amount}`,
+      });
+    }
 
     const response: IStartCheckoutResponse = { checkoutUrl };
     return c.json(response);
@@ -106,18 +147,28 @@ export function billingRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That delivery is not signed");
     }
 
-    const event = readSubscriptionEvent(raw);
-    if (event === null) {
+    const subscription = readSubscriptionEvent(raw);
+    if (subscription !== null) {
+      await storeSubscription(c.get("db"), subscription);
       return c.json({ received: true });
     }
-    await store(c.get("db"), event);
+
+    const payment = readPaymentEvent(raw);
+    if (payment !== null) {
+      await storePayment(c.get("db"), payment);
+      return c.json({ received: true });
+    }
+
     return c.json({ received: true });
   });
 
   return routes;
 }
 
-async function store(db: HeptadecDatabase, event: ISubscriptionEvent): Promise<void> {
+async function storeSubscription(
+  db: HeptadecDatabase,
+  event: ISubscriptionEvent,
+): Promise<void> {
   const rows = await db
     .select()
     .from(billingSubscription)
@@ -146,6 +197,21 @@ async function store(db: HeptadecDatabase, event: ISubscriptionEvent): Promise<v
       target: billingSubscription.organizationId,
       set: state,
     });
+}
+
+async function storePayment(db: HeptadecDatabase, event: IPaymentEvent): Promise<void> {
+  const now = new Date();
+  await db.insert(billingPayment).values({
+    id: crypto.randomUUID(),
+    organizationId: event.organizationId,
+    customerId: event.customerId,
+    checkoutId: event.checkoutId,
+    amount: event.amount,
+    currency: event.currency,
+    status: event.status,
+    periodEndsAt: null,
+    createdAt: now,
+  });
 }
 
 function toSubscription(row: BillingSubscriptionRow): IBillingSubscription {

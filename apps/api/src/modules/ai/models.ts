@@ -1,11 +1,11 @@
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  aiProvider,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { logDriverFailure } from "../../common/driver-error";
-import { providerSpec } from "./catalog";
-import { baseUrlFor } from "./transport";
-
-const { aiProvider } = schema;
+import { providerEndpointFor } from "./transport";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -29,18 +29,18 @@ export type ModelListing =
   | { kind: "unreachable" };
 
 export async function listModels(config: IModelConfig): Promise<ModelListing> {
-  const spec = providerSpec(config.provider);
-  if (spec === null) {
-    return { kind: "refused" };
-  }
-  const baseUrl = baseUrlFor(spec, config.baseUrl);
-  if (baseUrl === null) {
+  let baseUrl: string;
+  try {
+    baseUrl = providerEndpointFor(config.provider, config.baseUrl).baseUrl;
+  } catch {
+    // An unknown provider or a missing address is a configuration refusal,
+    // the same kind of refusal a bad key produces here.
     return { kind: "refused" };
   }
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
+    response = await fetch(`${baseUrl}/models`, {
       method: "GET",
       headers: { authorization: `Bearer ${config.apiKey}` },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

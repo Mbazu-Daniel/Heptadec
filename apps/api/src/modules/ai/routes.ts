@@ -27,23 +27,12 @@ import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
-import {
-  type IEngineSpec,
-  type QueryLanguage,
-} from "../data-source/contracts";
 import { canBeAsked, engineOf } from "../data-source/engines";
-import { introspectSchema } from "../schema/introspect";
 import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
 import { baseUrlFor, speaksProtocol } from "./transport";
-import { quickwitContext, redisContext, schemaContext } from "./context";
-import { readStatement, streamQuery } from "./generate";
-import {
-  mongoInstructions,
-  queryInstructions,
-  quickwitInstructions,
-  redisInstructions,
-  routeInstructions,
-} from "./instructions";
+import { askStyleOf } from "./ask";
+import { streamQuery } from "./generate";
+import { routeInstructions } from "./instructions";
 import { chosenProvider } from "./provider";
 import {
   listModels,
@@ -297,13 +286,12 @@ export function aiRoutes(): Hono<IAuthVars> {
         ? askable[0]!
         : await routeToSource(chosen, question, askable);
 
-    const style = askStyle(engineOf(source));
+    const style = askStyleOf(engineOf(source));
     if (style === null) {
       throw new BadRequestException(
         `Asking questions is not available for ${engineOf(source).name}`,
       );
     }
-    const { instructions, language } = style;
 
     return runTurn(
       c,
@@ -319,19 +307,11 @@ export function aiRoutes(): Hono<IAuthVars> {
         let problem: string | null = null;
         try {
           const stored = await storedFromRow(source);
-          const context =
-            language === "search"
-              ? await quickwitContext(stored)
-              : language === "command"
-                ? await redisContext(stored)
-              : schemaContext({
-                  sourceId: source.id,
-                  ...(await introspectSchema(stored)),
-                });
+          const context = await style.context(source.id, stored);
 
           await turn.status(`Asking ${chosen.name} (${chosen.model})…`);
 
-          for await (const chunk of streamQuery(chosen, question, context, instructions)) {
+          for await (const chunk of streamQuery(chosen, question, context, style.instructions)) {
             answer += chunk;
             await turn.delta(chunk);
           }
@@ -341,7 +321,7 @@ export function aiRoutes(): Hono<IAuthVars> {
             "That source could not be read, or the provider could not be reached. Check the source and the key.";
         }
 
-        const finished = readStatement(answer, language);
+        const finished = style.readAnswer(answer);
         if (problem === null && answer.trim() === "") {
           problem =
             "That provider returned nothing. Check the key, the model id, and the base URL.";
@@ -378,7 +358,7 @@ export function aiRoutes(): Hono<IAuthVars> {
           chatId: inserted[0]!.id,
           dataSourceId: source.id,
           dataSourceName: source.name,
-          language,
+          language: style.language,
           sql,
           pipeline,
           command,
@@ -457,26 +437,6 @@ function optionalIdList(
     }
   }
   return value as string[];
-}
-
-function askStyle(engine: IEngineSpec): {
-  instructions: string;
-  language: QueryLanguage;
-} | null {
-  switch (engine.queryLanguage) {
-    case "pipeline":
-      return { instructions: mongoInstructions, language: "pipeline" };
-    case "command":
-      return { instructions: redisInstructions, language: "command" };
-    case "search":
-      return { instructions: quickwitInstructions, language: "search" };
-    case "sql":
-      return engine.sqlDialect === null
-        ? null
-        : { instructions: queryInstructions(engine.sqlDialect), language: "sql" };
-    case null:
-      return null;
-  }
 }
 
 async function routeToSource(

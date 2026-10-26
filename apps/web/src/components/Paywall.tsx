@@ -1,19 +1,15 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { IconBrandGithub, IconCreditCard, IconLock } from "@tabler/icons-react";
+import { IconBrandGithub, IconLock } from "@tabler/icons-react";
 import type {
-  IBillingCharge,
   IBillingSummary,
   IStartCheckoutRequest,
 } from "@heptadec/api/billing-contracts";
 import { useBilling } from "../checkout";
 import { Alert } from "./ui/feedback";
-import { Button } from "./ui/button";
 import { PlanCard } from "./workspace";
 import { REPO_URL } from "./Landing";
 
-/** The checkout half of the billing state, past the summary the gate has
- * already read. */
 export interface IPaywallBilling {
   busy: boolean;
   paid: boolean;
@@ -76,8 +72,7 @@ function Paywall({
   others: Array<{ name: string; slug: string }>;
   onSignOut: () => void;
 }) {
-  const lapsed = summary.subscription;
-  const charges = summary.charges;
+  const lapsed = summary.paidUntil;
   const paid = billing.paid;
   const busy = billing.busy;
   const problem = billing.problem;
@@ -90,16 +85,16 @@ function Paywall({
         <h1 className="mt-8 text-xl font-semibold tracking-[-0.02em] text-fg">
           {lapsed === null
             ? "Your free trial has ended"
-            : "This organization's subscription has stopped"}
+            : "Your access period has ended"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {lapsed === null
             ? `It ended on ${new Date(summary.trialEndsAt).toLocaleDateString()}. Choose a plan and the product opens again as soon as the payment clears.`
-            : "Choose a plan and the product opens again as soon as a payment clears."}
+            : `It ran out on ${new Date(lapsed).toLocaleDateString()}. Choose a plan and the product opens again as soon as the payment clears.`}
         </p>
         {isOwner ? null : (
           <p className="mt-2 text-sm text-muted-foreground">
-            Only an owner of this organization can start the subscription.
+            Only an owner of this organization can buy a plan.
           </p>
         )}
 
@@ -128,49 +123,10 @@ function Paywall({
           ))}
         </div>
 
-        {/* One-time charges in other currencies */}
-        {charges.length > 0 ? (
-          <div className="mt-4 w-full space-y-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              One-time charges
-            </p>
-            {charges.map((charge) => (
-              <div
-                key={`${charge.currency}-${charge.amount}`}
-                className="rounded-xl border border-border p-4"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-fg">{charge.label}</h4>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {charge.amount}
-                    <span className="ml-1">{charge.currency}</span>
-                  </span>
-                </div>
-                <p className="text-left text-xs text-muted-foreground">
-                  Pay instantly with your preferred payment method.
-                </p>
-                {isOwner ? (
-                  <Button
-                    className="mt-auto self-start"
-                    disabled={busy}
-                    onClick={() =>
-                      void billing.open({
-                        charge: {
-                          amount: charge.amount,
-                          currency: charge.currency,
-                          paymentMethods: charge.paymentMethods,
-                        },
-                      })
-                    }
-                  >
-                    <IconCreditCard size={16} strokeWidth={1.5} />
-                    Pay now
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <p className="mt-3 text-xs text-muted-foreground">
+          Prices are in USD. Bachs shows the price in your local currency at
+          checkout, where you can pay with a card or mobile money.
+        </p>
 
         <div className="mt-8 w-full border-t border-border pt-6">
           <p className="text-sm font-medium text-fg">Heptadec is open source.</p>

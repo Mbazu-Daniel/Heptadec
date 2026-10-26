@@ -26,7 +26,6 @@ export function PlanCard({
   action,
 }: {
   plan: IBillingPlan;
-  /** The one thing to do on this plan, or null for a card nothing can be done with. */
   action: IPlanCardAction | null;
 }): ReactNode {
   return (
@@ -45,7 +44,7 @@ export function PlanCard({
           onClick={action.onClick}
         >
           <IconCreditCard size={16} strokeWidth={1.5} />
-          Subscribe
+          Buy
         </Button>
       )}
     </div>

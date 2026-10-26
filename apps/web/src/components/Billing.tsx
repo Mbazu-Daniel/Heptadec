@@ -1,11 +1,7 @@
-import {
-  IconCreditCard,
-} from "@tabler/icons-react";
-import type {
-  IBillingPlan,
-  IBillingSubscription,
-} from "@heptadec/api/billing-contracts";
+import { IconCreditCard } from "@tabler/icons-react";
+import type { IBillingSummary } from "@heptadec/api/billing-contracts";
 import { useBilling } from "../checkout";
+import { Button } from "./ui/button";
 import { Alert, EmptyState } from "./ui/feedback";
 import { PlanCard, VIEW_CLASSNAME, Workspace } from "./workspace";
 
@@ -55,8 +51,9 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
                 </Alert>
               )}
               <CurrentPlan
-                subscription={summary.subscription}
-                plans={summary.plans}
+                summary={summary}
+                busy={billing.busy}
+                onRenew={billing.renew}
               />
               <h2 className="mt-8 text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Plans
@@ -68,14 +65,16 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
                     plan={plan}
                     action={{
                       disabled:
-                        billing.busy ||
-                        !summary.configured ||
-                        summary.subscription !== null,
+                        billing.busy || !summary.configured || summary.entitled,
                       onClick: () => void billing.open({ cadence: plan.cadence }),
                     }}
                   />
                 ))}
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Prices are in USD. Bachs shows the price in your local currency
+                at checkout, where you can pay with a card or mobile money.
+              </p>
             </>
           )}
         </div>
@@ -85,51 +84,72 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
 }
 
 function CurrentPlan({
-  subscription,
-  plans,
+  summary,
+  busy,
+  onRenew,
 }: {
-  subscription: IBillingSubscription | null;
-  plans: IBillingPlan[];
+  summary: IBillingSummary;
+  busy: boolean;
+  onRenew: (enabled: boolean) => Promise<void>;
 }) {
-  if (subscription === null) {
-    return (
-      <EmptyState
-        title="No subscription yet"
-        body="Choose a plan to turn the product on."
-      />
-    );
-  }
-
-  const plan = plans.find((entry) => entry.cadence === subscription.cadence);
+  const label =
+    summary.plans.find((candidate) => candidate.cadence === summary.cadence)
+      ?.label ?? "Free trial";
+  const bought = summary.paidUntil !== null;
+  const endsAt = summary.paidUntil ?? summary.trialEndsAt;
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
       <div className="flex items-center gap-2">
-        <IconCreditCard size={18} strokeWidth={1.5} className="text-muted-foreground" />
+        <IconCreditCard
+          size={18}
+          strokeWidth={1.5}
+          className="text-muted-foreground"
+        />
         <span className="text-sm font-medium text-fg">
-          {plan?.label ?? "Unknown plan"}
+          {label}
         </span>
         <span className="font-mono text-xs text-muted-foreground">
-          {subscription.status}
+          {summary.entitled ? "active" : "ended"}
         </span>
       </div>
       <dl className="grid gap-2 text-xs">
         <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Renews</dt>
+          <dt className="text-muted-foreground">
+            {bought ? "Paid until" : "Trial ends"}
+          </dt>
           <dd className="tabular-nums">
-            {subscription.renewsAt === null
-              ? "not reported"
-              : new Date(subscription.renewsAt).toLocaleDateString()}
+            {new Date(endsAt).toLocaleDateString()}
           </dd>
         </div>
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">Ends at period end</dt>
-          <dd>{subscription.cancelAtPeriodEnd ? "yes" : "no"}</dd>
-        </div>
+        {bought ? (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Renews automatically</dt>
+            <dd>{summary.autoRenew ? "yes" : "no"}</dd>
+          </div>
+        ) : null}
+        {summary.cardLast4 === null ? null : (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Saved card</dt>
+            <dd className="tabular-nums">•••• {summary.cardLast4}</dd>
+          </div>
+        )}
       </dl>
-      <p className="text-xs text-muted-foreground">
-        Changing or cancelling this plan is not wired up yet.
-      </p>
+      {bought && summary.hasCard ? (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void onRenew(!summary.autoRenew)}
+        >
+          {summary.autoRenew ? "Stop renewing" : "Renew automatically"}
+        </Button>
+      ) : null}
+      {bought && !summary.hasCard ? (
+        <p className="text-xs text-muted-foreground">
+          This period was paid without a card, so it will not renew on its own.
+          Buy a plan again when it ends.
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -14,8 +14,9 @@ import type {
   ImageTarget,
 } from "@heptadec/api/images-contracts";
 import type {
-  BillingCadence,
   IBillingSummary,
+  ISetAutoRenewRequest,
+  ISetAutoRenewResponse,
   IStartCheckoutRequest,
   IStartCheckoutResponse,
 } from "@heptadec/api/billing-contracts";
@@ -214,6 +215,12 @@ export function fetchBilling(): Promise<IBillingSummary> {
 
 export function startCheckout(payload: IStartCheckoutRequest): Promise<IStartCheckoutResponse> {
   return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", payload);
+}
+
+export function setAutoRenew(
+  payload: ISetAutoRenewRequest,
+): Promise<ISetAutoRenewResponse> {
+  return request<ISetAutoRenewResponse>("/api/billing/auto-renew", "POST", payload);
 }
 
 export async function uploadImage(target: ImageTarget, picture: Blob): Promise<string> {

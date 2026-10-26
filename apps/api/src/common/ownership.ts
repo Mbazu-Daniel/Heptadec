@@ -8,7 +8,8 @@ const {
   alertDelivery,
   alertRule,
   auditLog,
-  billingSubscription,
+  billingCustomer,
+  billingPayment,
   dashboard,
   dashboardDataSource,
   dataSource,
@@ -45,8 +46,11 @@ export async function deleteOrganizationRows(
       .where(scope.where(notificationChannel.organizationId));
     await tx.delete(auditLog).where(scope.where(auditLog.organizationId));
     await tx
-      .delete(billingSubscription)
-      .where(scope.where(billingSubscription.organizationId));
+      .delete(billingCustomer)
+      .where(scope.where(billingCustomer.organizationId));
+    await tx
+      .delete(billingPayment)
+      .where(scope.where(billingPayment.organizationId));
   });
 }
 

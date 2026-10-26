@@ -14,7 +14,8 @@ const {
   alertDelivery,
   alertRule,
   auditLog,
-  billingSubscription,
+  billingCustomer,
+  billingPayment,
   dashboard,
   dashboardDataSource,
   dataSource,
@@ -313,16 +314,23 @@ it("deletes every row the organization owns", async () => {
     event: "test.event",
     targetKind: "test",
   });
-  await db.insert(billingSubscription).values({
+  await db.insert(billingCustomer).values({
     organizationId: orgId,
-    customerId: "cust",
-    subscriptionId: "sub",
-    productId: "prod",
-    status: "active",
-    cancelAtPeriodEnd: false,
-    eventCreatedAt: now,
+    customerId: `cust_${orgId}`,
+    autoRenew: false,
     createdAt: now,
     updatedAt: now,
+  });
+  await db.insert(billingPayment).values({
+    organizationId: orgId,
+    customerId: `cust_${orgId}`,
+    checkoutId: `chk_${orgId}`,
+    cadence: "monthly",
+    amount: "5.00",
+    currency: "USD",
+    status: "paid",
+    periodEndsAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+    createdAt: now,
   });
 
   const res = await request("/api/organization/delete", {
@@ -338,7 +346,8 @@ it("deletes every row the organization owns", async () => {
     ["alertDelivery", alertDelivery],
     ["alertRule", alertRule],
     ["auditLog", auditLog],
-    ["billingSubscription", billingSubscription],
+    ["billingCustomer", billingCustomer],
+    ["billingPayment", billingPayment],
     ["dashboard", dashboard],
     ["dashboardDataSource", dashboardDataSource],
     ["dataSource", dataSource],

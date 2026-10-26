@@ -4,11 +4,16 @@ import { organizationScope } from "../../common/session/current-organization";
 import { checkRunAlerts } from "../alert/evaluate";
 import { entitlementFor, type IEntitlement } from "../billing/entitlement";
 import { checkBillingReminders } from "../billing/reminder";
+import { checkBillingRenewals } from "../billing/renewal";
 import { nextRunAfter, parseCron } from "./cron";
 
 const LEASE_MS = 5 * 60_000;
 
 const MAX_JOBS_PER_TICK = 20;
+
+const BILLING_SWEEP_MS = 15 * 60_000;
+
+let lastBillingSweepAt = 0;
 
 type IJob = typeof scheduledJob.$inferSelect;
 
@@ -28,6 +33,15 @@ export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void>
     await runOne(db, job, now, entitlement);
   }
 
+  await sweepBilling(db, now);
+}
+
+async function sweepBilling(db: HeptadecDatabase, now: Date): Promise<void> {
+  if (now.getTime() - lastBillingSweepAt < BILLING_SWEEP_MS) {
+    return;
+  }
+  lastBillingSweepAt = now.getTime();
+  await checkBillingRenewals(db, now);
   await checkBillingReminders(db, now);
 }
 
@@ -101,10 +115,19 @@ function organizationOffset(organizationId: string): number {
 }
 
 export function startScheduler(db: HeptadecDatabase, tickMs: number): () => void {
+  let running = false;
   const timer = setInterval(() => {
-    void runDueJobs(db, new Date()).catch((caught: unknown) => {
-      console.error("[scheduler] tick failed:", caught);
-    });
+    if (running) {
+      return;
+    }
+    running = true;
+    void runDueJobs(db, new Date())
+      .catch((caught: unknown) => {
+        console.error("[scheduler] tick failed:", caught);
+      })
+      .finally(() => {
+        running = false;
+      });
   }, tickMs);
   timer.unref();
   return () => clearInterval(timer);

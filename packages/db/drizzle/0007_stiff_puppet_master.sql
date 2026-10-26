@@ -1,0 +1,2 @@
+CREATE INDEX `billing_payment_organization_period_idx` ON `billing_payment` (`organization_id`,`period_ends_at`);--> statement-breakpoint
+CREATE INDEX `billing_customer_pending_charge_idx` ON `billing_customer` (`pending_charge_id`);

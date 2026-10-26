@@ -7,7 +7,7 @@ import { MCP_TOOLS } from "../src/modules/mcp/contracts";
 import { TRIAL_DAYS } from "../src/modules/billing/entitlement";
 import { db, request, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
-const { billingSubscription, dataSource, organization, shareLink } = schema;
+const { billingPayment, dataSource, organization, shareLink } = schema;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,23 +54,24 @@ async function spendTrial(organizationId: string): Promise<void> {
     .where(eq(organization.id, organizationId));
 }
 
-async function subscribe(
+let checkoutSequence = 0;
+
+async function boughtPeriod(
   organizationId: string,
-  status: string,
-  productId = "prod_test_monthly",
+  endsInDays: number,
 ): Promise<void> {
+  checkoutSequence += 1;
   const now = new Date();
-  await db.insert(billingSubscription).values({
+  await db.insert(billingPayment).values({
     organizationId,
     customerId: "cust_gate",
-    subscriptionId: "sub_gate",
-    productId,
-    status,
-    currentPeriodEnd: new Date(now.getTime() + 30 * DAY_MS),
-    cancelAtPeriodEnd: false,
-    eventCreatedAt: now,
+    checkoutId: `chk_gate_${checkoutSequence}`,
+    cadence: "monthly",
+    amount: "5.00",
+    currency: "USD",
+    status: "paid",
+    periodEndsAt: new Date(now.getTime() + endsInDays * DAY_MS),
     createdAt: now,
-    updatedAt: now,
   });
 }
 
@@ -95,10 +96,10 @@ it("refuses the product once the trial has run out, and writes nothing", async (
   expect(listed.status).toBe(402);
 });
 
-it("lets a subscribed organization back in after its trial", async () => {
+it("lets an organization in on a period it bought after the trial", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   await spendTrial(organizationId);
-  await subscribe(organizationId, "active");
+  await boughtPeriod(organizationId, 30);
 
   const res = await createSource(cookie, "Paid source");
 
@@ -106,34 +107,23 @@ it("lets a subscribed organization back in after its trial", async () => {
   expect(await sourcesOf(organizationId)).toHaveLength(1);
 });
 
-it("keeps letting in an organization whose card is being retried", async () => {
+it("lets an organization in while its paid period is still running", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   await spendTrial(organizationId);
-  await subscribe(organizationId, "past_due");
+  await boughtPeriod(organizationId, 1);
 
-  const res = await createSource(cookie, "Retrying source");
+  const res = await createSource(cookie, "Running source");
 
   expect(res.status).toBe(200);
   expect(await sourcesOf(organizationId)).toHaveLength(1);
 });
 
-it("refuses an organization whose subscription was cancelled", async () => {
+it("refuses an organization whose paid period has run out, and does not revive the trial", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   await spendTrial(organizationId);
-  await subscribe(organizationId, "canceled");
+  await boughtPeriod(organizationId, -10);
 
-  const res = await createSource(cookie, "Cancelled source");
-
-  expect(res.status).toBe(402);
-  expect(await sourcesOf(organizationId)).toHaveLength(0);
-});
-
-it("refuses an organization subscribed to a product of its own", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
-  await subscribe(organizationId, "active", "prod_somebody_elses");
-
-  const res = await createSource(cookie, "Someone else's source");
+  const res = await createSource(cookie, "Lapsed source");
 
   expect(res.status).toBe(402);
   expect(await sourcesOf(organizationId)).toHaveLength(0);
@@ -155,12 +145,12 @@ it("still answers the routes an organization needs in order to pay", async () =>
     configured: boolean;
     entitled: boolean;
     trialEndsAt: string;
-    subscription: unknown;
+    paidUntil: string | null;
   };
   expect(summary).toMatchObject({
     configured: true,
     entitled: false,
-    subscription: null,
+    paidUntil: null,
   });
   expect(new Date(summary.trialEndsAt).getTime()).toBeLessThan(Date.now());
   expect(await sourcesOf(organizationId)).toHaveLength(0);

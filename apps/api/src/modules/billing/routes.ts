@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
-  billingSubscription,
+  billingCustomer,
   billingPayment,
-  type BillingSubscriptionRow,
   type HeptadecDatabase,
 } from "@heptadec/db";
 import { config } from "../../common/config/env";
@@ -11,8 +10,11 @@ import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
-import { activeOrganization } from "../../common/session/current-organization";
-import { readBody, readOptionalString, readString } from "../../common/http/body";
+import {
+  activeOrganization,
+  type IOrganizationScope,
+} from "../../common/session/current-organization";
+import { readBody, readOptionalString } from "../../common/http/body";
 import {
   BadRequestException,
   InternalServerException,
@@ -20,45 +22,53 @@ import {
 } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
-import { billingConfigured, billingPlans, cadenceForProduct, productIdFor, createDisplayCharge } from "./catalog";
-import { createCheckoutSession } from "./client";
+import { billingConfigured, billingPlans, daysFor, priceFor } from "./catalog";
+import { createCheckoutSession, createCustomer } from "./client";
 import { entitlementFor } from "./entitlement";
-import { readPaymentEvent, readSubscriptionEvent, type IPaymentEvent, type ISubscriptionEvent } from "./event";
-import { isSignedDelivery } from "./signature";
 import {
-  isBillingCadence,
-  type IBillingCharge,
-  IBillingPlan,
-  type IBillingSubscription,
-  type IBillingSummary,
-  type IStartCheckoutResponse,
-} from "./contracts";
+  readBillingEvent,
+  type ICardSavedEvent,
+  type IFailedEvent,
+  type IPaidEvent,
+} from "./event";
+import { stopAutoRenew } from "./renewal";
+import { isBillingCadence, type IBillingSummary, type ISetAutoRenewResponse, type IStartCheckoutResponse } from "./contracts";
+import { isSignedDelivery } from "./signature";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function billingRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
 
   routes.get("/api/billing", requireSession, async (c) => {
     const organization = activeOrganization(c);
-    const rows = await organization.db
-      .select()
-      .from(billingSubscription)
-      .where(organization.where(billingSubscription.organizationId))
-      .limit(1);
-    const row = rows[0];
-
     const entitlement = await entitlementFor(
       organization.db,
       organization.organizationId,
     );
-    // Get plans with the target currency from query parameter, if provided
-    const targetCurrency = c.req.query("currency");
+    const rows = await organization.db
+      .select()
+      .from(billingCustomer)
+      .where(organization.where(billingCustomer.organizationId))
+      .limit(1);
+    const customer = rows[0];
+
     const body: IBillingSummary = {
       configured: billingConfigured(),
       entitled: entitlement.entitled,
       trialEndsAt: entitlement.trialEndsAt.toISOString(),
-      plans: billingPlans(targetCurrency),
-      charges: [],
-      subscription: row === undefined ? null : toSubscription(row),
+      paidUntil:
+        entitlement.paidUntil === null
+          ? null
+          : entitlement.paidUntil.toISOString(),
+      cadence: entitlement.cadence,
+      autoRenew:
+        customer !== undefined &&
+        customer.autoRenew &&
+        customer.paymentMethodId !== null,
+      hasCard: customer !== undefined && customer.paymentMethodId !== null,
+      cardLast4: customer?.cardLast4 ?? null,
+      plans: billingPlans(),
     };
     return c.json(body);
   });
@@ -73,14 +83,8 @@ export function billingRoutes(): Hono<IAuthVars> {
 
     const body = readBody(await c.req.json(), "A plan is required");
     const cadence = readOptionalString(body, "cadence", "Choose a plan", 16);
-    const charge = body.charge as
-      | { amount: string; currency: string; paymentMethods?: string[] }
-      | undefined;
-
-    if (!cadence && (!charge || charge.amount === "" || charge.currency === "")) {
-      throw new BadRequestException(
-        "Provide cadence for a subscription, or amount + currency for a one-time charge",
-      );
+    if (cadence === undefined || !isBillingCadence(cadence)) {
+      throw new BadRequestException("Choose a plan");
     }
 
     const session = c.get("session");
@@ -88,48 +92,71 @@ export function billingRoutes(): Hono<IAuthVars> {
       throw new UnauthorizedException();
     }
 
-    let checkoutUrl: string;
-    if (cadence !== undefined && isBillingCadence(cadence)) {
-      checkoutUrl = await createCheckoutSession({
-        productId: productIdFor(cadence),
-        email: session.user.email,
-        name: session.user.name,
-        organizationId: organization.organizationId,
-      });
-      await recordAudit(c, {
-        organizationId: organization.organizationId,
-        event: "billing.checkout_started",
-        targetKind: "billing_subscription",
-        targetLabel: cadence,
-      });
-    } else {
-      if (!charge) {
-        throw new BadRequestException(
-          "Provide cadence for a subscription, or amount + currency for a one-time charge",
-        );
-      }
-      // Convert the charge amount from USD to the target currency for display,
-      // but send the USD amount to Bachs (which charges in USD)
-      const checkoutPricing = createDisplayCharge(charge.amount, charge.currency);
-      checkoutUrl = await createCheckoutSession({
-        pricing: {
-          currency: checkoutPricing.currency,
-          amount: charge.amount, // Send USD amount to Bachs
-        },
-        paymentMethodTypes: charge.paymentMethods,
-        email: session.user.email,
-        name: session.user.name,
-        organizationId: organization.organizationId,
-      });
-      await recordAudit(c, {
-        organizationId: organization.organizationId,
-        event: "billing.charge_started",
-        targetKind: "billing_payment",
-        targetLabel: `${charge.currency} ${charge.amount}`,
-      });
-    }
+    const customerId = await customerFor(organization, {
+      email: session.user.email,
+      name: session.user.name,
+    });
+    const checkoutUrl = await createCheckoutSession({
+      customerId,
+      amount: priceFor(cadence),
+      metadata: {
+        organization_id: organization.organizationId,
+        cadence,
+      },
+    });
+    await recordAudit(c, {
+      organizationId: organization.organizationId,
+      event: "billing.checkout_started",
+      targetKind: "billing_payment",
+      targetLabel: cadence,
+    });
 
     const response: IStartCheckoutResponse = { checkoutUrl };
+    return c.json(response);
+  });
+
+  routes.post("/api/billing/auto-renew", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+    requireOwner(c, "Only owners can change auto-renew");
+
+    const body = readBody(
+      await c.req.json(),
+      "Choose whether the saved card renews",
+    );
+    const enabled = body.enabled;
+    if (typeof enabled !== "boolean") {
+      throw new BadRequestException("Choose whether the saved card renews");
+    }
+
+    const rows = await organization.db
+      .select()
+      .from(billingCustomer)
+      .where(organization.where(billingCustomer.organizationId))
+      .limit(1);
+    const customer = rows[0];
+    if (customer === undefined) {
+      throw new BadRequestException(
+        "Start a checkout before choosing auto-renew",
+      );
+    }
+    if (enabled && customer.paymentMethodId === null) {
+      throw new BadRequestException(
+        "A saved card is needed to renew automatically",
+      );
+    }
+
+    await organization.db
+      .update(billingCustomer)
+      .set({ autoRenew: enabled, pendingChargeId: null, updatedAt: new Date() })
+      .where(organization.where(billingCustomer.organizationId));
+    await recordAudit(c, {
+      organizationId: organization.organizationId,
+      event: "billing.auto_renew_changed",
+      targetKind: "billing_customer",
+      targetLabel: enabled ? "on" : "off",
+    });
+
+    const response: ISetAutoRenewResponse = { autoRenew: enabled };
     return c.json(response);
   });
 
@@ -147,78 +174,184 @@ export function billingRoutes(): Hono<IAuthVars> {
       throw new BadRequestException("That delivery is not signed");
     }
 
-    const subscription = readSubscriptionEvent(raw);
-    if (subscription !== null) {
-      await storeSubscription(c.get("db"), subscription);
+    const event = readBillingEvent(raw);
+    if (event === null) {
       return c.json({ received: true });
     }
 
-    const payment = readPaymentEvent(raw);
-    if (payment !== null) {
-      await storePayment(c.get("db"), payment);
-      return c.json({ received: true });
+    const db = c.get("db");
+    if (event.kind === "card") {
+      await storeCard(db, event);
+    } else if (event.kind === "paid") {
+      await storePayment(db, event);
+    } else {
+      await storeFailure(db, event);
     }
-
     return c.json({ received: true });
   });
 
   return routes;
 }
 
-async function storeSubscription(
+async function customerFor(
+  organization: IOrganizationScope,
+  person: { email: string; name: string },
+): Promise<string> {
+  const rows = await organization.db
+    .select()
+    .from(billingCustomer)
+    .where(organization.where(billingCustomer.organizationId))
+    .limit(1);
+  const existing = rows[0];
+  if (existing !== undefined) {
+    return existing.customerId;
+  }
+
+  const customerId = await createCustomer({
+    email: person.email,
+    name: person.name,
+    organizationId: organization.organizationId,
+  });
+  const now = new Date();
+  await organization.db
+    .insert(billingCustomer)
+    .values({
+      organizationId: organization.organizationId,
+      customerId,
+      autoRenew: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing();
+
+  const stored = await organization.db
+    .select()
+    .from(billingCustomer)
+    .where(organization.where(billingCustomer.organizationId))
+    .limit(1);
+  if (stored[0] === undefined) {
+    throw new InternalServerException("The Bachs customer was not stored");
+  }
+  return stored[0].customerId;
+}
+
+async function storeCard(
   db: HeptadecDatabase,
-  event: ISubscriptionEvent,
+  event: ICardSavedEvent,
 ): Promise<void> {
   const rows = await db
     .select()
-    .from(billingSubscription)
-    .where(eq(billingSubscription.organizationId, event.organizationId))
+    .from(billingCustomer)
+    .where(eq(billingCustomer.customerId, event.customerId))
     .limit(1);
-  const existing = rows[0];
-  if (existing !== undefined && existing.eventCreatedAt > event.occurredAt) {
+  const customer = rows[0];
+  if (customer === undefined) {
+    return;
+  }
+  await db
+    .update(billingCustomer)
+    .set({
+      paymentMethodId: event.paymentMethodId,
+      cardBrand: event.cardBrand,
+      cardLast4: event.cardLast4,
+      autoRenew: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(billingCustomer.id, customer.id));
+}
+
+async function storePayment(
+  db: HeptadecDatabase,
+  event: IPaidEvent,
+): Promise<void> {
+  const organizationId = event.organizationId;
+  const cadence = event.cadence;
+  const checkoutId = event.checkoutId;
+  const chargeId = event.chargeId;
+  let paidWith: { kind: "checkout" | "charge"; id: string } | null = null;
+  if (checkoutId !== null) {
+    paidWith = { kind: "checkout", id: checkoutId };
+  } else if (chargeId !== null) {
+    paidWith = { kind: "charge", id: chargeId };
+  }
+  if (organizationId === null || cadence === null || paidWith === null) {
     return;
   }
 
-  const now = new Date();
-  const state = {
-    customerId: event.customerId,
-    subscriptionId: event.subscriptionId,
-    productId: event.productId,
-    status: event.status,
-    currentPeriodEnd: event.currentPeriodEnd,
-    cancelAtPeriodEnd: event.cancelAtPeriodEnd,
-    eventCreatedAt: event.occurredAt,
-    updatedAt: now,
-  };
-  await db
-    .insert(billingSubscription)
-    .values({ organizationId: event.organizationId, createdAt: now, ...state })
-    .onConflictDoUpdate({
-      target: billingSubscription.organizationId,
-      set: state,
-    });
-}
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: billingPayment.id })
+      .from(billingPayment)
+      .where(
+        paidWith.kind === "checkout"
+          ? eq(billingPayment.checkoutId, paidWith.id)
+          : eq(billingPayment.chargeId, paidWith.id),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      return;
+    }
 
-async function storePayment(db: HeptadecDatabase, event: IPaymentEvent): Promise<void> {
-  const now = new Date();
-  await db.insert(billingPayment).values({
-    id: crypto.randomUUID(),
-    organizationId: event.organizationId,
-    customerId: event.customerId,
-    checkoutId: event.checkoutId,
-    amount: event.amount,
-    currency: event.currency,
-    status: event.status,
-    periodEndsAt: null,
-    createdAt: now,
+    const latest = await tx
+      .select({ periodEndsAt: billingPayment.periodEndsAt })
+      .from(billingPayment)
+      .where(eq(billingPayment.organizationId, organizationId))
+      .orderBy(desc(billingPayment.periodEndsAt))
+      .limit(1);
+    const now = new Date();
+    const previousEnd = latest[0]?.periodEndsAt ?? null;
+    const startsAt =
+      previousEnd !== null && previousEnd.getTime() > now.getTime()
+        ? previousEnd
+        : now;
+    const periodEndsAt = new Date(
+      startsAt.getTime() + daysFor(cadence) * DAY_MS,
+    );
+
+    await tx.insert(billingPayment).values({
+      organizationId,
+      customerId: event.customerId,
+      checkoutId,
+      chargeId,
+      cadence,
+      amount: event.amount,
+      currency: event.currency,
+      status: event.status,
+      periodEndsAt,
+      createdAt: now,
+    });
+    await tx
+      .update(billingCustomer)
+      .set({ pendingChargeId: null, updatedAt: now })
+      .where(eq(billingCustomer.organizationId, organizationId));
   });
 }
 
-function toSubscription(row: BillingSubscriptionRow): IBillingSubscription {
-  return {
-    status: row.status,
-    cadence: cadenceForProduct(row.productId),
-    renewsAt: row.currentPeriodEnd?.toISOString() ?? null,
-    cancelAtPeriodEnd: row.cancelAtPeriodEnd,
-  };
+async function storeFailure(
+  db: HeptadecDatabase,
+  event: IFailedEvent,
+): Promise<void> {
+  if (event.chargeId !== null) {
+    const pending = await db
+      .select()
+      .from(billingCustomer)
+      .where(eq(billingCustomer.pendingChargeId, event.chargeId))
+      .limit(1);
+    if (pending[0] !== undefined) {
+      await stopAutoRenew(db, pending[0].id, new Date());
+      return;
+    }
+  }
+
+  if (event.customerId === null) {
+    return;
+  }
+  const byCustomer = await db
+    .select()
+    .from(billingCustomer)
+    .where(eq(billingCustomer.customerId, event.customerId))
+    .limit(1);
+  if (byCustomer[0] !== undefined) {
+    await stopAutoRenew(db, byCustomer[0].id, new Date());
+  }
 }

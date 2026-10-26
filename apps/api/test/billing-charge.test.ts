@@ -1,184 +1,347 @@
-import { afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { eq, like } from "drizzle-orm";
-import { schema } from "@heptadec/db";
-import { config } from "../src/common/config/env";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
+import { checkBillingRenewals } from "../src/modules/billing/renewal";
 import { db, request, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
-const { billingPayment } = schema;
+const { billingCustomer, billingPayment, organization } = schema;
 
-const PAYMENT_EVENTS = [
-  "checkout.completed",
-  "payment.completed",
-  "collection.succeeded",
-] as const;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-interface IPaymentEventInput {
-  type?: string;
-  createdAt?: string;
-  organizationId: string;
-  checkoutId?: string;
-  customerId?: string;
-  amount?: string;
-  currency?: string;
-  status?: string;
+interface ISent {
+  path: string;
+  body: Record<string, unknown>;
+  idempotencyKey: string | null;
 }
 
-function paymentEventBody(input: IPaymentEventInput): string {
-  return JSON.stringify({
-    id: "evt_test",
-    type: input.type ?? "checkout.completed",
-    created_at: input.createdAt ?? "2026-10-17T10:00:00.000000+00:00",
-    organization_id: input.organizationId,
-    data: {
-      checkout_id: input.checkoutId ?? "chk_test",
-      customer: { customer_id: input.customerId ?? "cust_test" },
-      amount: input.amount ?? "5000.00",
-      currency: input.currency ?? "USD",
-      status: input.status ?? "completed",
-      metadata: { organization_id: input.organizationId },
-    },
-  });
-}
+let sent: ISent[] = [];
 
-async function deliver(body: string): Promise<Response> {
-  return request("/api/webhooks/bachs", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-bachs-signature-v2": await signedHeader(body),
-    },
-    body,
-  });
-}
-
-/** The signature the webhook accepts: HMAC of `${seconds}.${raw}` under the
- * configured secret, mirroring billing.test.ts's own signer. */
-async function signedHeader(raw: string): Promise<string> {
-  const seconds = Math.floor(Date.now() / 1000);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(config.bachs.webhookSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const digest = new Uint8Array(
-    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${seconds}.${raw}`)),
-  );
-  const hex = Array.from(digest)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  return `t=${seconds},v1=${hex}`;
-}
-
-beforeEach(() => {
-  // The checkout initiation goes to the configured Bachs host; the test
-  // stubs a canned session instead of the network.
+function stubBachs(replies: Record<string, Record<string, unknown>>): void {
+  sent = [];
   vi.stubGlobal(
     "fetch",
-    async () =>
-      new Response(JSON.stringify({ checkout_url: "https://checkout.test/session/chk_stub" }), {
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const path = new URL(url).pathname;
+      sent.push({
+        path,
+        body: JSON.parse(
+          typeof init?.body === "string" ? init.body : "{}",
+        ) as Record<string, unknown>,
+        idempotencyKey: new Headers(init?.headers).get("idempotency-key"),
+      });
+      const reply = replies[path];
+      if (reply === undefined) {
+        throw new Error(`unexpected Bachs call: ${path}`);
+      }
+      return new Response(JSON.stringify(reply), {
         status: 200,
         headers: { "content-type": "application/json" },
-      }),
+      });
+    },
   );
-});
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-afterAll(async () => {
-  await db
-    .delete(billingPayment)
-    .where(like(billingPayment.organizationId, "org-payment-%"));
+beforeEach(async () => {
+  await db.delete(billingPayment);
+  await db.delete(billingCustomer);
 });
 
-async function storedPayment(organizationId: string) {
-  const rows = await db
+async function customerOf(
+  database: HeptadecDatabase,
+  organizationId: string,
+) {
+  const rows = await database
     .select()
-    .from(billingPayment)
-    .where(eq(billingPayment.organizationId, organizationId));
+    .from(billingCustomer)
+    .where(eq(billingCustomer.organizationId, organizationId));
   return rows[0];
 }
 
-describe("payment webhook storage", () => {
-  beforeEach(async () => {
-    await db.delete(billingPayment);
+async function signedInOwner(): Promise<{
+  cookie: string;
+  organizationId: string;
+}> {
+  const { cookie } = await signUp(uniqueEmail());
+  const created = await authFor(db).api.createOrganization({
+    body: { name: "Charge Test", slug: uniqueSlug() },
+    headers: { cookie },
   });
+  return { cookie, organizationId: created.id };
+}
 
-  it.each(PAYMENT_EVENTS)("stores a billing_payment row for %s", async (type) => {
-    const organizationId = "org-payment-" + type;
-    const response = await deliver(paymentEventBody({ organizationId, type }));
-    expect(response.status).toBe(200);
+async function organizationInTrial(
+  createdDaysAgo = 0,
+): Promise<string> {
+  const inserted = await db
+    .insert(organization)
+    .values({
+      name: "Renewal Org",
+      slug: uniqueSlug(),
+      createdAt: new Date(Date.now() - createdDaysAgo * DAY_MS),
+    })
+    .returning({ id: organization.id });
+  return inserted[0]!.id;
+}
 
-    const row = await storedPayment(organizationId);
-    expect(row).not.toBeUndefined();
-    expect(row!.checkoutId).toBe("chk_test");
-    expect(row!.amount).toBe("5000.00");
-    expect(row!.currency).toBe("USD");
-    expect(row!.status).toBe("completed");
-  });
-});
-
-describe("charge initiation route", () => {
-  async function signedInOwner() {
-    const { cookie } = await signUp(uniqueEmail());
-    const created = await authFor(db).api.createOrganization({
-      body: { name: "Charge Test", slug: uniqueSlug() },
-      headers: { cookie },
+describe("starting a checkout", () => {
+  it("creates the Bachs customer once, prices the plan in USD, and saves the card", async () => {
+    stubBachs({
+      "/v1/customers": { customer_id: "cust_new" },
+      "/v1/checkout-sessions": {
+        checkout_url: "https://checkout.test/session/chk_new",
+      },
     });
-    return { cookie, organizationId: created.id };
-  }
-
-  it("starts a one-time charge in the given currency", async () => {
     const { cookie, organizationId } = await signedInOwner();
 
     const response = await request("/api/billing/checkout", {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({
-        charge: { amount: "5000.00", currency: "USD", paymentMethods: ["USD_CARD"] },
-      }),
+      body: JSON.stringify({ cadence: "monthly" }),
     });
     expect(response.status).toBe(200);
-
     const body = (await response.json()) as { checkoutUrl: string };
-    expect(typeof body.checkoutUrl).toBe("string");
-    expect(body.checkoutUrl).toContain("https://");
+    expect(body.checkoutUrl).toBe("https://checkout.test/session/chk_new");
+
+    const customer = await customerOf(db, organizationId);
+    expect(customer?.customerId).toBe("cust_new");
+    expect(customer?.autoRenew).toBe(false);
+
+    const checkout = sent.find((call) => call.path === "/v1/checkout-sessions");
+    expect(checkout).toBeDefined();
+    expect(checkout?.body.pricing).toEqual({ currency: "USD", amount: "5.00" });
+    expect(checkout?.body.save_payment_method).toBe(true);
+    expect(checkout?.body.customer).toEqual({ customer_id: "cust_new" });
+    expect(checkout?.body.metadata).toEqual({
+      organization_id: organizationId,
+      cadence: "monthly",
+    });
   });
 
-  it("starts a charge in another currency", async () => {
+  it("prices the yearly plan in USD and reuses the stored customer", async () => {
+    stubBachs({
+      "/v1/customers": { customer_id: "cust_reused" },
+      "/v1/checkout-sessions": {
+        checkout_url: "https://checkout.test/session/chk_yearly",
+      },
+    });
     const { cookie, organizationId } = await signedInOwner();
+    const checkoutWith = (cadence: string) =>
+      request("/api/billing/checkout", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ cadence }),
+      });
 
-    const response = await request("/api/billing/checkout", {
-      method: "POST",
-      headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({
-        charge: { amount: "50000.00", currency: "NGN", paymentMethods: ["NGN_BANK_TRANSFER"] },
-      }),
-    });
-    expect(response.status).toBe(200);
+    expect((await checkoutWith("monthly")).status).toBe(200);
+    expect((await checkoutWith("yearly")).status).toBe(200);
 
-    const body = (await response.json()) as { checkoutUrl: string };
-    expect(body.checkoutUrl).toContain("https://");
+    expect(sent.filter((call) => call.path === "/v1/customers")).toHaveLength(1);
+    const prices = sent
+      .filter((call) => call.path === "/v1/checkout-sessions")
+      .map((call) => call.body.pricing);
+    expect(prices).toEqual([
+      { currency: "USD", amount: "5.00" },
+      { currency: "USD", amount: "50.00" },
+    ]);
+    const rows = await db
+      .select()
+      .from(billingCustomer)
+      .where(eq(billingCustomer.organizationId, organizationId));
+    expect(rows).toHaveLength(1);
   });
 
-  it("refuses a viewer", async () => {
+  it("refuses a viewer and writes no customer", async () => {
+    stubBachs({
+      "/v1/customers": { customer_id: "cust_viewer" },
+      "/v1/checkout-sessions": {
+        checkout_url: "https://checkout.test/session/chk_viewer",
+      },
+    });
     const { organizationId } = await signedInOwner();
     const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
     await authFor(db).api.addMember({
       body: { userId: viewer.id, role: "viewer", organizationId },
     });
+    await request("/api/organization/switch", {
+      method: "POST",
+      headers: { cookie: viewerCookie, "content-type": "application/json" },
+      body: JSON.stringify({ organizationId }),
+    });
 
     const response = await request("/api/billing/checkout", {
       method: "POST",
       headers: { cookie: viewerCookie, "content-type": "application/json" },
-      body: JSON.stringify({
-        charge: { amount: "5000.00", currency: "USD" },
-      }),
+      body: JSON.stringify({ cadence: "monthly" }),
     });
     expect(response.status).toBe(403);
+    expect(sent).toHaveLength(0);
+    expect(await customerOf(db, organizationId)).toBeUndefined();
+  });
+});
+
+describe("charging the saved card for the next period", () => {
+  async function lapsedWithCard(cadence: "monthly" | "yearly" = "monthly") {
+    const organizationId = await organizationInTrial(40);
+    const now = new Date();
+    const paymentId = `pay_${organizationId}`;
+    await db.insert(billingPayment).values({
+      id: paymentId,
+      organizationId,
+      customerId: `cust_${organizationId}`,
+      checkoutId: `chk_${organizationId}`,
+      cadence,
+      amount: cadence === "yearly" ? "50.00" : "5.00",
+      currency: "USD",
+      status: "paid",
+      periodEndsAt: new Date(now.getTime() - DAY_MS),
+      createdAt: new Date(now.getTime() - 31 * DAY_MS),
+    });
+    const inserted = await db
+      .insert(billingCustomer)
+      .values({
+        organizationId,
+        customerId: `cust_${organizationId}`,
+        paymentMethodId: `pm_${organizationId}`,
+        autoRenew: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({ id: billingCustomer.id });
+    return {
+      organizationId,
+      customerId: inserted[0]!.id,
+      paymentId,
+      cardId: `pm_${organizationId}`,
+    };
+  }
+
+  it("charges the plan's USD price once and remembers the charge in flight", async () => {
+    const { organizationId, customerId, paymentId, cardId } =
+      await lapsedWithCard("yearly");
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_renewed", status: "pending" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(1);
+
+    const charge = sent.find((call) => call.path === "/v1/charges");
+    expect(charge).toBeDefined();
+    expect(charge?.body.amount).toBe("50.00");
+    expect(charge?.body.currency).toBe("USD");
+    expect(charge?.body.customer).toBe(`cust_${organizationId}`);
+    expect(charge?.body.payment_method).toBe(cardId);
+    expect(charge?.body.reference).toBe(`renewal-${organizationId}-${paymentId}`);
+    expect(charge?.idempotencyKey).toBe(`renewal-${organizationId}-${paymentId}`);
+
+    const stored = await db
+      .select()
+      .from(billingCustomer)
+      .where(eq(billingCustomer.id, customerId));
+    expect(stored[0]?.pendingChargeId).toBe("chg_renewed");
+    expect(stored[0]?.autoRenew).toBe(true);
+  });
+
+  it("does not start a second charge while one is in flight", async () => {
+    const { customerId } = await lapsedWithCard();
+    await db
+      .update(billingCustomer)
+      .set({ pendingChargeId: "chg_in_flight" })
+      .where(eq(billingCustomer.id, customerId));
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_second", status: "pending" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("asks again for the same charge when its webhook never arrived", async () => {
+    const { organizationId, customerId, paymentId } = await lapsedWithCard();
+    const stale = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await db
+      .update(billingCustomer)
+      .set({ pendingChargeId: "chg_lost", updatedAt: stale })
+      .where(eq(billingCustomer.id, customerId));
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_lost", status: "pending" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(1);
+
+    const reference = `renewal-${organizationId}-${paymentId}`;
+    const charge = sent.find((call) => call.path === "/v1/charges");
+    expect(charge?.body.reference).toBe(reference);
+    expect(charge?.idempotencyKey).toBe(reference);
+
+    const stored = await db
+      .select()
+      .from(billingCustomer)
+      .where(eq(billingCustomer.id, customerId));
+    expect(stored[0]?.pendingChargeId).toBe("chg_lost");
+  });
+
+  it("stops renewing when Bachs refuses the charge outright", async () => {
+    const { customerId } = await lapsedWithCard();
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_refused", status: "failed" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(0);
+
+    const stored = await db
+      .select()
+      .from(billingCustomer)
+      .where(eq(billingCustomer.id, customerId));
+    expect(stored[0]?.autoRenew).toBe(false);
+    expect(stored[0]?.pendingChargeId).toBeNull();
+  });
+
+  it("leaves a customer whose trial is still running alone", async () => {
+    const organizationId = await organizationInTrial();
+    await db.insert(billingCustomer).values({
+      organizationId,
+      customerId: `cust_${organizationId}`,
+      paymentMethodId: `pm_${organizationId}`,
+      autoRenew: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_unexpected", status: "pending" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("leaves a customer that stopped renewing alone", async () => {
+    const { customerId } = await lapsedWithCard();
+    await db
+      .update(billingCustomer)
+      .set({ autoRenew: false })
+      .where(eq(billingCustomer.id, customerId));
+    stubBachs({
+      "/v1/charges": { payment_id: "chg_unexpected", status: "pending" },
+    });
+
+    const submitted = await checkBillingRenewals(db, new Date());
+    expect(submitted).toBe(0);
+    expect(sent).toHaveLength(0);
   });
 });

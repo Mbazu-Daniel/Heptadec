@@ -33,4 +33,4 @@ export * from "./notification-channel";
 
 export * from "./billing-payment";
 
-export * from "./billing-subscription";
+export * from "./billing-customer";

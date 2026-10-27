@@ -25,6 +25,9 @@ impl.html
 *.db-wal
 scripts/check-*
 .claude/
+.codex/
+.cursor/
+.github/hooks/
 .grok/
 .hermes/
 .kiro/

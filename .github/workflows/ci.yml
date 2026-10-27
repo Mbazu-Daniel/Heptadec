@@ -111,9 +111,6 @@ jobs:
       PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
       RESEND_FROM: ${{ secrets.RESEND_FROM }}
       BACHS_BASE_URL: ${{ secrets.BACHS_BASE_URL }}
-      BACHS_PRODUCT_MONTHLY: ${{ secrets.BACHS_PRODUCT_MONTHLY }}
-      BACHS_PRODUCT_YEARLY: ${{ secrets.BACHS_PRODUCT_YEARLY }}
-      BACHS_CURRENCY: ${{ secrets.BACHS_CURRENCY }}
       BACHS_PRICE_MONTHLY: ${{ secrets.BACHS_PRICE_MONTHLY }}
       BACHS_PRICE_YEARLY: ${{ secrets.BACHS_PRICE_YEARLY }}
     steps:

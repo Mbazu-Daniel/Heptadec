@@ -106,9 +106,7 @@ export function ShareDialog({
         </DialogHeader>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          Anyone with the link sees the dashboard's charts as they are right now.
-          The link serves a frozen copy — refreshing it re-runs the queries, and
-          revoking it makes the URL stop working immediately.
+          The link serves a frozen copy of the charts; revoking it stops working immediately.
         </p>
 
         {problem !== null ? <Alert>{problem}</Alert> : null}

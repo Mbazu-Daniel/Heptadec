@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { eq, sql } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  member,
+  user,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -16,8 +20,6 @@ import { mediaUrl, publicBaseFrom } from "../images/urls";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
 import type { IMemberProfileResponse, IMembersResponse } from "./contracts";
-
-const { member, user } = schema;
 
 const MAX_DISPLAY_NAME = 120;
 

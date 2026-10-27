@@ -29,6 +29,34 @@
       "when": 1792234703236,
       "tag": "0003_dry_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792777778220,
+      "tag": "0004_puzzling_madame_hydra",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793004165265,
+      "tag": "0005_volatile_white_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793004187109,
+      "tag": "0006_futuristic_black_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793021087636,
+      "tag": "0007_stiff_puppet_master",
+      "breakpoints": true
     }
   ]
 }

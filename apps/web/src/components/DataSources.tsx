@@ -1,17 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { IconPlus } from "@tabler/icons-react";
 import type {
-  ConnectionMode,
   DataSourceKind,
+  ICreateDataSourceRequest,
   IDataSource,
 } from "@heptadec/api/data-source-contracts";
-import {
-  ENGINE_SPECS,
-  PORT_MAX,
-  PORT_MIN,
-  defaultConnectionMode,
-  isPreviewEngine,
-} from "@heptadec/api/data-source-contracts";
+import { ENGINE_SPECS, defaultConnectionMode, kindFromConnectionUrl } from "@heptadec/api/data-source-contracts";
 import {
   createDataSource,
   deleteDataSource,
@@ -30,17 +24,8 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { EngineIcon } from "../lib/engine-icon";
-import { cn } from "@/lib/utils";
 import {
-  FilterSummary,
   SMALL_BUTTON_CLASSNAME,
-  TABLE_CELL_CLASSNAME,
-  TABLE_CLASSNAME,
-  TABLE_HEAD_CLASSNAME,
-  TABLE_ROW_CLASSNAME,
-  TOOLBAR_INPUT_CLASSNAME,
-  TOOLBAR_SELECT_CLASSNAME,
-  Toolbar,
   VIEW_CLASSNAME,
   Workspace,
   type ICrumb,
@@ -48,8 +33,8 @@ import {
 import { EngineForm } from "./connection/EngineForm";
 import { SourceMenu } from "./connection/SourceMenu";
 import { SourceSettingsDialog } from "./connection/SourceSettingsDialog";
-import { connectionPayload } from "./connection/payload";
-import type { ConnectionMethod } from "./connection/ConnectionMethod";
+import { connectionPayload, PORT_MESSAGE } from "./connection/payload";
+import { parseConnectionUrl } from "../lib/connection-url-parser";
 import { SourceDetail } from "./SourceDetail";
 import { SchemaBrowser } from "./schema/SchemaBrowser";
 
@@ -82,18 +67,17 @@ export function DataSources({
   const [loaded, setLoaded] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [engine, setEngine] = useState<DataSourceKind | "">("");
   const [openedId, setOpenedId] = useState<string | null>(null);
-  const [layout, setLayout] = useState<"table" | "cards">("cards");
 
   const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<DataSourceKind>("postgres");
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<ConnectionMode | null>(() =>
-    defaultConnectionMode("postgres"),
-  );
-  const [method, setMethod] = useState<ConnectionMethod>("fields");
+  // There is no mode choice in the UI: an engine always connects its default
+  // way, so the mode is derived rather than stored.
+  const mode = defaultConnectionMode(kind);
+  // The URL import starts closed, like a plain field form that can be filled
+  // by a paste once the importer is switched on.
+  const [importOpen, setImportOpen] = useState(false);
   const [connectionUrl, setConnectionUrl] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [readOnly, setReadOnly] = useState(true);
@@ -140,32 +124,64 @@ export function DataSources({
   }, [openedId, onTrail]);
 
   const opened = sources.find((source) => source.id === openedId) ?? null;
-  function resetConnection(next: {
-    kind: DataSourceKind;
-    method: ConnectionMethod;
-  }): void {
-    setKind(next.kind);
-    setMethod(next.method);
-    setMode(defaultConnectionMode(next.kind));
+
+  // A pasted URL is an import: what it parses replaces the fields wholesale.
+  useEffect(() => {
+    if (connectionUrl.trim() === "") {
+      return;
+    }
+    const parsed = parseConnectionUrl(connectionUrl, kind);
+    if (Object.keys(parsed).length === 0) {
+      return; // Not a readable URL yet; leave the fields until it is.
+    }
+    setValues(parsed);
+  }, [connectionUrl, kind]);
+
+  function resetConnection(kind: DataSourceKind): void {
+    setKind(kind);
     setValues({});
     setConnectionUrl("");
     setFormError(null);
     setTestState({ status: "idle" });
   }
 
-  function chooseEngine(next: DataSourceKind): void {
-    const acceptsUrl = ENGINE_SPECS[next].acceptsConnectionUrl;
-    resetConnection({
-      kind: next,
-      method: acceptsUrl ? "fields" : "url",
-    });
+  // Switching the import off discards the paste with it: with the URL box
+  // gone there is nowhere for its truth to live, so the fields take over.
+  function toggleUrlImport(): void {
+    if (importOpen) {
+      setConnectionUrl("");
+    }
+    setImportOpen(!importOpen);
+  }
+
+  // The pasted URL names its own engine — the scheme is the same word the
+  // server accepts a pasted URL by — so importing has no engine to pick.
+  function setUrl(next: string): void {
+    setConnectionUrl(next);
+    const inferred = kindFromConnectionUrl(next);
+    if (inferred !== null && inferred !== kind) {
+      setKind(inferred);
+      setTestState({ status: "idle" });
+    }
   }
 
   function openForm(): void {
     setName("");
     setReadOnly(false);
-    resetConnection({ kind: "postgres", method: "fields" });
+    setImportOpen(false);
+    resetConnection("postgres");
     setFormOpen(true);
+  }
+
+  function buildPayload(): ICreateDataSourceRequest | null {
+    return connectionPayload({
+      kind,
+      mode,
+      connectionUrl,
+      name,
+      readOnly,
+      values,
+    });
   }
 
   async function submit(event: FormEvent): Promise<void> {
@@ -174,17 +190,13 @@ export function DataSources({
       setFormError("A name is required");
       return;
     }
-    const payload = connectionPayload({
-      kind,
-      mode,
-      method,
-      connectionUrl,
-      name,
-      readOnly,
-      values,
-    });
+    if (importOpen && connectionUrl.trim() === "") {
+      setFormError("Paste a connection URL");
+      return;
+    }
+    const payload = buildPayload();
     if (payload === null) {
-      setFormError(`The port must be a whole number between ${PORT_MIN} and ${PORT_MAX}`);
+      setFormError(PORT_MESSAGE);
       return;
     }
     setBusy(true);
@@ -201,20 +213,13 @@ export function DataSources({
   }
 
   async function testConnection(): Promise<void> {
-    const payload = connectionPayload({
-      kind,
-      mode,
-      method,
-      connectionUrl,
-      name,
-      readOnly,
-      values,
-    });
+    if (importOpen && connectionUrl.trim() === "") {
+      setTestState({ status: "failed", message: "Paste a connection URL" });
+      return;
+    }
+    const payload = buildPayload();
     if (payload === null) {
-      setTestState({
-        status: "failed",
-        message: `The port must be a whole number between ${PORT_MIN} and ${PORT_MAX}`,
-      });
+      setTestState({ status: "failed", message: PORT_MESSAGE });
       return;
     }
     setTestState({ status: "testing" });
@@ -246,18 +251,6 @@ export function DataSources({
       setRemoving(false);
     }
   }
-
-  const term = query.trim().toLowerCase();
-  const visible = sources.filter((source) => {
-    if (engine !== "" && source.kind !== engine) {
-      return false;
-    }
-    if (term === "") {
-      return true;
-    }
-    return `${source.name} ${targetOf(source)}`.toLowerCase().includes(term);
-  });
-  const filtering = term !== "" || engine !== "";
 
   if (opened !== null) {
     // A source whose statements are SQL or an aggregation pipeline reports a
@@ -305,70 +298,7 @@ export function DataSources({
         </span>
       </div>
 
-      <Toolbar>
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search sources…"
-          aria-label="Search sources"
-          className={cn("w-56", TOOLBAR_INPUT_CLASSNAME)}
-        />
-        <select
-          value={engine}
-          onChange={(event) =>
-            setEngine(event.target.value as DataSourceKind | "")
-          }
-          aria-label="Filter by engine"
-          className={TOOLBAR_SELECT_CLASSNAME}
-        >
-          <option value="">All engines</option>
-          {ENGINES.map((option) => {
-            const spec = ENGINE_SPECS[option];
-            const isPreview = isPreviewEngine(option);
-            return (
-              <option key={option} value={option}>
-                {spec.name}
-                {isPreview ? " — preview" : ""}
-              </option>
-            );
-          })}
-        </select>
-        <div
-          className="flex items-center border border-border"
-          role="group"
-          aria-label="Change layout"
-        >
-          <button
-            type="button"
-            title="Table"
-            aria-pressed={layout === "table"}
-            onClick={() => setLayout("table")}
-            className={
-              layout === "table"
-                ? "flex h-8 w-8 items-center justify-center bg-cyan/10 text-cyan"
-                : "flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-fg"
-            }
-          >
-            <span className="material-symbols-outlined text-[19px]">
-              view_list
-            </span>
-          </button>
-          <button
-            type="button"
-            title="Cards"
-            aria-pressed={layout === "cards"}
-            onClick={() => setLayout("cards")}
-            className={
-              layout === "cards"
-                ? "flex h-8 w-8 items-center justify-center bg-cyan/10 text-cyan"
-                : "flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-fg"
-            }
-          >
-            <span className="material-symbols-outlined text-[19px]">
-              grid_view
-            </span>
-          </button>
-        </div>
+      <div className="flex items-center gap-2 px-6 py-3">
         <Button
           className="ml-auto h-9 gap-1.5 px-4 text-sm"
           onClick={openForm}
@@ -376,17 +306,7 @@ export function DataSources({
           <IconPlus size={16} />
           Add source
         </Button>
-      </Toolbar>
-
-      {filtering ? (
-        <FilterSummary
-          count={visible.length}
-          onClear={() => {
-            setQuery("");
-            setEngine("");
-          }}
-        />
-      ) : null}
+      </div>
 
       <Workspace
         view={
@@ -408,14 +328,9 @@ export function DataSources({
                   </Button>
                 </div>
               </>
-            ) : visible.length === 0 ? (
-              <EmptyState
-                title="Nothing matches"
-                body="No source matches the current search and engine filter."
-              />
-            ) : layout === "cards" ? (
+            ) : (
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {visible.map((source) => (
+                {sources.map((source) => (
                   <li key={source.id} className="relative">
                     <button
                       type="button"
@@ -443,56 +358,6 @@ export function DataSources({
                   </li>
                 ))}
               </ul>
-            ) : (
-              <table className={TABLE_CLASSNAME} aria-label="Data sources">
-                <thead>
-                  <tr>
-                    <th scope="col" className={TABLE_HEAD_CLASSNAME}>
-                      Source
-                    </th>
-                    <th scope="col" className={TABLE_HEAD_CLASSNAME}>
-                      Target
-                    </th>
-                    <th scope="col" className={TABLE_HEAD_CLASSNAME}>
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((source) => (
-                    <tr key={source.id} className={TABLE_ROW_CLASSNAME}>
-                      <td className={TABLE_CELL_CLASSNAME}>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setOpenedId(source.id)}
-                          className="h-auto justify-start gap-2 px-1 py-0.5 text-xs"
-                        >
-                          <EngineIcon name={source.kind} className="size-4" />
-                          <span className="truncate">{source.name}</span>
-                        </Button>
-                      </td>
-                      <td
-                        className={cn(
-                          TABLE_CELL_CLASSNAME,
-                          "truncate font-mono text-muted-foreground",
-                        )}
-                      >
-                        {targetOf(source)}
-                      </td>
-                      <td className={cn(TABLE_CELL_CLASSNAME, "text-right")}>
-                        <SourceMenu
-                          className="inline-flex"
-                          onSettings={() => setSettingsId(source.id)}
-                          onRemove={() => {
-                            setRemoveError(null);
-                            setRemoveTarget(source);
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             )}
           </>
         }
@@ -500,25 +365,43 @@ export function DataSources({
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-lg gap-5 rounded-none border-border bg-card">
-          <DialogHeader>
+          <DialogHeader className="flex-row items-center justify-between">
             <DialogTitle className="text-sm font-semibold">Add a data source</DialogTitle>
+            {ENGINE_SPECS[kind].acceptsConnectionUrl ? (
+              <button
+                type="button"
+                onClick={toggleUrlImport}
+                aria-pressed={importOpen}
+                className={
+                  importOpen
+                    ? "text-xs font-medium text-fg underline underline-offset-2"
+                    : "text-xs font-medium text-muted-foreground transition-colors hover:text-fg"
+                }
+              >
+                Import from URL
+              </button>
+            ) : null}
           </DialogHeader>
 
           <form className="grid gap-4" onSubmit={submit}>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Engine</span>
-              <select
-                value={kind}
-                onChange={(event) => chooseEngine(event.target.value as DataSourceKind)}
-                className="h-10 rounded-md border border-input bg-background px-3 font-mono text-sm text-foreground"
-              >
-                {ENGINES.map((option) => (
-                  <option key={option} value={option}>
-                    {ENGINE_SPECS[option].name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {importOpen ? null : (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">Engine</span>
+                <select
+                  value={kind}
+                  onChange={(event) =>
+                    resetConnection(event.target.value as DataSourceKind)
+                  }
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                >
+                  {ENGINES.map((option) => (
+                    <option key={option} value={option}>
+                      {ENGINE_SPECS[option].name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Name</span>
@@ -532,32 +415,41 @@ export function DataSources({
               />
             </label>
 
+            {importOpen &&
+            connectionUrl.trim() !== "" &&
+            kindFromConnectionUrl(connectionUrl) === null ? (
+              <p className="text-xs text-muted-foreground">
+                Only postgresql:, mysql:, redis: or mongodb: — or ClickHouse on
+                8123 — can be imported.
+              </p>
+            ) : null}
+
             <EngineForm
               kind={kind}
               mode={mode}
-              method={method}
               url={connectionUrl}
               values={values}
-              onModeChange={setMode}
-              onMethodChange={(next) => resetConnection({ kind, method: next })}
-              onUrlChange={setConnectionUrl}
-              onChange={(field, next) =>
-                setValues((current) => ({ ...current, [field]: next }))
-              }
+              showUrlImport={importOpen}
+              onUrlChange={setUrl}
+              onChange={(field, next) => {
+                // A hand edit takes over from the paste: the typed fields are
+                // what gets sent, so the URL stops being the source of truth.
+                setConnectionUrl("");
+                setValues((current) => ({ ...current, [field]: next }));
+              }}
             />
 
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={readOnly}
-                onChange={(event) => setReadOnly(event.target.checked)}
-                className="size-4 accent-cyan"
-              />
-              <span className="text-xs text-muted-foreground">
-                Read-only
-                <span className="text-[11px]"> — limit this source to reads</span>
-              </span>
-            </label>
+            {importOpen ? null : (
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={readOnly}
+                  onChange={(event) => setReadOnly(event.target.checked)}
+                  className="size-4 accent-cyan"
+                />
+                <span className="text-xs text-muted-foreground">Read-only</span>
+              </label>
+            )}
 
             {formError ? <Alert>{formError}</Alert> : null}
 
@@ -632,8 +524,7 @@ export function DataSources({
             </DialogHeader>
 
             <p className="text-xs text-muted-foreground">
-              The connection and the password stored with it are deleted. Saved
-              queries for this source are kept.
+              The stored password is deleted; saved queries are kept.
             </p>
 
             {removeError ? <Alert>{removeError}</Alert> : null}

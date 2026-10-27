@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { IconCreditCard } from "@tabler/icons-react";
+import type { IBillingPlan } from "@heptadec/api/billing-contracts";
 import { Button } from "./ui/button";
 
 export const VIEW_CLASSNAME = "flex min-h-0 flex-1 flex-col";
@@ -13,6 +15,41 @@ export const TABLE_CLASSNAME = "w-full border-collapse text-left text-xs";
 
 export const PLAN_CARD_CLASSNAME =
   "flex flex-col gap-3 rounded-xl border border-border bg-foreground/5 p-4";
+
+export interface IPlanCardAction {
+  disabled: boolean;
+  onClick: () => void;
+}
+
+export function PlanCard({
+  plan,
+  action,
+}: {
+  plan: IBillingPlan;
+  action: IPlanCardAction | null;
+}): ReactNode {
+  return (
+    <div className={PLAN_CARD_CLASSNAME}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-fg">{plan.label}</span>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+          {plan.amount === "" ? null : `${plan.currency} ${plan.amount}`}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">{plan.note}</p>
+      {action === null ? null : (
+        <Button
+          className="mt-auto self-start"
+          disabled={action.disabled}
+          onClick={action.onClick}
+        >
+          <IconCreditCard size={16} strokeWidth={1.5} />
+          Buy
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export const TABLE_HEAD_CLASSNAME = "font-medium text-muted-foreground";
 

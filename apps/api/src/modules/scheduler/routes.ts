@@ -6,7 +6,10 @@ import {
   eq,
 } from "drizzle-orm";
 import {
-  schema,
+  dataSource,
+  savedQuery,
+  scheduledJob,
+  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,
@@ -51,8 +54,6 @@ import {
   type IScheduledJobListResponse,
   type IScheduledJobResponse,
 } from "./contracts";
-
-const { dataSource, savedQuery, scheduledJob } = schema;
 
 const MAX_NAME = 120;
 

@@ -437,6 +437,48 @@ export const ENGINE_SPECS = {
   } as const satisfies Record<DataSourceKind, IEngineSpec>;
 
 /**
+ * The engine a pasted connection URL belongs to, read from its scheme — the
+ * same word the server accepts a pasted URL by, so an engine that guesses
+ * right here never has its URL refused there. `null` when the URL does not
+ * name exactly one importable engine, and the caller keeps asking rather
+ * than guessing: an `https:` URL whose port is no engine's own, or a scheme
+ * none of them accepts.
+ */
+export function kindFromConnectionUrl(url: string): DataSourceKind | null {
+  const scheme = url
+    .trim()
+    .match(/^[A-Za-z][A-Za-z0-9+.-]*:/)?.[0]
+    ?.toLowerCase();
+  if (scheme === undefined) {
+    // A bare path is not a URL — a SQLite file, which no import covers.
+    return null;
+  }
+  for (const kind of Object.keys(ENGINE_SPECS) as DataSourceKind[]) {
+    const spec: IEngineSpec = ENGINE_SPECS[kind];
+    if (!spec.acceptsConnectionUrl || !spec.schemes.includes(scheme)) {
+      continue;
+    }
+    if (kind === "clickhouse") {
+      // ClickHouse shares https: with Quickwit, which cannot be imported at
+      // all, so only its own port reads as ClickHouse.
+      let port: number;
+      try {
+        port = Number(new URL(url.trim()).port);
+      } catch {
+        return null;
+      }
+      if (port !== spec.defaultPort) {
+        return null;
+      }
+    }
+    // MariaDB speaks MySQL's protocol and shares its scheme; MySQL comes
+    // first, so a mysql: URL reads as MySQL and covers both.
+    return kind;
+  }
+  return null;
+}
+
+/**
  * The mode a source connects with when the body does not name one. An engine
  * with no mode-dependent fields has no mode at all.
  */

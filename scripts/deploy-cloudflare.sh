@@ -47,9 +47,6 @@ export PUBLIC_URL="${PUBLIC_URL:-$(read_env PUBLIC_URL)}"
 export RESEND_FROM="${RESEND_FROM:-$(read_env RESEND_FROM)}"
 export BACHS_BASE_URL="${BACHS_BASE_URL:-$(read_env BACHS_BASE_URL)}"
 export BACHS_SECRET_KEY="${BACHS_SECRET_KEY:-$(read_env BACHS_SECRET_KEY)}"
-export BACHS_CURRENCY="${BACHS_CURRENCY:-$(read_env BACHS_CURRENCY)}"
-export BACHS_PRODUCT_MONTHLY="${BACHS_PRODUCT_MONTHLY:-$(read_env BACHS_PRODUCT_MONTHLY)}"
-export BACHS_PRODUCT_YEARLY="${BACHS_PRODUCT_YEARLY:-$(read_env BACHS_PRODUCT_YEARLY)}"
 export BACHS_PRICE_MONTHLY="${BACHS_PRICE_MONTHLY:-$(read_env BACHS_PRICE_MONTHLY)}"
 export BACHS_PRICE_YEARLY="${BACHS_PRICE_YEARLY:-$(read_env BACHS_PRICE_YEARLY)}"
 
@@ -180,8 +177,8 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
-say "6/8 Checking the advertised prices against Bachs"
-node scripts/check-bachs-prices.mjs
+say "6/8 Checking that Bachs converts the USD price for local buyers"
+node scripts/check-bachs-adaptive-pricing.mjs
 
 say "7/8 Applying database migrations"
 pnpm db:migrate:d1

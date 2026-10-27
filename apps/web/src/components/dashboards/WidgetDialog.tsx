@@ -202,8 +202,7 @@ export function WidgetDialog({
             </select>
             {visible.length === 0 && (
               <p className="text-[11px] text-muted-foreground">
-                No saved queries on this dashboard's sources yet. Write one
-                under Data Sources, or ask the AI.
+                Write one under Data Sources, or ask the AI.
               </p>
             )}
           </label>

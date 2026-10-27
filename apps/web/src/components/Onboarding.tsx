@@ -52,7 +52,7 @@ export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
   steps.push({
     id: "name",
     title: "Set your display name",
-    body: "This is the name your team sees. Your account keeps the name derived from your email address.",
+    body: "This is the name your team sees.",
   });
   steps.push({
     id: "source",

@@ -1,11 +1,13 @@
 import { eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  queryVersion,
+  savedQuery,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { oneRow } from "../../common/session/current-organization";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { NotFoundException } from "../../common/exceptions";
 import type { ISavedQueryChange } from "./contracts";
-
-const { queryVersion, savedQuery } = schema;
 
 /**
  * Saves a query, and keeps the version before it.

@@ -1,4 +1,6 @@
 import type { IAiProviderSpec } from "./catalog";
+import { providerSpec } from "./catalog";
+import { BadRequestException } from "../../common/exceptions";
 
 /**
  * How a provider is reached.
@@ -40,4 +42,31 @@ export function baseUrlFor(
     return null;
   }
   return given.replace(/\/+$/, "");
+}
+
+export interface IProviderEndpoint {
+  spec: IAiProviderSpec;
+  baseUrl: string;
+}
+
+/**
+ * Resolve a provider to the endpoint it answers on: its spec found and its
+ * base URL normalised. Every call to an AI Provider — the streamed answers
+ * and the model listing — resolves through this one interface, so the two
+ * cannot end up talking to different places. It refuses an unknown provider
+ * or one without an address.
+ */
+export function providerEndpointFor(
+  provider: string,
+  baseUrl: string | null,
+): IProviderEndpoint {
+  const spec = providerSpec(provider);
+  if (spec === null) {
+    throw new BadRequestException(`Unknown AI provider ${provider}`);
+  }
+  const url = baseUrlFor(spec, baseUrl);
+  if (url === null) {
+    throw new BadRequestException(`${spec.label} needs a base URL`);
+  }
+  return { spec, baseUrl: url };
 }

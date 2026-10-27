@@ -6,10 +6,6 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const templatePath = join(repoRoot, "apps/api/wrangler.jsonc.example");
 const configPath = join(repoRoot, "apps/api/wrangler.jsonc");
 
-// The deployment's own values live in the environment: the gitignored .env on
-// a laptop, repository secrets in CI. The file this writes is the one wrangler
-// reads, and it is never committed, so the repository names no account and no
-// database.
 if (existsSync(join(repoRoot, ".env"))) {
   process.loadEnvFile(join(repoRoot, ".env"));
 }
@@ -26,8 +22,6 @@ function optional(name) {
   return process.env[name]?.trim() ?? "";
 }
 
-// JSON.stringify gives the escaped form of a value; the quotes around it are
-// the ones already in the template.
 function escaped(value) {
   return JSON.stringify(value).slice(1, -1);
 }
@@ -40,9 +34,6 @@ const values = {
   __PUBLIC_URL__: required("PUBLIC_URL"),
   __RESEND_FROM__: optional("RESEND_FROM"),
   __BACHS_BASE_URL__: optional("BACHS_BASE_URL"),
-  __BACHS_PRODUCT_MONTHLY__: optional("BACHS_PRODUCT_MONTHLY"),
-  __BACHS_PRODUCT_YEARLY__: optional("BACHS_PRODUCT_YEARLY"),
-  __BACHS_CURRENCY__: optional("BACHS_CURRENCY"),
   __BACHS_PRICE_MONTHLY__: optional("BACHS_PRICE_MONTHLY"),
   __BACHS_PRICE_YEARLY__: optional("BACHS_PRICE_YEARLY"),
 };
@@ -55,9 +46,6 @@ const rendered = Object.entries(values).reduce(
 
 const config = JSON.parse(rendered);
 
-// A var with no value is left out rather than set to "", so the app's own
-// default stands: no BACHS_BASE_URL means the sandbox host, and billing stays
-// off until the key and both product ids are set.
 for (const [name, value] of Object.entries(config.vars)) {
   if (value === "") {
     delete config.vars[name];

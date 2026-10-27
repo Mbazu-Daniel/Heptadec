@@ -28,16 +28,18 @@ export function EmptyState({
   className,
 }: {
   title: string;
-  body: string;
-  /** What to offer when the thing to do next lives somewhere else — an empty
-   * state that only explains itself leaves the reader to find the way out. */
+  /** One short line of what to do next, when the title alone leaves the
+   * reader without a way out. */
+  body?: string;
   action?: React.ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn("px-6 py-8 text-center", className)}>
       <p className="text-sm text-fg">{title}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{body}</p>
+      {body === undefined ? null : (
+        <p className="mt-1 text-xs text-muted-foreground">{body}</p>
+      )}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );

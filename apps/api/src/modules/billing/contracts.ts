@@ -14,19 +14,16 @@ export interface IBillingPlan {
   note: string;
 }
 
-export interface IBillingSubscription {
-  status: string;
-  cadence: BillingCadence | null;
-  renewsAt: string | null;
-  cancelAtPeriodEnd: boolean;
-}
-
 export interface IBillingSummary {
   configured: boolean;
   entitled: boolean;
   trialEndsAt: string;
+  paidUntil: string | null;
+  cadence: BillingCadence | null;
+  autoRenew: boolean;
+  hasCard: boolean;
+  cardLast4: string | null;
   plans: IBillingPlan[];
-  subscription: IBillingSubscription | null;
 }
 
 export interface IStartCheckoutRequest {
@@ -35,4 +32,12 @@ export interface IStartCheckoutRequest {
 
 export interface IStartCheckoutResponse {
   checkoutUrl: string;
+}
+
+export interface ISetAutoRenewRequest {
+  enabled: boolean;
+}
+
+export interface ISetAutoRenewResponse {
+  autoRenew: boolean;
 }

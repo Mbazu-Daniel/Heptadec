@@ -1,5 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import { schema, type HeptadecDatabase } from "@heptadec/db";
+import {
+  member,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import { UnauthorizedException } from "../../common/exceptions";
 import {
@@ -9,8 +12,6 @@ import {
 import { isBetterAuthError } from "../../common/exceptions/from-better-auth";
 import { requireEntitlement } from "../billing/entitlement";
 import { MCP_CONFIG_ID } from "./capabilities";
-
-const { member } = schema;
 
 export interface IMcpPrincipal extends IOrganizationScope {
   keyId: string;

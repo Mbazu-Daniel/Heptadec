@@ -1,6 +1,13 @@
 import { Hono } from "hono";
 import { and, desc, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  alertDelivery,
+  alertRule,
+  dataSource,
+  savedQuery,
+  scheduledJob,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
@@ -28,8 +35,6 @@ import {
 import { checkRunAlerts } from "./evaluate";
 import { toAlertDelivery } from "./deliver";
 import { DEFAULT_TTL_SECONDS } from "../query-result/cache";
-
-const { alertDelivery, alertRule, savedQuery, scheduledJob } = schema;
 
 const MAX_NAME = 120;
 

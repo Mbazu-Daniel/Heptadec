@@ -23,7 +23,7 @@ impl.html
 # SQLite WAL journal files (created when journal_mode=WAL, e.g. embedded test DBs)
 *.db-shm
 *.db-wal
-
+scripts/check-*
 .claude/
 .grok/
 .hermes/
@@ -35,7 +35,6 @@ impl.html
 .vibe/
 .agents/
 skills-lock.json
-
 # The Worker's own configuration names this project's account and its D1
 # database, so it is written from the environment and never committed. The
 # template beside it is what the repository holds.

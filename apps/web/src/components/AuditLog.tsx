@@ -181,7 +181,6 @@ export function AuditLog({ isOwner }: { isOwner: boolean }) {
             {!isOwner ? (
               <EmptyState
                 title="Owners only"
-                body="The audit log is read by an owner of this organization."
               />
             ) : logs === null ? (
               <p className="py-8 text-center font-mono text-xs text-muted-foreground">
@@ -195,7 +194,6 @@ export function AuditLog({ isOwner }: { isOwner: boolean }) {
             ) : logs.length === 0 ? (
               <EmptyState
                 title="Nothing matches"
-                body="No entry matches the current filters."
               />
             ) : (
               <table className={TABLE_CLASSNAME} aria-label="Audit log">

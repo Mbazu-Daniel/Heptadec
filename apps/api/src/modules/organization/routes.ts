@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  member,
+  organization,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import {
   requireSession,
@@ -22,8 +26,6 @@ import type {
   IOrganizationsResponse,
   ISwitchOrganizationResponse,
 } from "./contracts";
-
-const { member, organization } = schema;
 
 const MAX_SLUG = 80;
 

@@ -342,10 +342,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         }
       />
       <Route
-        path="/app"
-        element={<Navigate to={me ? destinationFor(me, orgs) : "/signin"} replace />}
-      />
-      <Route
         path="/:orgSlug"
         element={
           me && isOnboarded(me) ? (
@@ -362,6 +358,20 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
       >
         <Route
           index
+          element={
+            <Dashboard
+              me={me!}
+              memberships={orgs?.organizations ?? []}
+              onSwitchOrganization={onOpenOrganization}
+              onCreateOrganization={() => navigate("/organization?new=1")}
+              onOpenProfile={() => navigate("/profile")}
+              onOrganizationChanged={reload}
+              onSignOut={onSignOut}
+            />
+          }
+        />
+        <Route
+          path=":section"
           element={
             <Dashboard
               me={me!}

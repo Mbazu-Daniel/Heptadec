@@ -5,7 +5,9 @@ import {
   lt,
 } from "drizzle-orm";
 import {
-  schema,
+  dataSource,
+  queryResult,
+  savedQuery,
   type HeptadecDatabase,
 } from "@heptadec/db";
 import {
@@ -28,8 +30,6 @@ import {
 } from "../query/sql";
 import type { IQueryResponse } from "../query/contracts";
 import type { ICachedResult } from "./contracts";
-
-const { dataSource, queryResult, savedQuery } = schema;
 
 export const DEFAULT_TTL_SECONDS = 60 * 60;
 

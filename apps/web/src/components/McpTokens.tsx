@@ -187,7 +187,6 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
           ) : (
             <EmptyState
               title="Owners only"
-              body="MCP tokens are managed by an owner of this organization."
             />
           )}
 
@@ -249,10 +248,7 @@ function CreateTokenDialog({
             </FieldGroup>
             <FieldGroup>
               <FieldLabel>Permissions</FieldLabel>
-              <p className="mb-2 text-xs leading-4 text-muted-foreground">
-                Pick the tools this token is allowed to call.
-              </p>
-              <div className="flex flex-wrap gap-3">
+              <div className="mb-2 flex flex-wrap gap-3">
                 {MCP_TOOLS.map((tool) => (
                   <label
                     key={tool}

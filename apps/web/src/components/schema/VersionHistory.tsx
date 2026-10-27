@@ -66,9 +66,7 @@ export function VersionHistory({
         </DialogHeader>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          Each row is the statement as it stood before an edit. Restoring copies
-          one back onto the live query; the version being replaced is kept, so
-          that can be undone too.
+          Restoring copies a version back onto the live query; the replaced one is kept.
         </p>
 
         {problem !== null ? <Alert>{problem}</Alert> : null}

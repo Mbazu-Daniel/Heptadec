@@ -1,14 +1,15 @@
 import { Hono } from "hono";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  auditLog,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import { requireSession } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
 import { BadRequestException } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
 import { isAuditEvent, isAuditTargetKind, type IAuditLog, type IAuditLogListResponse } from "./contracts";
-
-const { auditLog } = schema;
 
 const LIST_LIMIT = 100;
 

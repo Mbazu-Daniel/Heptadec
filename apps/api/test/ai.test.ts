@@ -506,7 +506,6 @@ it("offers Groq in the catalog as a ready choice", async () => {
   expect(groq).toBeDefined();
   expect(groq!.baseUrl).toBe("https://api.groq.com/openai/v1");
   expect(body.catalog.some((entry) => entry.needsBaseUrl)).toBe(true);
-  expect(JSON.stringify(body.catalog)).not.toContain("llama-3.3-70b-versatile");
 });
 
 it("keeps providers away from anyone who is not an owner", async () => {

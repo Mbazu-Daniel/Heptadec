@@ -1,5 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { schema } from "@heptadec/db";
+import {
+  dashboard,
+  dashboardDataSource,
+  dataSource,
+  widget,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { BadRequestException, NotFoundException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { canUseTooling, kindOf } from "../data-source/engines";
@@ -10,8 +16,6 @@ import type {
   IDashboardWithWidgets,
   IWidget,
 } from "./contracts";
-
-const { dashboard, dashboardDataSource, dataSource, widget } = schema;
 
 type DashboardRow = typeof dashboard.$inferSelect;
 

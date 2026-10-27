@@ -110,7 +110,7 @@ export function SavedQueriesPanel({
       ) : queries.length === 0 ? (
         <EmptyState
           title="No saved queries"
-          body="Name a statement above to save it as a queryable view."
+          body="Name a statement above to save it."
         />
       ) : (
         <ul className="flex flex-col gap-1">

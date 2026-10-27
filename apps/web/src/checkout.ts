@@ -1,23 +1,27 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { loadBachs, type Bachs, type BachsCheckoutEvent } from "@bachs/js";
-import type { IBillingPlan } from "@heptadec/api/billing-contracts";
-import { fetchBilling, messageFor, startCheckout } from "./api";
+import type {
+  IStartCheckoutRequest,
+  IBillingSummary,
+} from "@heptadec/api/billing-contracts";
+import { fetchBilling, messageFor, setAutoRenew, startCheckout } from "./api";
 
 const POLL_ATTEMPTS = 8;
 const POLL_INTERVAL_MS = 1500;
 
-export interface ICheckout {
-  start: (cadence: IBillingPlan["cadence"]) => Promise<void>;
+export interface IBilling {
+  summary: IBillingSummary | null;
+  problem: string | null;
+  unreadable: boolean;
   busy: boolean;
   paid: boolean;
-  problem: string | null;
+  checkoutProblem: string | null;
+  open: (request: IStartCheckoutRequest) => Promise<void>;
+  renew: (enabled: boolean) => Promise<void>;
 }
 
 let loaded: { origin: string; bachs: Bachs } | null = null;
 
-// The overlay only accepts a checkout on the origin its script came from, and
-// the sandbox and the live checkout are different origins. The checkout the
-// server created says which one it is.
 async function bachsFor(origin: string): Promise<Bachs> {
   if (loaded?.origin !== origin) {
     const bachs = await loadBachs({ baseUrl: origin });
@@ -27,69 +31,107 @@ async function bachsFor(origin: string): Promise<Bachs> {
   return loaded.bachs;
 }
 
-// The browser event says the payment went through; the webhook says the
-// subscription exists. The second is the one the app grants access from, so
-// the wait is for the webhook to land rather than for the overlay to close.
-async function waitForSubscription(): Promise<void> {
+async function waitForEntitlement(): Promise<void> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     const summary = await fetchBilling();
-    if (summary.subscription !== null) {
+    if (summary.entitled) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 }
 
-export function useCheckout(onPaid: () => void): ICheckout {
+export function useBilling(): IBilling {
+  const [summary, setSummary] = useState<IBillingSummary | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [unreadable, setUnreadable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [checkoutProblem, setCheckoutProblem] = useState<string | null>(null);
 
-  const start = useCallback(
-    async (cadence: IBillingPlan["cadence"]): Promise<void> => {
+  const reload = useCallback(async () => {
+    setProblem(null);
+    try {
+      setSummary(await fetchBilling());
+    } catch (caught) {
+      setUnreadable(true);
+      setProblem(messageFor(caught, "The plan could not be loaded."));
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const handleEvent = useCallback(
+    async (event: BachsCheckoutEvent): Promise<void> => {
+      if (event.type === "checkout.completed") {
+        setBusy(false);
+        setPaid(true);
+        await waitForEntitlement();
+        await reload();
+        return;
+      }
+      if (event.type === "checkout.failed" || event.type === "checkout.error") {
+        setCheckoutProblem("That payment did not go through.");
+        setBusy(false);
+        return;
+      }
+      if (event.type === "checkout.closed") {
+        setBusy(false);
+      }
+    },
+    [reload],
+  );
+
+  const open = useCallback(
+    async (request: IStartCheckoutRequest): Promise<void> => {
       setBusy(true);
       setPaid(false);
-      setProblem(null);
+      setCheckoutProblem(null);
       try {
-        const { checkoutUrl } = await startCheckout(cadence);
+        const { checkoutUrl } = await startCheckout(request);
         const bachs = await bachsFor(new URL(checkoutUrl).origin);
         await bachs.Checkout.open({
           checkoutUrl,
           onEvent: (event: BachsCheckoutEvent) => {
-            void handleEvent(event, setBusy, setPaid, setProblem, onPaid);
+            void handleEvent(event);
           },
         });
       } catch (caught) {
-        setProblem(messageFor(caught, "That checkout could not be started."));
+        setCheckoutProblem(messageFor(caught, "That checkout could not be started."));
         setBusy(false);
       }
     },
-    [onPaid],
+    [handleEvent],
   );
 
-  return { start, busy, paid, problem };
-}
+  const renew = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      setBusy(true);
+      setCheckoutProblem(null);
+      try {
+        await setAutoRenew({ enabled });
+        await reload();
+      } catch (caught) {
+        setCheckoutProblem(
+          messageFor(caught, "That setting could not be changed."),
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [reload],
+  );
 
-async function handleEvent(
-  event: BachsCheckoutEvent,
-  setBusy: (busy: boolean) => void,
-  setPaid: (paid: boolean) => void,
-  setProblem: (problem: string | null) => void,
-  onPaid: () => void,
-): Promise<void> {
-  if (event.type === "checkout.completed") {
-    setBusy(false);
-    setPaid(true);
-    await waitForSubscription();
-    onPaid();
-    return;
-  }
-  if (event.type === "checkout.failed" || event.type === "checkout.error") {
-    setProblem("That payment did not go through.");
-    setBusy(false);
-    return;
-  }
-  if (event.type === "checkout.closed") {
-    setBusy(false);
-  }
+  return {
+    summary,
+    problem,
+    unreadable,
+    busy,
+    paid,
+    checkoutProblem,
+    open,
+    renew,
+  };
 }

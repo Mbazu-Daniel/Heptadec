@@ -51,7 +51,7 @@ export function WidgetCard({
         <EmptyState
           className="py-6"
           title="Nothing to plot"
-          body="That query returned no rows, so there is no chart to draw."
+          body="The query returned no rows."
         />
       ) : (
         <div className="px-2 py-3">

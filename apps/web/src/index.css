@@ -168,6 +168,10 @@ html[data-theme="light"] {
     -webkit-font-smoothing: antialiased;
   }
 
+  .root {
+    isolation: isolate;
+  }
+
   h1,
   h2,
   h3 {

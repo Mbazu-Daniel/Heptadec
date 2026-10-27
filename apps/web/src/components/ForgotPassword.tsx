@@ -43,8 +43,8 @@ export function ForgotPassword({ onDone }: { onDone: () => void }) {
       title={sent ? "Check your email" : "Forgot your password?"}
       lede={
         sent
-          ? "If that address has an account, a link to choose a new password is on its way. The link expires in an hour."
-          : "Give us the address you sign in with and we will send a link to choose a new password."
+          ? "A link to choose a new password is on its way. It expires in an hour."
+          : "We will send a link to choose a new password."
       }
     >
       <form className="flex flex-col gap-5" onSubmit={submit}>

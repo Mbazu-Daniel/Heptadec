@@ -325,18 +325,15 @@ Two things do not run on Workers: SMTP alert channels, because there is no port 
 
 ### Billing (Bachs)
 
-[Bachs](https://bachs.io) holds the products and collects the card details; this app stores only the state its webhooks report. Five values come from Bachs, and **all of them are needed** — with any one missing, billing reports itself unconfigured and the instance stays free.
+[Bachs](https://bachs.io) charges the card; this app stores only the state its webhooks report. Four values come from Bachs, and **all of them are needed** — with any one missing, billing reports itself unconfigured and the instance stays free.
 
 | Value | Where it goes | What it is |
 |---|---|---|
 | `BACHS_SECRET_KEY` | Worker secret | The API key from Bachs → Developers → API keys, `sk_live_…` |
 | `BACHS_WEBHOOK_SECRET` | Worker secret | The signing secret of the webhook endpoint, `whsec_…` |
-| `BACHS_PRODUCT_MONTHLY` | Worker var | The product billed monthly, `prod_…` |
-| `BACHS_PRODUCT_YEARLY` | Worker var | The product billed yearly, `prod_…` |
+| `BACHS_PRICE_MONTHLY` | Worker var | What 30 days of access costs, in USD |
+| `BACHS_PRICE_YEARLY` | Worker var | What 365 days of access costs, in USD |
 | `BACHS_BASE_URL` | Worker var | `https://api.bachs.io` for live, `https://sandbox-api.bachs.io` for the sandbox |
-| `BACHS_CURRENCY` | Worker var | The currency the plans are priced in |
-| `BACHS_PRICE_MONTHLY` | Worker var | What the monthly plan costs, as a decimal string |
-| `BACHS_PRICE_YEARLY` | Worker var | What the yearly plan costs, as a decimal string |
 
 The two secrets are set on the Worker:
 
@@ -347,25 +344,26 @@ pnpm --filter @heptadec/api exec wrangler secret put BACHS_WEBHOOK_SECRET
 
 The vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the same names among the repository secrets in CI.
 
-**Two products, because a product's cycle cannot be changed afterwards.** Create one per cycle, give each a price, and keep them in step with the amounts the app advertises. The app's prices are the environment's `BACHS_PRICE_MONTHLY` and `BACHS_PRICE_YEARLY`, and `pnpm deploy:cloudflare` reads both products back from Bachs and refuses to deploy when they disagree — a customer must never be charged something the app did not promise.
+**A plan is a one-time charge that buys a period — there is no product and no subscription.** Nothing is created in the Bachs dashboard: the price travels with the checkout as `pricing: { currency: "USD", amount }`, and the app adds 30 or 365 days to the organization's access when the payment clears. The card is saved at checkout and charged again at the end of the period by the app, with the period's own id as both reference and idempotency key — a retried tick asks Bachs for the same charge rather than taking the money twice.
 
-**A subscription bills in the currency it was created with, and Bachs collects subscriptions in USD on a card.** A one-time checkout can be priced and collected in any supported currency — naira included — and a USD-priced one converts at the page into the customer's local currency, with a chooser. A *plan* is a subscription, so its price currency is USD and the customer's location does not change it. `NGN_SUBSCRIPTIONS_NOT_ENABLED` is what a naira-priced plan is refused with.
+**Prices are always USD, and the buyer can still pay in their own currency.** Bachs's adaptive pricing — a switch on the Bachs account, not a checkout parameter — shows the buyer the local equivalent at the checkout page, so a buyer in Ghana can pay cedis by mobile money while the app and the settlement stay in dollars. `pnpm deploy:cloudflare` warns when adaptive pricing is off; with it off the checkout still works, in dollars.
 
-**The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to the three subscription events:
+**The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to four events:
 
-- `customer.subscription.created`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
+- `checkout.completed` — the buyer finished the checkout; fulfilled only when `payment_status` is `paid`
+- `collection.succeeded` — the money was actually collected, which is also what a renewal charge reports
+- `collection.failed` — a renewal charge was refused; automatic renewal stops and the paywall asks for a new card
+- `payment_method.saved` — the card to charge at the end of the period
 
-The delivery carries the organization in `data.metadata.organization_id`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret.
+The delivery carries the organization and the plan in `data.metadata`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret. `checkout.completed` and `collection.succeeded` can describe the same payment and either can arrive first; the payment row is unique on the checkout id, so the second one is dropped rather than extending the period twice.
 
 **The checkout opens as an overlay.** The web app loads Bachs's browser SDK and opens the hosted checkout in a modal over the page, so the customer never leaves the app and never sees card data on it. The checkout session is still created on the server, so the amount and currency are the server's to decide.
 
-**The fee preference decides who pays the processing fee.** Under "I pay fees" the customer pays the plan's price and the fee comes out of the balance; under "Customer pays fees" Bachs adds it on top, and a plan advertised as $5.00 is charged as $5.65. The app advertises the product's price, so the two have to agree.
+**The fee preference decides who pays the processing fee.** Under "I pay fees" the customer pays the plan's price and the fee comes out of the balance; under "Customer pays fees" Bachs adds it on top, and a plan advertised as $5.00 is charged as $5.65. The app advertises the amount it sends with the checkout, so the two have to agree.
 
 **A sandbox key against the live host is refused** rather than charged, so the base URL and the key have to be changed together.
 
-**Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already subscribed — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.
+**Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already inside a paid period — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.
 
 ## Continuous integration
 
@@ -381,7 +379,7 @@ The delivery carries the organization in `data.metadata.organization_id`, and th
 
 The `Worker` job needs two repository secrets, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A pull request never sees them: the workflow triggers on `pull_request`, which gives a fork no access to secrets, and the deploy job runs only on a push to `main`.
 
-The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`.
+The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`. The compose command uses `docker-compose.test.override.yml` when that local file exists, so developers can move test ports without requiring the ignored override in CI.
 
 ## Environment Variables
 
@@ -408,11 +406,8 @@ The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, 
 | `BACHS_SECRET_KEY` | Bachs API key | `sk_live_…` |
 | `BACHS_WEBHOOK_SECRET` | Signing secret of the Bachs webhook endpoint | `whsec_…` |
 | `BACHS_BASE_URL` | The Bachs host; live and sandbox differ | `https://api.bachs.io` |
-| `BACHS_PRODUCT_MONTHLY` | The product billed monthly | `prod_…` |
-| `BACHS_PRODUCT_YEARLY` | The product billed yearly | `prod_…` |
-| `BACHS_CURRENCY` | The currency the plans are priced in | `USD` |
-| `BACHS_PRICE_MONTHLY` | What the monthly plan costs | `5.00` |
-| `BACHS_PRICE_YEARLY` | What the yearly plan costs | `50.00` |
+| `BACHS_PRICE_MONTHLY` | What 30 days of access costs, in USD | `5.00` |
+| `BACHS_PRICE_YEARLY` | What 365 days of access costs, in USD | `50.00` |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | `your_github_client_id` |

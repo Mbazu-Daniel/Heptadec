@@ -1,9 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type {
-  ConnectionMode,
-  IDataSource,
-} from "@heptadec/api/data-source-contracts";
-import { ENGINE_SPECS, PORT_MAX, PORT_MIN, isPreviewEngine } from "@heptadec/api/data-source-contracts";
+import type { IDataSource } from "@heptadec/api/data-source-contracts";
+import { ENGINE_SPECS, isPreviewEngine } from "@heptadec/api/data-source-contracts";
 import { messageFor, testDataSourceConnection, updateDataSource } from "../../api";
 import { Alert } from "../ui/feedback";
 import { Button } from "../ui/button";
@@ -16,7 +13,7 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { EngineFields } from "./EngineForm";
-import { connectionPayload } from "./payload";
+import { connectionPayload, PORT_MESSAGE } from "./payload";
 
 type TestState =
   | { status: "idle" }
@@ -69,7 +66,9 @@ export function SourceSettingsDialog({
 }) {
   const spec = ENGINE_SPECS[source.kind];
   const [name, setName] = useState(source.name);
-  const [mode, setMode] = useState<ConnectionMode | null>(source.connectionMode);
+  // The mode is how the source already connects; settings can only change
+  // the fields the mode shows.
+  const mode = source.connectionMode;
   const [values, setValues] = useState<Record<string, string>>(() =>
     prefilledValues(source),
   );
@@ -80,7 +79,6 @@ export function SourceSettingsDialog({
 
   useEffect(() => {
     setName(source.name);
-    setMode(source.connectionMode);
     setValues(prefilledValues(source));
     setReadOnly(source.readOnly);
     setFormError(null);
@@ -105,9 +103,7 @@ export function SourceSettingsDialog({
     }
     const body = payload();
     if (body === null) {
-      setFormError(
-        `The port must be a whole number between ${PORT_MIN} and ${PORT_MAX}`,
-      );
+      setFormError(PORT_MESSAGE);
       return;
     }
     setBusy(true);
@@ -125,10 +121,7 @@ export function SourceSettingsDialog({
   async function testConnection(): Promise<void> {
     const body = payload();
     if (body === null) {
-      setTestState({
-        status: "failed",
-        message: `The port must be a whole number between ${PORT_MIN} and ${PORT_MAX}`,
-      });
+      setTestState({ status: "failed", message: PORT_MESSAGE });
       return;
     }
     setTestState({ status: "testing" });
@@ -179,10 +172,6 @@ export function SourceSettingsDialog({
             kind={source.kind}
             mode={mode}
             values={values}
-            onModeChange={(next) => {
-              setMode(next);
-              setTestState({ status: "idle" });
-            }}
             onChange={(field, next) =>
               setValues((current) => ({ ...current, [field]: next }))
             }
@@ -195,10 +184,7 @@ export function SourceSettingsDialog({
               onChange={(event) => setReadOnly(event.target.checked)}
               className="size-4 accent-cyan"
             />
-            <span className="text-xs text-muted-foreground">
-              Read-only
-              <span className="text-[11px]"> — limit this source to reads</span>
-            </span>
+            <span className="text-xs text-muted-foreground">Read-only</span>
           </label>
 
           {stored.length > 0 ? (

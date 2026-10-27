@@ -186,7 +186,7 @@ export function DashboardDetail({
         ) : dashboard.widgets.length === 0 ? (
           <EmptyState
             title="No charts yet"
-            body="Add one: it runs a saved query and plots one column against another. Or ask the AI to plot something from the sources above."
+            body="Add a chart, or ask the AI to plot something."
           />
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">

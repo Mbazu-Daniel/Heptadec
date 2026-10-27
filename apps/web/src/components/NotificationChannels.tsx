@@ -161,7 +161,6 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
           <div className={VIEW_CLASSNAME}>
             <EmptyState
               title="Owners only"
-              body="Notification channels are managed by an owner of this organization."
             />
           </div>
         }
@@ -281,7 +280,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
             ) : channels.length === 0 ? (
               <EmptyState
                 title="Nothing connected yet"
-                body="Every channel you connect receives each alert that fires, alongside the others."
+                body="Connect one to receive alerts."
               />
             ) : (
               <table className={`${TABLE_CLASSNAME} mt-2`} aria-label="Notification channels">

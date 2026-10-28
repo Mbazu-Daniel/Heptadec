@@ -38,10 +38,6 @@ scripts/check-*
 .vibe/
 .agents/
 skills-lock.json
-# The Worker's own configuration names this project's account and its D1
-# database, so it is written from the environment and never committed. The
-# template beside it is what the repository holds.
-apps/api/wrangler.jsonc
 
 # This machine moves the test stack onto ports another project is using. It is
 # a local override of docker-compose.test.yml, not project config.

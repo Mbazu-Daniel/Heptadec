@@ -229,60 +229,68 @@ docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
 
 ### Cloudflare Workers
 
-One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. The origin comes from `PUBLIC_URL`, which names the address users open.
+One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. `PUBLIC_URL` names the address users open, and the app derives its auth and web URLs from it.
 
-Provisioning and deploy are one idempotent command:
+Deploys run in **Cloudflare Workers Builds**: connect the repository once in the Cloudflare dashboard, and every push to `main` builds and deploys. `.github/workflows/ci.yml` only runs checks and publishes the container images; it holds no Cloudflare secrets.
+
+#### Connect the repository
+
+1. Create the resources. Wrangler finds them by the names in `wrangler.jsonc`:
+
+   ```bash
+   pnpm exec wrangler login
+   pnpm exec wrangler d1 create heptadec
+   pnpm exec wrangler r2 bucket create heptadec-images
+   ```
+
+2. In the Cloudflare dashboard, open **Workers & Pages → Create application → Workers → Connect to Git**, pick this repository, and leave the root directory at the repository root. Name the Worker `heptadec` so it connects to the existing deployment rather than creating a second one. The build and deploy commands are pre-filled from `package.json`:
+
+   ```
+   build:  pnpm run build
+   deploy: pnpm run deploy
+   ```
+
+3. Give the build token **D1: Edit** at **My Profile → API Tokens**. Workers Builds creates its token without D1 access, and the deploy command applies migrations before it deploys, so without this the build fails at `wrangler d1 migrations apply`.
+
+4. Add the values below under the Worker's **Settings → Variables & Secrets**. `keep_vars: true` in `wrangler.jsonc` keeps whatever is there, so a later deploy does not delete them. Cloudflare shows a secret's name but not its value; replace one from the same screen.
+
+| Name | Kind | What it is |
+|---|---|---|
+| `PUBLIC_URL` | Variable | The address users open. `BETTER_AUTH_URL` and `WEB_URL` fall back to it. |
+| `CLOUDFLARE_ACCOUNT_ID` | Variable | The account the Worker and bucket live in; R2 URLs are signed against it. |
+| `R2_BUCKET_NAME` | Variable | The bucket holding logos and avatars. |
+| `R2_PUBLIC_ID` | Variable | The bucket's managed `r2.dev` domain, when images are read from it. |
+| `R2_CUSTOM_DOMAIN` | Variable | The bucket's own domain; wins over `R2_PUBLIC_ID`. |
+| `RESEND_FROM` | Variable | The sender address. |
+| `BETTER_AUTH_SECRET` | Secret | Signs sessions. Generate once with `openssl rand -base64 32`. |
+| `HEPTADEC_SECRET_KEY` | Secret | Encrypts stored data-source credentials. Generate once; rotating it makes every stored credential unreadable. |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Secrets | Sign browser uploads. Without them images read but cannot be replaced. |
+| `RESEND_API_KEY` | Secret | Sends invitation and alert email. |
+| `BACHS_*` | Secrets and variables | Billing; see [Billing](#billing-bachs). |
+
+#### The configuration
+
+`wrangler.jsonc` is at the repository root and is committed. It names the account's resources by name only — no account id and no D1 database id — because the repository is public and a fork should not deploy into another account. Wrangler reads the account from the API token and looks up the database and bucket by name.
+
+Rename `heptadec` and `heptadec-images` in `wrangler.jsonc` before connecting an account that already has them.
+
+The deploy is three ordered steps:
 
 ```bash
-pnpm --filter @heptadec/api exec wrangler login
+pnpm run build          # the SPA into apps/web/dist
+pnpm run db:migrate:d1  # wrangler d1 migrations apply DB --remote
+pnpm run deploy:worker  # wrangler deploy
+```
+
+`pnpm run deploy` runs all three in that order, so the schema always lands before the Worker that reads it. The migration command addresses the `DB` binding rather than the database name, so a deployment that renamed the database still migrates the right one.
+
+#### From a laptop
+
+`pnpm deploy:cloudflare` provisions the same resources and deploys from your machine. It creates the D1 database and the bucket when they are missing, allows browser uploads from `PUBLIC_URL`, applies migrations, deploys, and sets `BETTER_AUTH_SECRET`, `HEPTADEC_SECRET_KEY` and the R2 keys when they are absent. It passes the plain values with the deploy, so they appear in the dashboard too. Re-running it leaves what already exists alone.
+
+```bash
 pnpm deploy:cloudflare
 ```
-
-The script creates the D1 database when it is missing and records its id in `.env`, creates the R2 image bucket, allows browser uploads from the app's origin, sets `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` when they are absent, applies migrations, and deploys the Worker. Re-running it leaves what already exists alone.
-
-#### The Worker's configuration
-
-`apps/api/wrangler.jsonc` names this project's Cloudflare resources, so it is **not** committed: the repository is public, and a fork should not carry another account's database id. `apps/api/wrangler.jsonc.example` is the shape, and `pnpm config:worker` writes the real file from the environment:
-
-```bash
-pnpm config:worker
-```
-
-The values come from the environment — the gitignored `.env` on a laptop, repository secrets in CI:
-
-| Value | What it names |
-|---|---|
-| `CLOUDFLARE_ACCOUNT_ID` | The account to deploy into |
-| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
-| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
-| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
-| `PUBLIC_URL` | The address users open; it becomes the Worker's `BETTER_AUTH_URL` and `WEB_URL` |
-| `RESEND_FROM` | The sender address |
-
-`pnpm db:migrate:d1` and `pnpm deploy:worker` write the configuration first, so neither needs it to exist.
-
-#### From GitHub Actions
-
-CI deploys the Worker, and Cloudflare's own git integration is switched off so there is one path that deploys it. The `Worker` job runs on a push to `main` and does two things in order:
-
-```bash
-pnpm db:migrate:d1     # the schema lands first
-pnpm deploy:worker     # then the Worker that reads it
-```
-
-`wrangler.jsonc` lives in `apps/api`, so `npx wrangler deploy` at the repository root fails with "the Cloudflare application detection logic has been run in the root of a workspace". The two root scripts run wrangler in the right directory.
-
-The job reads the same values from repository secrets, so the repository holds none of them:
-
-| Secret | What it is |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | An API token with Workers write and D1 edit |
-| `CLOUDFLARE_ACCOUNT_ID` | The account the Worker belongs to |
-| `CLOUDFLARE_D1_DATABASE_ID` | The D1 database the Worker reads |
-| `R2_BUCKET_NAME` | The bucket holding logos and avatars |
-| `R2_PUBLIC_ID` | The bucket's managed `r2.dev` domain |
-| `PUBLIC_URL` | The address users open |
-| `RESEND_FROM` | The sender address |
 
 | Concern | How it runs on Workers |
 |---|---|
@@ -292,33 +300,23 @@ The job reads the same values from repository secrets, so the repository holds n
 | Postgres, MySQL, Redis | TCP through `cloudflare:sockets`; put Hyperdrive in front in production |
 | Web assets | Workers static assets, with `index.html` as the SPA fallback |
 
-Secrets never live in `wrangler.jsonc`:
+Secrets can also be set from the command line, from the repository root:
 
 ```bash
-pnpm --filter @heptadec/api exec wrangler secret put BETTER_AUTH_SECRET
-pnpm --filter @heptadec/api exec wrangler secret put HEPTADEC_SECRET_KEY
-pnpm --filter @heptadec/api exec wrangler secret put R2_ACCESS_KEY_ID
-pnpm --filter @heptadec/api exec wrangler secret put R2_SECRET_ACCESS_KEY
-pnpm --filter @heptadec/api exec wrangler secret put RESEND_API_KEY
+pnpm exec wrangler secret put BETTER_AUTH_SECRET
+pnpm exec wrangler secret put HEPTADEC_SECRET_KEY
+pnpm exec wrangler secret put R2_ACCESS_KEY_ID
+pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY
+pnpm exec wrangler secret put RESEND_API_KEY
 ```
 
-`HEPTADEC_SECRET_KEY` encrypts stored data-source credentials, so rotating it makes every stored credential unreadable. `BETTER_AUTH_URL` and `WEB_URL` are plain vars in the rendered configuration; they come from `PUBLIC_URL`. `RESEND_API_KEY` is a secret rather than a var, so it is not readable in the dashboard.
-
-The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `wrangler r2 bucket cors set`.
-
-The manual equivalent, when you would rather drive wrangler yourself:
-
-```bash
-pnpm config:worker
-pnpm db:migrate:d1
-pnpm deploy:worker
-```
+The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `pnpm exec wrangler r2 bucket cors set`.
 
 To develop against workerd with a local D1 database instead of Node:
 
 ```bash
-pnpm config:worker
-pnpm --filter @heptadec/api exec wrangler dev
+cp .dev.vars.example .dev.vars   # fill the two secrets it names
+pnpm exec wrangler dev
 ```
 
 Two things do not run on Workers: SMTP alert channels, because there is no port 25 (use Resend or Cloudflare Email Sending), and local-file SQLite data sources, because there is no filesystem (point them at a `libsql://` URL). Both surface as a delivery or connection error rather than a silent skip.
@@ -338,11 +336,11 @@ Two things do not run on Workers: SMTP alert channels, because there is no port 
 The two secrets are set on the Worker:
 
 ```bash
-pnpm --filter @heptadec/api exec wrangler secret put BACHS_SECRET_KEY
-pnpm --filter @heptadec/api exec wrangler secret put BACHS_WEBHOOK_SECRET
+pnpm exec wrangler secret put BACHS_SECRET_KEY
+pnpm exec wrangler secret put BACHS_WEBHOOK_SECRET
 ```
 
-The vars are read from the environment, like the rest of the Worker's configuration: in `.env` on a laptop, as the same names among the repository secrets in CI.
+The vars are set beside the rest of the Worker's values: in the dashboard under **Settings → Variables & Secrets**, or in `.env` on a laptop for `pnpm deploy:cloudflare`.
 
 **A plan is a one-time charge that buys a period — there is no product and no subscription.** Nothing is created in the Bachs dashboard: the price travels with the checkout as `pricing: { currency: "USD", amount }`, and the app adds 30 or 365 days to the organization's access when the payment clears. The card is saved at checkout and charged again at the end of the period by the app, with the period's own id as both reference and idempotency key — a retried tick asks Bachs for the same charge rather than taking the money twice.
 
@@ -373,11 +371,11 @@ The delivery carries the organization and the plan in `data.metadata`, and the a
 |---|---|---|
 | Pull request | `Checks` | Typecheck, web build, the integration suite against the test stack |
 | Push to `dev` | `Checks` | The same |
-| Push to `main` | `Checks`, then `Images` and `Worker` | The checks first; then the Docker images are pushed to `ghcr.io` and the Worker is migrated and deployed |
+| Push to `main` | `Checks`, then `Images` | The checks first; then the Docker images are pushed to `ghcr.io`. Cloudflare Workers Builds deploys the Worker from the same push, separately. |
 
-`dev` is where work lands: open a pull request against `dev`, and it is checked there. `main` is the release: merging `dev` into `main` is what builds the images and deploys the Worker, so nothing reaches the running deployment without the checks passing first.
+`dev` is where work lands: open a pull request against `dev`, and it is checked there. `main` is the release: merging `dev` into `main` builds the images, and the Workers Builds connection picks up the same commit and deploys the Worker.
 
-The `Worker` job needs two repository secrets, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A pull request never sees them: the workflow triggers on `pull_request`, which gives a fork no access to secrets, and the deploy job runs only on a push to `main`.
+CI holds no Cloudflare credentials. The Worker is configured and deployed from the Cloudflare dashboard, where its variables and secrets are visible and editable.
 
 The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`. The compose command uses `docker-compose.test.override.yml` when that local file exists, so developers can move test ports without requiring the ignored override in CI.
 

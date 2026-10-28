@@ -6,13 +6,17 @@
 #
 #   pnpm deploy:cloudflare
 #
+# This is the laptop path. Pushing to main is the other one: Workers Builds
+# reads the same root wrangler.jsonc and runs `pnpm run deploy`.
+#
 # The deployment's own values come from the environment: the gitignored .env on
-# a laptop, repository secrets in CI.
+# a laptop. They are written to the Worker as plain values and secrets, so the
+# Cloudflare dashboard shows every one of them and they can be edited there.
 #   CLOUDFLARE_ACCOUNT_ID   the account to deploy into
-#   CLOUDFLARE_D1_DATABASE_ID  the D1 database; created when it is missing
 #   R2_BUCKET_NAME          the bucket holding logos and avatars
 #   R2_PUBLIC_ID            the bucket's managed r2.dev domain
-#   PUBLIC_URL              the address users open
+#   PUBLIC_URL              the address users open; the app derives its auth
+#                           and web URLs from it
 #   RESEND_FROM             the sender address
 #   BETTER_AUTH_SECRET      set once, then reused forever
 #   HEPTADEC_SECRET_KEY     set once, then reused forever — losing it breaks
@@ -22,7 +26,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-WRANGLER=(pnpm --filter @heptadec/api exec wrangler)
+WRANGLER=(pnpm exec wrangler)
+DATABASE_NAME=heptadec
 
 say() {
   printf '\n\033[1m%s\033[0m\n' "$1"
@@ -40,9 +45,9 @@ read_env() {
 }
 
 export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-$(read_env CLOUDFLARE_ACCOUNT_ID)}"
-export CLOUDFLARE_D1_DATABASE_ID="${CLOUDFLARE_D1_DATABASE_ID:-$(read_env CLOUDFLARE_D1_DATABASE_ID)}"
 export R2_BUCKET_NAME="${R2_BUCKET_NAME:-$(read_env R2_BUCKET_NAME)}"
 export R2_PUBLIC_ID="${R2_PUBLIC_ID:-$(read_env R2_PUBLIC_ID)}"
+export R2_CUSTOM_DOMAIN="${R2_CUSTOM_DOMAIN:-$(read_env R2_CUSTOM_DOMAIN)}"
 export PUBLIC_URL="${PUBLIC_URL:-$(read_env PUBLIC_URL)}"
 export RESEND_FROM="${RESEND_FROM:-$(read_env RESEND_FROM)}"
 export BACHS_BASE_URL="${BACHS_BASE_URL:-$(read_env BACHS_BASE_URL)}"
@@ -74,29 +79,19 @@ say "1/8 Checking your Cloudflare login"
 if ! "${WRANGLER[@]}" whoami >/dev/null 2>&1; then
   echo "Not logged in yet. Run this once, then re-run the deploy:"
   echo
-  echo "    pnpm --filter @heptadec/api exec wrangler login"
+  echo "    pnpm exec wrangler login"
   echo
   exit 1
 fi
 
+# Wrangler finds the database by the name in wrangler.jsonc, so there is no id
+# to record here. Rename it in the configuration before deploying into an
+# account that already holds a database called heptadec.
 say "2/8 Ensuring the D1 database exists"
-if [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
-  created="$("${WRANGLER[@]}" d1 create heptadec </dev/null 2>&1)" || {
-    echo "Could not create the database. Create it and set CLOUDFLARE_D1_DATABASE_ID:"
-    echo
-    printf '%s\n' "$created"
-    exit 1
-  }
-  CLOUDFLARE_D1_DATABASE_ID="$(printf '%s' "$created" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)"
-  if [ -z "$CLOUDFLARE_D1_DATABASE_ID" ]; then
-    echo "Created the database but could not read its id. Set it yourself:"
-    printf '%s\n' "$created"
-    exit 1
-  fi
-  remember CLOUDFLARE_D1_DATABASE_ID "$CLOUDFLARE_D1_DATABASE_ID"
-  echo "Created heptadec and recorded its id in .env"
+if "${WRANGLER[@]}" d1 info "$DATABASE_NAME" >/dev/null 2>&1; then
+  echo "Already exists: $DATABASE_NAME"
 else
-  echo "Using the database in CLOUDFLARE_D1_DATABASE_ID"
+  "${WRANGLER[@]}" d1 create "$DATABASE_NAME"
 fi
 
 say "3/8 Ensuring the image bucket exists"
@@ -148,7 +143,43 @@ else
   echo "PUBLIC_URL is not set: uploads from a browser are blocked."
 fi
 
-say "5/8 Setting secrets that are not already set"
+# The Worker is not rolled out ahead of the schema it reads: the migrations
+# land first, so a merge that adds a migration and a Worker that queries it
+# never meet in the wrong order.
+say "5/8 Applying database migrations"
+pnpm db:migrate:d1
+
+# Plain values are passed at deploy time rather than committed, so the
+# repository never carries this deployment's account, bucket or URL. They show
+# up in the dashboard under the Worker's Variables & Secrets, where they can
+# be edited; keep_vars in wrangler.jsonc stops a later deploy from deleting
+# them.
+say "6/8 Building and deploying"
+VARS=()
+add_var() {
+  local name="$1"
+  local value="${!name:-}"
+  if [ -n "$value" ]; then
+    VARS+=(--var "$name:$value")
+  fi
+}
+add_var CLOUDFLARE_ACCOUNT_ID
+add_var R2_BUCKET_NAME
+add_var R2_PUBLIC_ID
+add_var R2_CUSTOM_DOMAIN
+add_var PUBLIC_URL
+add_var RESEND_FROM
+add_var BACHS_BASE_URL
+add_var BACHS_PRICE_MONTHLY
+add_var BACHS_PRICE_YEARLY
+
+pnpm run build
+"${WRANGLER[@]}" deploy "${VARS[@]}"
+
+# Secrets are set after the first deploy, because a Worker that does not exist
+# yet has nowhere to store them. On later runs they are already there and this
+# step only reads the list.
+say "7/8 Setting secrets that are not already set"
 ensure_secret() {
   local name="$1"
   local value="$2"
@@ -177,11 +208,5 @@ else
   echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
 fi
 
-say "6/8 Checking that Bachs converts the USD price for local buyers"
+say "8/8 Checking that Bachs converts the USD price for local buyers"
 node scripts/check-bachs-adaptive-pricing.mjs
-
-say "7/8 Applying database migrations"
-pnpm db:migrate:d1
-
-say "8/8 Deploying"
-pnpm deploy:worker

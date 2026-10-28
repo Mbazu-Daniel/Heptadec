@@ -31,11 +31,7 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "test:billing": "vitest run --config vitest.billing.config.ts",
-    "typecheck": "tsc --noEmit",
-    "build:web": "pnpm --filter @heptadec/web build",
-    "db:migrate:d1": "wrangler d1 migrations apply heptadec --remote",
-    "deploy:web": "pnpm --filter @heptadec/api run build:web",
-    "deploy:worker": "pnpm --filter @heptadec/api run build:web && pnpm --filter @heptadec/api exec wrangler deploy"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.67",
@@ -67,7 +63,6 @@
     "@types/pg": "^8.15.5",
     "drizzle-kit": "^0.31.11",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3",
-    "wrangler": "^4.149.0"
+    "vitest": "^5.0.3"
   }
 }

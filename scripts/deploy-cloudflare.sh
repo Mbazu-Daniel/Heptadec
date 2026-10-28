@@ -10,24 +10,25 @@
 # reads the same root wrangler.jsonc and runs `pnpm run deploy`.
 #
 # The deployment's own values come from the environment: the gitignored .env on
-# a laptop. They are written to the Worker as plain values and secrets, so the
-# Cloudflare dashboard shows every one of them and they can be edited there.
+# a laptop. The plain ones are written to the Worker on the first deploy, after
+# which the dashboard owns them; the secrets are set here and kept.
 #   CLOUDFLARE_ACCOUNT_ID   the account to deploy into
-#   R2_BUCKET_NAME          the bucket holding logos and avatars
 #   R2_PUBLIC_ID            the bucket's managed r2.dev domain
 #   PUBLIC_URL              the address users open; the app derives its auth
 #                           and web URLs from it
 #   RESEND_FROM             the sender address
-#   BETTER_AUTH_SECRET      set once, then reused forever
-#   HEPTADEC_SECRET_KEY     set once, then reused forever — losing it breaks
-#                           every stored data-source credential
+#   BETTER_AUTH_SECRET      read from .env if set, otherwise generated once
+#   HEPTADEC_SECRET_KEY     read from .env if set, otherwise generated once —
+#                           losing it breaks every stored data-source credential
+#
+# The database, the bucket, and the Worker's name are not here: they are read
+# from wrangler.jsonc, because that is where the deploy resolves its bindings.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 WRANGLER=(pnpm exec wrangler)
-DATABASE_NAME=heptadec
 
 say() {
   printf '\n\033[1m%s\033[0m\n' "$1"
@@ -45,18 +46,43 @@ read_env() {
 }
 
 export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-$(read_env CLOUDFLARE_ACCOUNT_ID)}"
-export R2_BUCKET_NAME="${R2_BUCKET_NAME:-$(read_env R2_BUCKET_NAME)}"
 export R2_PUBLIC_ID="${R2_PUBLIC_ID:-$(read_env R2_PUBLIC_ID)}"
 export R2_CUSTOM_DOMAIN="${R2_CUSTOM_DOMAIN:-$(read_env R2_CUSTOM_DOMAIN)}"
 export PUBLIC_URL="${PUBLIC_URL:-$(read_env PUBLIC_URL)}"
 export RESEND_FROM="${RESEND_FROM:-$(read_env RESEND_FROM)}"
+export RESEND_API_KEY="${RESEND_API_KEY:-$(read_env RESEND_API_KEY)}"
 export BACHS_BASE_URL="${BACHS_BASE_URL:-$(read_env BACHS_BASE_URL)}"
 export BACHS_SECRET_KEY="${BACHS_SECRET_KEY:-$(read_env BACHS_SECRET_KEY)}"
+export BACHS_WEBHOOK_SECRET="${BACHS_WEBHOOK_SECRET:-$(read_env BACHS_WEBHOOK_SECRET)}"
 export BACHS_PRICE_MONTHLY="${BACHS_PRICE_MONTHLY:-$(read_env BACHS_PRICE_MONTHLY)}"
 export BACHS_PRICE_YEARLY="${BACHS_PRICE_YEARLY:-$(read_env BACHS_PRICE_YEARLY)}"
+export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-$(read_env BETTER_AUTH_SECRET)}"
+export HEPTADEC_SECRET_KEY="${HEPTADEC_SECRET_KEY:-$(read_env HEPTADEC_SECRET_KEY)}"
+export R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-$(read_env R2_ACCESS_KEY_ID)}"
+export R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-$(read_env R2_SECRET_ACCESS_KEY)}"
+export R2_SESSION_TOKEN="${R2_SESSION_TOKEN:-$(read_env R2_SESSION_TOKEN)}"
 
 if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
   echo "CLOUDFLARE_ACCOUNT_ID is not set. Put it in .env or in the environment."
+  exit 1
+fi
+
+# Wrangler resolves the D1 database and the R2 bucket by the names in its own
+# configuration, so the names come from there rather than from this script: a
+# database or bucket provisioned under a different name is one the deploy
+# never reads.
+read -r WORKER_NAME DATABASE_NAME BUCKET_NAME < <(node --input-type=module -e '
+  import { unstable_readConfig } from "wrangler";
+  const config = unstable_readConfig({ config: "wrangler.jsonc" });
+  console.log(
+    config.name,
+    config.d1_databases[0].database_name,
+    config.r2_buckets[0].bucket_name,
+  );
+')
+
+if [ -z "$WORKER_NAME" ] || [ -z "$DATABASE_NAME" ] || [ -z "$BUCKET_NAME" ]; then
+  echo "wrangler.jsonc needs a name, a d1_databases entry, and an r2_buckets entry."
   exit 1
 fi
 
@@ -66,6 +92,8 @@ remember() {
   local name="$1"
   local value="$2"
   if [ ! -f .env ]; then
+    echo "  No .env to save it in. Save this yourself; it cannot be recovered:"
+    echo "  $name=$value"
     return
   fi
   if grep -q "^$name=" .env; then
@@ -73,6 +101,7 @@ remember() {
   else
     printf '\n%s=%s\n' "$name" "$value" >>.env
   fi
+  echo "  $name saved to .env"
 }
 
 say "1/8 Checking your Cloudflare login"
@@ -95,19 +124,15 @@ else
 fi
 
 say "3/8 Ensuring the image bucket exists"
-if [ -z "$R2_BUCKET_NAME" ]; then
-  echo "R2_BUCKET_NAME is not set. Put the bucket's name in .env."
-  exit 1
-fi
-if "${WRANGLER[@]}" r2 bucket create "$R2_BUCKET_NAME" >/dev/null 2>&1; then
-  echo "Created $R2_BUCKET_NAME"
+if "${WRANGLER[@]}" r2 bucket create "$BUCKET_NAME" >/dev/null 2>&1; then
+  echo "Created $BUCKET_NAME"
 else
-  echo "Already exists: $R2_BUCKET_NAME"
+  echo "Already exists: $BUCKET_NAME"
 fi
 
 # The bucket is read from its public domain, so the domain is on and its id
 # is known. The id is the bucket's, which the domain's host name carries.
-domain="$("${WRANGLER[@]}" r2 bucket dev-url enable "$R2_BUCKET_NAME" 2>&1 | grep -oE 'pub-[a-f0-9]+' | head -1 || true)"
+domain="$("${WRANGLER[@]}" r2 bucket dev-url enable "$BUCKET_NAME" 2>&1 | grep -oE 'pub-[a-f0-9]+' | head -1 || true)"
 if [ -n "$domain" ]; then
   R2_PUBLIC_ID="${domain#pub-}"
   remember R2_PUBLIC_ID "$R2_PUBLIC_ID"
@@ -136,7 +161,7 @@ if [ -n "$PUBLIC_URL" ]; then
   ]
 }
 JSON
-  "${WRANGLER[@]}" r2 bucket cors set "$R2_BUCKET_NAME" --file "$cors_file" --force
+  "${WRANGLER[@]}" r2 bucket cors set "$BUCKET_NAME" --file "$cors_file" --force
   rm -f "$cors_file"
   echo "Uploads allowed from $PUBLIC_URL"
 else
@@ -149,11 +174,10 @@ fi
 say "5/8 Applying database migrations"
 pnpm db:migrate:d1
 
-# Plain values are passed at deploy time rather than committed, so the
-# repository never carries this deployment's account, bucket or URL. They show
-# up in the dashboard under the Worker's Variables & Secrets, where they can
-# be edited; keep_vars in wrangler.jsonc stops a later deploy from deleting
-# them.
+# The plain values are only handed to the Worker when it is created. After
+# that the dashboard holds them, and passing them again would replace whatever
+# an operator edited there: --var always wins, and keep_vars only stops a deploy
+# from deleting values it does not mention.
 say "6/8 Building and deploying"
 VARS=()
 add_var() {
@@ -163,18 +187,34 @@ add_var() {
     VARS+=(--var "$name:$value")
   fi
 }
-add_var CLOUDFLARE_ACCOUNT_ID
-add_var R2_BUCKET_NAME
-add_var R2_PUBLIC_ID
-add_var R2_CUSTOM_DOMAIN
-add_var PUBLIC_URL
-add_var RESEND_FROM
-add_var BACHS_BASE_URL
-add_var BACHS_PRICE_MONTHLY
-add_var BACHS_PRICE_YEARLY
+
+# A Worker that already exists keeps whatever the dashboard holds, so this has
+# to tell "first deploy" apart from "could not check" rather than treating any
+# failure as a first deploy.
+if deployments="$("${WRANGLER[@]}" deployments list --name "$WORKER_NAME" 2>&1)"; then
+  echo "$WORKER_NAME already exists: its dashboard values are left alone"
+elif grep -q 'code: 10007' <<<"$deployments"; then
+  echo "First deploy: writing the plain values from .env to $WORKER_NAME"
+  add_var CLOUDFLARE_ACCOUNT_ID
+  add_var R2_PUBLIC_ID
+  add_var R2_CUSTOM_DOMAIN
+  add_var PUBLIC_URL
+  add_var RESEND_FROM
+  add_var BACHS_BASE_URL
+  add_var BACHS_PRICE_MONTHLY
+  add_var BACHS_PRICE_YEARLY
+else
+  echo "Could not tell whether $WORKER_NAME exists, so nothing was deployed:"
+  printf '%s\n' "$deployments"
+  exit 1
+fi
 
 pnpm run build
-"${WRANGLER[@]}" deploy "${VARS[@]}"
+if [ ${#VARS[@]} -gt 0 ]; then
+  "${WRANGLER[@]}" deploy "${VARS[@]}"
+else
+  "${WRANGLER[@]}" deploy
+fi
 
 # Secrets are set after the first deploy, because a Worker that does not exist
 # yet has nowhere to store them. On later runs they are already there and this
@@ -182,30 +222,47 @@ pnpm run build
 say "7/8 Setting secrets that are not already set"
 ensure_secret() {
   local name="$1"
-  local value="$2"
-  if "${WRANGLER[@]}" secret list 2>/dev/null | grep -q "$name"; then
+  local value="${!name:-}"
+  if "${WRANGLER[@]}" secret list 2>/dev/null | grep -q "\"$name\""; then
     echo "$name: already set"
     return
   fi
+  if [ -z "$value" ]; then
+    value="$(random_secret)"
+    echo "$name: not set, generating a value"
+    remember "$name" "$value"
+  fi
   printf '%s' "$value" | "${WRANGLER[@]}" secret put "$name"
 }
-ensure_secret BETTER_AUTH_SECRET "${BETTER_AUTH_SECRET:-$(random_secret)}"
-ensure_secret HEPTADEC_SECRET_KEY "${HEPTADEC_SECRET_KEY:-$(random_secret)}"
+ensure_secret BETTER_AUTH_SECRET
+ensure_secret HEPTADEC_SECRET_KEY
+
+# The rest are issued elsewhere, so they are only pushed when .env supplies
+# them: a generated value would be a key nobody issued.
+if [ -n "${RESEND_API_KEY:-}" ]; then
+  ensure_secret RESEND_API_KEY
+fi
+if [ -n "${BACHS_SECRET_KEY:-}" ]; then
+  ensure_secret BACHS_SECRET_KEY
+fi
+if [ -n "${BACHS_WEBHOOK_SECRET:-}" ]; then
+  ensure_secret BACHS_WEBHOOK_SECRET
+fi
 
 # The R2 access key signs an upload for the browser to PUT straight to the
 # bucket. Without it the deployment serves images but cannot replace them, so
 # this is part of provisioning rather than an optional extra.
 if [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then
-  ensure_secret R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
-  ensure_secret R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+  ensure_secret R2_ACCESS_KEY_ID
+  ensure_secret R2_SECRET_ACCESS_KEY
   if [ -n "${R2_SESSION_TOKEN:-}" ]; then
-    ensure_secret R2_SESSION_TOKEN "$R2_SESSION_TOKEN"
+    ensure_secret R2_SESSION_TOKEN
   fi
 else
   echo "R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not set:"
   echo "  uploads will report image storage as unconfigured (reads still work)"
-  echo "  create a key at Cloudflare -> R2 -> Manage R2 -> API Tokens, then:"
-  echo "      R2_ACCESS_KEY_ID=… R2_SECRET_ACCESS_KEY=… $0"
+  echo "  create a key at Cloudflare -> R2 -> Manage R2 -> API Tokens, put both"
+  echo "  in .env, then re-run:  pnpm deploy:cloudflare"
 fi
 
 say "8/8 Checking that Bachs converts the USD price for local buyers"

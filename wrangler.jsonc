@@ -34,14 +34,21 @@
     }
   ],
 
+  // The bucket is bound above and also named when the API signs an upload, so
+  // both values live in this file and move together. Renaming the bucket
+  // means changing this line and the binding.
+  "vars": {
+    "R2_BUCKET_NAME": "heptadec-images"
+  },
+
   "triggers": {
     "crons": ["* * * * *"]
   },
 
-  // Runtime values and secrets live in the Cloudflare dashboard, under the
-  // Worker's Settings -> Variables & Secrets: PUBLIC_URL,
-  // CLOUDFLARE_ACCOUNT_ID, R2_BUCKET_NAME, R2_PUBLIC_ID, RESEND_FROM, the
-  // Bachs prices, and the secrets that go with them. keep_vars stops a deploy
-  // from deleting those dashboard values; secrets are kept by default.
+  // The rest of the runtime values and secrets live in the Cloudflare
+  // dashboard, under the Worker's Settings -> Variables & Secrets:
+  // PUBLIC_URL, CLOUDFLARE_ACCOUNT_ID, R2_PUBLIC_ID, RESEND_FROM, the Bachs
+  // prices, and the secrets that go with them. keep_vars stops a deploy from
+  // deleting those dashboard values; secrets are kept by default.
   "keep_vars": true
 }

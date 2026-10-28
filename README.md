@@ -243,22 +243,34 @@ Deploys run in **Cloudflare Workers Builds**: connect the repository once in the
    pnpm exec wrangler r2 bucket create heptadec-images
    ```
 
-2. In the Cloudflare dashboard, open **Workers & Pages → Create application → Workers → Connect to Git**, pick this repository, and leave the root directory at the repository root. Name the Worker `heptadec` so it connects to the existing deployment rather than creating a second one. The build and deploy commands are pre-filled from `package.json`:
+2. In the Cloudflare dashboard, open **Workers & Pages → Create application → Workers → Connect to Git**, pick this repository, and leave the root directory at the repository root. Name the Worker `heptadec` so it connects to the existing deployment rather than creating a second one. Set both commands yourself; the deploy command defaults to `npx wrangler deploy`, which deploys without the schema:
 
    ```
    build:  pnpm run build
    deploy: pnpm run deploy
    ```
 
+   `pnpm run deploy` applies pending D1 migrations first, so the schema is never behind the Worker.
+
 3. Give the build token **D1: Edit** at **My Profile → API Tokens**. Workers Builds creates its token without D1 access, and the deploy command applies migrations before it deploys, so without this the build fails at `wrangler d1 migrations apply`.
 
-4. Add the values below under the Worker's **Settings → Variables & Secrets**. `keep_vars: true` in `wrangler.jsonc` keeps whatever is there, so a later deploy does not delete them. Cloudflare shows a secret's name but not its value; replace one from the same screen.
+4. Add the values listed under [The values](#the-values) to the Worker's **Settings → Variables & Secrets**. `keep_vars: true` in `wrangler.jsonc` keeps whatever is there, so a later deploy does not delete them. Cloudflare shows a secret's name but not its value; replace one from the same screen.
+
+5. Allow browser uploads from the app's origin. A new bucket has no CORS rule, and the browser refuses the direct `PUT` without one. Use the same origin as `PUBLIC_URL`:
+
+   ```bash
+   cat >/tmp/cors.json <<'JSON'
+   { "rules": [ { "allowed": { "origins": ["https://heptadec.example.com"], "methods": ["GET", "HEAD", "PUT"], "headers": ["content-type"] }, "exposeHeaders": ["etag"], "maxAgeSeconds": 3600 } ] }
+   JSON
+   pnpm exec wrangler r2 bucket cors set heptadec-images --file /tmp/cors.json --force
+   ```
+
+#### The values
 
 | Name | Kind | What it is |
 |---|---|---|
 | `PUBLIC_URL` | Variable | The address users open. `BETTER_AUTH_URL` and `WEB_URL` fall back to it. |
 | `CLOUDFLARE_ACCOUNT_ID` | Variable | The account the Worker and bucket live in; R2 URLs are signed against it. |
-| `R2_BUCKET_NAME` | Variable | The bucket holding logos and avatars. |
 | `R2_PUBLIC_ID` | Variable | The bucket's managed `r2.dev` domain, when images are read from it. |
 | `R2_CUSTOM_DOMAIN` | Variable | The bucket's own domain; wins over `R2_PUBLIC_ID`. |
 | `RESEND_FROM` | Variable | The sender address. |
@@ -268,11 +280,13 @@ Deploys run in **Cloudflare Workers Builds**: connect the repository once in the
 | `RESEND_API_KEY` | Secret | Sends invitation and alert email. |
 | `BACHS_*` | Secrets and variables | Billing; see [Billing](#billing-bachs). |
 
+`R2_BUCKET_NAME` is not in that list: it is a `var` in `wrangler.jsonc`, beside the `IMAGES` binding that points at the same bucket. One deploy cannot sign an upload for one bucket and read it back from another. Renaming the bucket means changing both lines.
+
 #### The configuration
 
-`wrangler.jsonc` is at the repository root and is committed. It names the account's resources by name only — no account id and no D1 database id — because the repository is public and a fork should not deploy into another account. Wrangler reads the account from the API token and looks up the database and bucket by name.
+`wrangler.jsonc` is at the repository root and is committed. It names the account's resources by name only — no account id and no D1 database id — because the repository is public and a fork should not deploy into another account. Wrangler reads the account from the API token and looks up the database and bucket by name. Its `vars` block carries `R2_BUCKET_NAME`, so the bucket the API signs uploads for is the bucket the `IMAGES` binding reads.
 
-Rename `heptadec` and `heptadec-images` in `wrangler.jsonc` before connecting an account that already has them.
+Rename `heptadec` and `heptadec-images` in `wrangler.jsonc` before connecting an account that already has them — including the `R2_BUCKET_NAME` var, which has to match the binding.
 
 The deploy is three ordered steps:
 
@@ -286,7 +300,9 @@ pnpm run deploy:worker  # wrangler deploy
 
 #### From a laptop
 
-`pnpm deploy:cloudflare` provisions the same resources and deploys from your machine. It creates the D1 database and the bucket when they are missing, allows browser uploads from `PUBLIC_URL`, applies migrations, deploys, and sets `BETTER_AUTH_SECRET`, `HEPTADEC_SECRET_KEY` and the R2 keys when they are absent. It passes the plain values with the deploy, so they appear in the dashboard too. Re-running it leaves what already exists alone.
+`pnpm deploy:cloudflare` provisions the same resources and deploys from your machine. It reads the names from `wrangler.jsonc`, creates the D1 database and the bucket when they are missing, allows browser uploads from `PUBLIC_URL`, applies migrations, and deploys.
+
+The values come from the gitignored `.env`. The plain ones are written to the Worker only on the first deploy; after that the dashboard is the source of truth, so editing `PUBLIC_URL` there is not undone by the next laptop deploy. `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` are used as they are when `.env` has them, and generated and saved back to `.env` when it does not — never rotated, because the second one encrypts every stored data-source credential. Re-running leaves what already exists alone.
 
 ```bash
 pnpm deploy:cloudflare
@@ -395,7 +411,7 @@ The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, 
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for R2 and email dispatch | `your_account_id` |
 | `CLOUDFLARE_EMAIL_TOKEN` | API token for Cloudflare email sending | `your_cf_email_token` |
 | `CLOUDFLARE_EMAIL_FROM` | Sender address for Cloudflare email | `notifications@example.com` |
-| `R2_BUCKET_NAME` | Bucket holding logos and avatars | `heptadec-images` |
+| `R2_BUCKET_NAME` | Bucket holding logos and avatars; on Workers it comes from `wrangler.jsonc` | `heptadec-images` |
 | `R2_ACCESS_KEY_ID` | R2 access key that signs an upload | `your_r2_access_key_id` |
 | `R2_SECRET_ACCESS_KEY` | R2 secret key that signs an upload | `your_r2_secret_access_key` |
 | `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |

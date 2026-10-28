@@ -15,8 +15,8 @@ export const config = {
     sessionToken: process.env.R2_SESSION_TOKEN,
   },
   betterAuthUrl:
-    process.env.BETTER_AUTH_URL ??
     process.env.PUBLIC_URL ??
+    process.env.BETTER_AUTH_URL ??
     "http://localhost:8787",
   bachs: {
     secretKey: process.env.BACHS_SECRET_KEY ?? "",
@@ -33,7 +33,7 @@ export const config = {
     .filter(Boolean),
   betterAuthSecret: process.env.BETTER_AUTH_SECRET ?? "",
   webUrl:
-    process.env.WEB_URL ?? process.env.PUBLIC_URL ?? "http://localhost:5173",
+    process.env.PUBLIC_URL ?? process.env.WEB_URL ?? "http://localhost:5173",
   schedulerTickMs: intFromEnv("SCHEDULER_TICK_MS", 30_000),
 } as const;
 

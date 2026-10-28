@@ -5,6 +5,7 @@
   "engines": {
     "node": ">=22"
   },
+  "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
@@ -21,10 +22,27 @@
     "seed:test": "./scripts/seed-test.sh",
     "db:generate": "pnpm --filter @heptadec/db run generate",
     "db:migrate": "pnpm --filter @heptadec/db run migrate",
-    "config:worker": "node scripts/render-wrangler-config.mjs",
-    "db:migrate:d1": "pnpm run config:worker && pnpm --filter @heptadec/api run db:migrate:d1",
+    "db:migrate:d1": "wrangler d1 migrations apply DB --remote",
+    "deploy": "pnpm run build && pnpm run db:migrate:d1 && pnpm run deploy:worker",
     "deploy:cloudflare": "./scripts/deploy-cloudflare.sh",
-    "deploy:worker": "pnpm run config:worker && pnpm --filter @heptadec/api run deploy:worker"
+    "deploy:worker": "wrangler deploy"
+  },
+  "cloudflare": {
+    "label": "Heptadec",
+    "products": ["Workers", "D1", "R2"],
+    "categories": ["analytics", "developer-tools"],
+    "docs_url": "https://github.com/Mbazu-Daniel/Heptadec#cloudflare-workers",
+    "bindings": {
+      "PUBLIC_URL": {
+        "description": "The address users open, for example `https://heptadec.example.com`."
+      },
+      "BETTER_AUTH_SECRET": {
+        "description": "Generate with `openssl rand -base64 32`. Rotating it signs everyone out."
+      },
+      "HEPTADEC_SECRET_KEY": {
+        "description": "Generate with `openssl rand -base64 32`. Rotating it makes every stored data-source credential unreadable."
+      }
+    }
   },
   "devDependencies": {
     "wrangler": "^4.149.0"

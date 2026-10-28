@@ -1,0 +1,54 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "heptadec",
+  "main": "apps/api/src/worker.ts",
+  "compatibility_date": "2026-10-10",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
+
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "apps/web/dist",
+    "not_found_handling": "single-page-application"
+  },
+
+  // No account id and no database id: Wrangler reads the account from the
+  // Cloudflare API and finds the database by name. Rename the database or the
+  // bucket before deploying if this account already has a heptadec instance.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "heptadec",
+      "migrations_dir": "packages/db/drizzle"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "heptadec-images"
+    }
+  ],
+
+  // The bucket is bound above and also named when the API signs an upload, so
+  // both values live in this file and move together. Renaming the bucket
+  // means changing this line and the binding.
+  "vars": {
+    "R2_BUCKET_NAME": "heptadec-images"
+  },
+
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  // The rest of the runtime values and secrets live in the Cloudflare
+  // dashboard, under the Worker's Settings -> Variables & Secrets:
+  // PUBLIC_URL, CLOUDFLARE_ACCOUNT_ID, R2_PUBLIC_ID, RESEND_FROM, the Bachs
+  // prices, and the secrets that go with them. keep_vars stops a deploy from
+  // deleting those dashboard values; secrets are kept by default.
+  "keep_vars": true
+}

@@ -1,0 +1,10 @@
+# Worker secrets for `pnpm exec wrangler dev`.
+#
+# Copy to .dev.vars (gitignored) and fill each one with 32 random bytes:
+#
+#   openssl rand -base64 32
+#
+# HEPTADEC_SECRET_KEY encrypts stored data-source credentials. Generate it once
+# and keep it: changing it makes every credential already stored unreadable.
+BETTER_AUTH_SECRET=
+HEPTADEC_SECRET_KEY=

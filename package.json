@@ -11,6 +11,7 @@
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm run test:integration",
     "test:integration": "pnpm --filter @heptadec/api run test",
+    "test:billing": "pnpm --filter @heptadec/api run test:billing",
     "compose:up": "docker compose up -d postgres mysql redis",
     "compose:down": "docker compose down",
     "compose:test:up": "bash scripts/compose-test.sh up -d",

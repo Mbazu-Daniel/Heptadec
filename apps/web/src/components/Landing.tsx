@@ -5,10 +5,7 @@ import {
   type DataSourceKind,
 } from "@heptadec/api/data-source-contracts";
 import { EngineIcon } from "../lib/engine-icon";
-
-const REPO = "Mbazu-Daniel/Heptadec";
-
-export const REPO_URL = `https://github.com/${REPO}`;
+import { REPO, REPO_URL } from "../lib/repo";
 
 const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
 
@@ -815,7 +812,7 @@ function DeploySection() {
                 box.
               </p>
               <pre className="mt-3 overflow-x-auto rounded-[12px] border border-(--mk-hairline) bg-(--mk-bg-surface) p-3 font-mono text-[13px] leading-[20px] text-(--mk-fg-primary)">
-{`git clone https://github.com/${REPO}.git
+{`git clone ${REPO_URL}.git
 cd Heptadec && pnpm install
 cp .env.example .env
 pnpm db:migrate && pnpm dev`}

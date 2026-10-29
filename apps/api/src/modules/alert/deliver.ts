@@ -56,13 +56,14 @@ export async function deliverBreach(
     ];
   }
 
+  const sent = await Promise.all(
+    channels.map((channel) =>
+      sendToChannel(channel, `Heptadec alert: ${rule.name}`, message),
+    ),
+  );
+
   const delivered: IAlertDelivery[] = [];
-  for (const channel of channels) {
-    const result = await sendToChannel(
-      channel,
-      `Heptadec alert: ${rule.name}`,
-      message,
-    );
+  for (const result of sent) {
     delivered.push(
       await log(db, rule, result.channel, result.status, message, result.error),
     );

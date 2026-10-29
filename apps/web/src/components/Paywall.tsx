@@ -8,7 +8,7 @@ import type {
 import { useBilling } from "../checkout";
 import { Alert } from "./ui/feedback";
 import { PlanCard } from "./workspace";
-import { REPO_URL } from "./Landing";
+import { REPO_URL } from "../lib/repo";
 
 export interface IPaywallBilling {
   busy: boolean;

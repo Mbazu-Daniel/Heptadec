@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -16,15 +16,24 @@ import { authClient } from "./auth";
 import { AcceptInvitation } from "./components/AcceptInvitation";
 import { AuthScreen } from "./components/AuthScreen";
 import { CreateOrganization } from "./components/CreateOrganization";
-import { Dashboard } from "./components/Dashboard";
-import { Landing } from "./components/Landing";
 import { ForgotPassword } from "./components/ForgotPassword";
 import { MemberProfile } from "./components/MemberProfile";
-import { ResetPassword } from "./components/ResetPassword";
 import { NotFound } from "./components/NotFound";
 import { Onboarding } from "./components/Onboarding";
+import { ResetPassword } from "./components/ResetPassword";
 import { SubscriptionGate } from "./components/Paywall";
-import { PublicDashboard } from "./components/PublicDashboard";
+
+const Landing = lazy(() =>
+  import("./components/Landing").then((m) => ({ default: m.Landing })),
+);
+const Dashboard = lazy(() =>
+  import("./components/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const PublicDashboard = lazy(() =>
+  import("./components/PublicDashboard").then((m) => ({
+    default: m.PublicDashboard,
+  })),
+);
 
 type Mode = "sign-in" | "sign-up";
 
@@ -396,7 +405,9 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
 export function Root() {
   return (
     <BrowserRouter>
-      <App />
+      <Suspense fallback={<Loading />}>
+        <App />
+      </Suspense>
     </BrowserRouter>
   );
 }

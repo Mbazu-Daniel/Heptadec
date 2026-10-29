@@ -80,20 +80,26 @@ export async function redisContext(connection: IStoredConnection): Promise<strin
  */
 export async function quickwitContext(connection: IStoredConnection): Promise<string> {
   const indexes = await listObjects(connection);
+  const probed = await Promise.all(
+    indexes.map(async (index) => {
+      let fields: string[] = [];
+      try {
+        const probe = await previewObject(connection, index, "*", 1);
+        fields = probe.columns;
+      } catch (caught) {
+        console.warn(`[ai] could not probe quickwit index ${index.name}:`, caught);
+      }
+      return { index, fields };
+    }),
+  );
+
   const lines: string[] = [`Endpoint: ${connection.host ?? ""}`, ""];
-  if (indexes.length === 0) {
+  if (probed.length === 0) {
     lines.push("-- this source reported no indexes");
     return lines.join("\n");
   }
 
-  for (const index of indexes) {
-    let fields: string[] = [];
-    try {
-      const probe = await previewObject(connection, index, "*", 1);
-      fields = probe.columns;
-    } catch (caught) {
-      console.warn(`[ai] could not probe quickwit index ${index.name}:`, caught);
-    }
+  for (const { index, fields } of probed) {
     lines.push(
       fields.length === 0
         ? `${index.name} — fields unknown`

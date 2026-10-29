@@ -107,37 +107,72 @@ async function registerProvider(
 async function startProvider(
   text: string,
 ): Promise<{ baseUrl: string; close: () => Promise<void> }> {
-  const server: Server = createServer((_request, response) => {
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-    });
-    const size = 64;
-    const parts: string[] = [];
-    for (let i = 0; i < text.length; i += size) {
-      parts.push(text.slice(i, i + size));
-    }
-    let index = 0;
-    const push = (): void => {
-      if (index >= parts.length) {
-        response.write("data: [DONE]\n\n");
-        response.end();
+  const server: Server = createServer((request, response) => {
+    const incoming: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => incoming.push(chunk));
+    request.on("end", () => {
+      const body = JSON.parse(Buffer.concat(incoming).toString()) as {
+        stream?: boolean;
+      };
+      // A plan is asked for and answered in one piece, so this answers the way an
+      // OpenAI-compatible provider does: a stream when the call asks for one, a
+      // single completion when it does not.
+      if (body.stream !== true) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            id: "1",
+            object: "chat.completion",
+            created: 1,
+            model: "test",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: text },
+                finish_reason: "stop",
+              },
+            ],
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+            },
+          }),
+        );
         return;
       }
-      const content = parts[index]!;
-      index += 1;
-      response.write(
-        `data: ${JSON.stringify({
-          id: "1",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "test",
-          choices: [{ index: 0, delta: { content }, finish_reason: null }],
-        })}\n\n`,
-      );
-      setImmediate(push);
-    };
-    push();
+
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+      });
+      const size = 64;
+      const parts: string[] = [];
+      for (let i = 0; i < text.length; i += size) {
+        parts.push(text.slice(i, i + size));
+      }
+      let index = 0;
+      const push = (): void => {
+        if (index >= parts.length) {
+          response.write("data: [DONE]\n\n");
+          response.end();
+          return;
+        }
+        const content = parts[index]!;
+        index += 1;
+        response.write(
+          `data: ${JSON.stringify({
+            id: "1",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "test",
+            choices: [{ index: 0, delta: { content }, finish_reason: null }],
+          })}\n\n`,
+        );
+        setImmediate(push);
+      };
+      push();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();

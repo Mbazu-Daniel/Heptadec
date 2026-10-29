@@ -16,6 +16,8 @@ allowBuilds:
   duckdb: true
 
 minimumReleaseAgeExclude:
-  - "@ai-sdk/openai-compatible@3.0.67"
+  # Mastra speaks the model through the AI SDK's provider interfaces, so the
+  # versions it pins are as new as Mastra itself.
   - "@ai-sdk/provider-utils@5.0.58"
   - "@ai-sdk/provider@4.0.26"
+  - "@mastra/core@1.80.0"

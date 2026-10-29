@@ -1,0 +1,19 @@
+CREATE INDEX `account_user_provider_idx` ON `account` (`user_id`,`provider_id`);--> statement-breakpoint
+CREATE INDEX `invitation_organization_idx` ON `invitation` (`organization_id`);--> statement-breakpoint
+CREATE INDEX `data_source_organization_created_idx` ON `data_source` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `saved_query_source_created_idx` ON `saved_query` (`data_source_id`,`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `saved_query_organization_created_idx` ON `saved_query` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `query_version_saved_query_created_idx` ON `query_version` (`saved_query_id`,`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `dashboard_organization_created_idx` ON `dashboard` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `widget_dashboard_created_idx` ON `widget` (`dashboard_id`,`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `share_link_token_hash_idx` ON `share_link` (`token_hash`);--> statement-breakpoint
+CREATE INDEX `share_link_dashboard_created_idx` ON `share_link` (`dashboard_id`,`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `scheduled_job_next_run_idx` ON `scheduled_job` (`next_run_at`);--> statement-breakpoint
+CREATE INDEX `scheduled_job_organization_idx` ON `scheduled_job` (`organization_id`);--> statement-breakpoint
+CREATE INDEX `query_result_saved_query_ran_idx` ON `query_result` (`saved_query_id`,`ran_at`);--> statement-breakpoint
+CREATE INDEX `alert_rule_saved_query_idx` ON `alert_rule` (`saved_query_id`,`organization_id`);--> statement-breakpoint
+CREATE INDEX `alert_rule_organization_created_idx` ON `alert_rule` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `alert_delivery_organization_created_idx` ON `alert_delivery` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `ai_provider_organization_created_idx` ON `ai_provider` (`organization_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `ai_provider_organization_provider_idx` ON `ai_provider` (`organization_id`,`provider`);--> statement-breakpoint
+CREATE INDEX `notification_channel_organization_created_idx` ON `notification_channel` (`organization_id`,`created_at`);

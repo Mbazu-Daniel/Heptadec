@@ -14,7 +14,10 @@ import {
 import { BadRequestException } from "../../common/exceptions";
 import { structureFailure } from "../../common/driver-error";
 import { engineFrom } from "../data-source/engines";
-import type { SqlDialect } from "../data-source/contracts";
+import type {
+  IEngineSpec,
+  SqlDialect,
+} from "../data-source/contracts";
 import { introspectPostgres } from "./postgres";
 import type {
   ISchemaColumn,
@@ -23,13 +26,11 @@ import type {
   ISchemaTable,
 } from "./contracts";
 
-type Introspected = Omit<ISchemaResponse, "sourceId">;
-
 const MAX_TABLES = 500;
 
 type SqlIntrospector = (
   connection: IStoredConnection,
-) => Promise<Introspected>;
+) => Promise<ISchemaResponse>;
 
 /**
  * Which dialect reads a structure, not which engine asked for it: MariaDB
@@ -46,6 +47,16 @@ const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
   sqlite: introspectSqlite,
 };
 
+/**
+ * Whether an engine keeps a catalogue the app can read and store: tables and
+ * columns, or collections and the fields their documents carry. Redis answers
+ * with its key space and Quickwit with its index list — that is the data itself,
+ * or one cheap call away — so those are read live and never stored.
+ */
+export function readsStructure(engine: IEngineSpec): boolean {
+  return engine.sqlDialect !== null || engine.queryLanguage === "pipeline";
+}
+
 // Reads the structure of whichever engine the source points at. Which reader to
 // use follows from the language and the dialect the catalog says the source
 // speaks, so an engine that names SQL and a dialect is read without this file
@@ -54,17 +65,16 @@ const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
 // refused.
 export async function introspectSchema(
   connection: IStoredConnection,
-): Promise<Introspected> {
+): Promise<ISchemaResponse> {
   const engine = engineFrom(connection.kind);
-  if (engine.sqlDialect !== null) {
-    return SQL_INTROSPECTORS[engine.sqlDialect](connection);
+  if (!readsStructure(engine)) {
+    throw new BadRequestException(
+      `Reading a table structure is not available for ${connection.kind} sources`,
+    );
   }
-  if (engine.queryLanguage === "pipeline") {
-    return introspectMongo(connection);
-  }
-  throw new BadRequestException(
-    `Reading a table structure is not available for ${connection.kind} sources`,
-  );
+  return engine.sqlDialect === null
+    ? introspectMongo(connection)
+    : SQL_INTROSPECTORS[engine.sqlDialect](connection);
 }
 
 // Every engine below reports its catalogue in the shape assemble() expects,
@@ -129,7 +139,7 @@ const MYSQL_INDEXES = `
 
 async function introspectMysql(
   connection: IStoredConnection,
-): Promise<Introspected> {
+): Promise<ISchemaResponse> {
   const database = databaseName(connection);
   const client = await openMysql(connection);
   try {
@@ -142,7 +152,6 @@ async function introspectMysql(
       schemaName: database,
       tables: assemble(columns, indexes),
       relationships: keys.map(toKeyRelationship),
-      introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
     throw new BadRequestException(structureFailure(caught));
@@ -166,7 +175,7 @@ const CLICKHOUSE_COLUMNS = `
 
 async function introspectClickhouse(
   connection: IStoredConnection,
-): Promise<Introspected> {
+): Promise<ISchemaResponse> {
   const client = clickhouseClient(connection, MAX_TABLES);
   try {
     const result = await client.query({
@@ -180,7 +189,6 @@ async function introspectClickhouse(
       // MergeTree tables carry no foreign keys, so the diagram shows tables only.
       tables: assemble(rows, []),
       relationships: [],
-      introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
     throw new BadRequestException(structureFailure(caught));
@@ -213,7 +221,7 @@ interface ISqliteIndexRow {
 
 async function introspectSqlite(
   connection: IStoredConnection,
-): Promise<Introspected> {
+): Promise<ISchemaResponse> {
   const client = libsqlClientFor(connection);
   try {
     const names = await client.execute(
@@ -258,7 +266,6 @@ async function introspectSqlite(
       schemaName: "main",
       tables,
       relationships,
-      introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
     throw new BadRequestException(structureFailure(caught));
@@ -288,7 +295,7 @@ const MAX_COLLECTION_FIELDS = 200;
 
 const MAX_FIELD_DEPTH = 3;
 
-async function introspectMongo(connection: IStoredConnection): Promise<Introspected> {
+async function introspectMongo(connection: IStoredConnection): Promise<ISchemaResponse> {
   const client = openMongo(connection);
   try {
     const db = client.db(databaseName(connection));
@@ -318,7 +325,6 @@ async function introspectMongo(connection: IStoredConnection): Promise<Introspec
       schemaName: "default",
       tables,
       relationships: [],
-      introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
     throw new BadRequestException(structureFailure(caught));

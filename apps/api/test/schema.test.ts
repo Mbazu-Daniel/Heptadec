@@ -1,7 +1,18 @@
 import { expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { dataSourceStructure } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
-import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
-import type { ISchemaResponse } from "../src/modules/schema/contracts";
+import {
+  db,
+  request,
+  signUp,
+  syncedStructure,
+  STACK,
+  TEST_POSTGRES,
+  uniqueEmail,
+  uniqueSlug,
+} from "./helpers";
+import type { IStructureResponse } from "../src/modules/schema/contracts";
 
 async function ownerWithSource(kind = "postgres"): Promise<{
   cookie: string;
@@ -28,7 +39,7 @@ async function ownerWithSource(kind = "postgres"): Promise<{
             password: TEST_POSTGRES.password,
             readOnly: true,
           }
-        : { kind, name: "Seeded cache", host: "cache.internal", port: 6379 },
+        : { kind, name: "Seeded cache", ...STACK.redis },
     ),
   });
   expect(res.status).toBe(200);
@@ -36,19 +47,27 @@ async function ownerWithSource(kind = "postgres"): Promise<{
   return { cookie, id: body.dataSource.id };
 }
 
-async function schemaResponse(
+/**
+ * What the app reports about one source's structure, once the background has read
+ * it — which is what every screen sees after the first tick.
+ */
+async function storedStructure(
   cookie: string,
   id: string,
-): Promise<Response> {
-  return request(`/api/data-sources/${id}/schema`, {
-    headers: { cookie },
-  });
+): Promise<IStructureResponse> {
+  await syncedStructure(id);
+  return readStructure(cookie, id);
 }
 
-async function readSchema(cookie: string, id: string): Promise<ISchemaResponse> {
-  const response = await schemaResponse(cookie, id);
+async function readStructure(
+  cookie: string,
+  id: string,
+): Promise<IStructureResponse> {
+  const response = await request(`/api/data-sources/${id}/structure`, {
+    headers: { cookie },
+  });
   expect(response.status).toBe(200);
-  return (await response.json()) as ISchemaResponse;
+  return (await response.json()) as IStructureResponse;
 }
 
 async function catalogueForeignKeys(): Promise<
@@ -83,9 +102,7 @@ async function catalogueForeignKeys(): Promise<
 it("draws one line per foreign key the database actually declares", async () => {
   const { cookie, id } = await ownerWithSource();
 
-  const res = await schemaResponse(cookie, id);
-  expect(res.status).toBe(200);
-  const body = (await res.json()) as ISchemaResponse;
+  const body = await storedStructure(cookie, id);
   const declared = await catalogueForeignKeys();
   expect(body.relationships).toHaveLength(declared.length);
   expect(declared.length).toBeGreaterThan(0);
@@ -103,10 +120,14 @@ it("draws one line per foreign key the database actually declares", async () => 
 it("reports the seeded tables with their columns and declared types", async () => {
   const { cookie, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await storedStructure(cookie, id);
 
-  expect(body.database).toBe(TEST_POSTGRES.database);
   expect(body.sourceId).toBe(id);
+  expect(body.database).toBe(TEST_POSTGRES.database);
+  expect(body.stored).toBe(true);
+  expect(body.state).toBe("ready");
+  expect(body.stale).toBe(false);
+  expect(body.syncedAt).not.toBeNull();
 
   const names = body.tables.map((table) => table.name).sort();
   expect(names).toContain("products");
@@ -129,7 +150,7 @@ it("reports the seeded tables with their columns and declared types", async () =
 it("keeps a foreign key's two endpoints pointing at real columns", async () => {
   const { cookie, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await storedStructure(cookie, id);
   const edge = body.relationships.find(
     (row) => row.fromTable === "order_items" && row.fromColumn === "product_id",
   );
@@ -151,7 +172,7 @@ it("keeps a foreign key's two endpoints pointing at real columns", async () => {
 it("lists the indexes somebody wrote and not the one Postgres made for the key", async () => {
   const { cookie, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await storedStructure(cookie, id);
   const orderItems = body.tables.find((table) => table.name === "order_items");
   expect(orderItems?.indexedColumns).toContain("order_id");
   expect(orderItems?.indexedColumns).toContain("product_id");
@@ -182,20 +203,27 @@ it("reads the schema the source names, not the one it used to assume", async () 
   });
   const body = (await created.json()) as { dataSource: { id: string } };
 
-  const read = await schemaResponse(cookie, body.dataSource.id);
-  expect(read.status).toBe(200);
-  const found = (await read.json()) as ISchemaResponse;
+  const found = await storedStructure(cookie, body.dataSource.id);
   expect(found.schemaName).toBe("no_such_schema");
   expect(found.tables).toHaveLength(0);
   expect(found.relationships).toHaveLength(0);
 });
 
-it("refuses a source that is not postgres and names the engine", async () => {
+// A key space has no tables to keep, so the app reads it on the way in and says it
+// stored nothing — which is also why its source card carries no structure state.
+it("answers a key-space source live and keeps nothing of it", async () => {
   const { cookie, id } = await ownerWithSource("redis");
 
-  const res = await schemaResponse(cookie, id);
-  expect(res.status).toBe(400);
-  expect(await res.text()).toContain("redis");
+  const body = await readStructure(cookie, id);
+  expect(body.stored).toBe(false);
+  expect(body.tables).toHaveLength(0);
+
+  const row = await db
+    .select()
+    .from(dataSourceStructure)
+    .where(eq(dataSourceStructure.dataSourceId, id))
+    .limit(1);
+  expect(row[0]).toBeUndefined();
 });
 
 it("404s for a data source in another organization", async () => {
@@ -207,10 +235,15 @@ it("404s for a data source in another organization", async () => {
   });
   expect(org.id).not.toBe("");
 
-  const res = await schemaResponse(stranger.cookie, id);
+  const res = await request(`/api/data-sources/${id}/structure`, {
+    headers: { cookie: stranger.cookie },
+  });
   expect(res.status).toBe(404);
 });
 
+// What a refused source leaves behind is the reason, in the row and in the answer.
+// The reason is written by the app's own sanitiser, so this is where a password
+// would show up if it ever did.
 it("does not leak the connection password when the database is unreachable", async () => {
   const { cookie } = await signUp(uniqueEmail());
   await authFor(db).api.createOrganization({
@@ -233,9 +266,18 @@ it("does not leak the connection password when the database is unreachable", asy
     }),
   });
   const body = (await created.json()) as { dataSource: { id: string } };
+  const stored = await syncedStructure(body.dataSource.id);
 
-  const res = await schemaResponse(cookie, body.dataSource.id);
-  expect(res.status).toBe(400);
-  const text = await res.text();
-  expect(text).not.toContain("do-not-print-me");
+  expect(stored.attempts).toBe(1);
+  expect(stored.payload).toBeNull();
+  expect(stored.error).not.toContain("do-not-print-me");
+  expect(stored.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+
+  const read = await request(`/api/data-sources/${body.dataSource.id}/structure`, {
+    headers: { cookie },
+  });
+  expect(read.status).toBe(200);
+  const reported = (await read.json()) as IStructureResponse;
+  expect(reported.error).toBe(stored.error);
+  expect(reported.tables).toHaveLength(0);
 });

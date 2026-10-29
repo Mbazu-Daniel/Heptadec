@@ -16,11 +16,23 @@ startScheduler(db, config.schedulerTickMs);
 
 const { r2 } = config;
 
+/**
+ * Node has no response to defer the teardown of, so a handed-off task runs on
+ * this process's own clock and logs its own failure. Work it never finishes is
+ * picked up by the scheduler's tick, which reads the same queue.
+ */
+function waitUntil(task: Promise<unknown>): void {
+  void task.catch((caught: unknown) => {
+    console.error("[api] background task failed:", caught);
+  });
+}
+
 serve(
   {
     fetch: (request: Request) =>
       app.fetch(request, {
         db,
+        waitUntil,
         R2_BUCKET_NAME: r2.bucketName,
         CLOUDFLARE_ACCOUNT_ID: r2.accountId,
         R2_PUBLIC_ID: r2.publicId,

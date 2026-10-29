@@ -149,7 +149,7 @@ it("refuses a widget refresh from someone who cannot edit", async () => {
   });
   expect(refresh.status).toBe(403);
 
-  const schema_ = await request(`/api/data-sources/${sourceId}/schema`, {
+  const schema_ = await request(`/api/data-sources/${sourceId}/structure`, {
     headers: { cookie: viewer.cookie },
   });
   expect(schema_.status).toBe(403);

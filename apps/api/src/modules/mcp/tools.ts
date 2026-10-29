@@ -19,8 +19,8 @@ import {
   savedConnection,
 } from "../data-source/connection";
 import {
-  introspectPostgres,
-} from "../schema/postgres";
+  schemaForAsk,
+} from "../schema/structure";
 import {
   runPostgresQuery,
 } from "../query/postgres";
@@ -36,6 +36,7 @@ export function registerTools(
   server: McpServer,
   organization: IOrganizationScope,
   permissions: Record<string, string[]> | null,
+  waitUntil: (task: Promise<unknown>) => void,
 ): void {
   const granted = new Set(permissions?.[MCP_PERMISSION_RESOURCE] ?? []);
 
@@ -78,8 +79,9 @@ export function registerTools(
         if (!canUseTooling(source)) {
           return refused(`Reading structure is not available for ${kindOf(source)} yet`);
         }
-        const described = await introspectPostgres(await savedConnection(source));
-        return answered(described);
+        return answered(
+          await schemaForAsk(organization.db, source, new Date(), waitUntil),
+        );
       },
     );
   }

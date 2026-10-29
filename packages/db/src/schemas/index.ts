@@ -4,6 +4,8 @@ export * from "./organization";
 
 export * from "./data-source";
 
+export * from "./data-source-structure";
+
 export * from "./saved-query";
 
 export * from "./query-version";

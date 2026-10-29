@@ -12,7 +12,7 @@ import type {
 
 export async function introspectPostgres(
   source: ISavedConnection,
-): Promise<Omit<ISchemaResponse, "sourceId">> {
+): Promise<ISchemaResponse> {
   const client = postgresClient(source, "heptadec-schema");
 
   await connect(client);
@@ -27,7 +27,6 @@ export async function introspectPostgres(
       schemaName: schema,
       tables: assemble(columns.rows, indexes.rows),
       relationships: foreignKeys.rows.map(toRelationship),
-      introspectedAt: new Date().toISOString(),
     };
   } catch (caught) {
     throw new BadRequestException(structureFailure(caught));

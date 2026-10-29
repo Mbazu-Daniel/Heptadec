@@ -7,7 +7,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { authFor } from "../src/common/config/better-auth";
-import { db, request, signUp, STACK, uniqueEmail, uniqueSlug } from "./helpers";
+import type { IPreviewObject } from "../src/modules/data-source/contracts";
+import {
+  db,
+  request,
+  signUp,
+  STACK,
+  syncedStructure,
+  uniqueEmail,
+  uniqueSlug,
+} from "./helpers";
 
 let probeSeq = 0;
 
@@ -40,6 +49,23 @@ async function createSource(
   expect(res.status).toBe(200);
   const body = (await res.json()) as { dataSource: { id: string } };
   return body.dataSource.id;
+}
+
+/**
+ * What the app serves as a source's catalogue. A structure-keeping engine answers
+ * from the store, so a test that wants the tables has to let the sync land first;
+ * a key space or an index list is read live, as it always was.
+ */
+async function objectsOf(
+  cookie: string,
+  dataSourceId: string,
+): Promise<IPreviewObject[]> {
+  const res = await request(`/api/data-sources/${dataSourceId}/structure`, {
+    headers: { cookie },
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { objects: IPreviewObject[] };
+  return body.objects;
 }
 
 async function pgCount(): Promise<number> {
@@ -85,14 +111,11 @@ it("lists postgres tables and previews the rows inside", async () => {
     password: STACK.postgres.password,
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
-    headers: { cookie },
+  await syncedStructure(id);
+  expect(await objectsOf(cookie, id)).toContainEqual({
+    name: "public.events",
+    type: "table",
   });
-  expect(listed.status).toBe(200);
-  const listedBody = (await listed.json()) as {
-    objects: { name: string; type: string }[];
-  };
-  expect(listedBody.objects).toContainEqual({ name: "public.events", type: "table" });
 
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
@@ -123,6 +146,7 @@ it("refuses a preview for an object that is not listed, and the table survives",
     password: STACK.postgres.password,
   });
 
+  await syncedStructure(id);
   const before = await pgCount();
   const res = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
@@ -165,7 +189,7 @@ it("refuses browsing to a viewer", async () => {
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await request("/api/data-sources/00000000-0000-4000-8000-000000000000/objects", {
+  const res = await request("/api/data-sources/00000000-0000-4000-8000-000000000000/structure", {
     headers: { cookie: viewerCookie },
   });
   expect(res.status).toBe(403);
@@ -184,7 +208,7 @@ it("returns 404 when browsing another organization's source", async () => {
     password: STACK.postgres.password,
   });
 
-  const res = await request(`/api/data-sources/${id}/objects`, {
+  const res = await request(`/api/data-sources/${id}/structure`, {
     headers: { cookie: mine.cookie },
   });
   expect(res.status).toBe(404);
@@ -207,14 +231,10 @@ it("lists redis keys and previews a hash", async () => {
     port: STACK.redis.port,
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
-    headers: { cookie },
+  expect(await objectsOf(cookie, id)).toContainEqual({
+    name: `event:${probe}`,
+    type: "key",
   });
-  expect(listed.status).toBe(200);
-  const listedBody = (await listed.json()) as {
-    objects: { name: string; type: string }[];
-  };
-  expect(listedBody.objects).toContainEqual({ name: `event:${probe}`, type: "key" });
 
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
@@ -272,14 +292,10 @@ it("searches a quickwit index for the ingested probe", async () => {
     database: "events",
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
-    headers: { cookie },
+  expect(await objectsOf(cookie, id)).toContainEqual({
+    name: "events",
+    type: "index",
   });
-  expect(listed.status).toBe(200);
-  const listedBody = (await listed.json()) as {
-    objects: { name: string; type: string }[];
-  };
-  expect(listedBody.objects).toContainEqual({ name: "events", type: "index" });
 
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
@@ -318,6 +334,7 @@ it("previews mysql and mariadb tables through the same path", async () => {
       password: engine.password,
     });
 
+    await syncedStructure(id);
     const previewed = await request(`/api/data-sources/${id}/preview`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -357,6 +374,7 @@ it("previews a clickhouse table", async () => {
     password: STACK.clickhouse.password,
   });
 
+  await syncedStructure(id);
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
@@ -385,6 +403,7 @@ it("previews a local sqlite file", async () => {
     filePath,
   });
 
+  await syncedStructure(id);
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
@@ -418,6 +437,7 @@ it("previews a libsql table over http", async () => {
     endpoint: STACK.libsql.endpoint,
   });
 
+  await syncedStructure(id);
   const previewed = await request(`/api/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },

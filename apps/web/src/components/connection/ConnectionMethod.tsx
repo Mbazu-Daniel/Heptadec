@@ -26,10 +26,6 @@ export function ConnectionMethod({
         className="rounded-none font-mono"
         spellCheck={false}
       />
-      <span className="text-[11px] text-muted-foreground">
-        Paste the connection string from your provider. No {spec.name} is
-        contacted until you Test connection.
-      </span>
     </label>
   );
 }

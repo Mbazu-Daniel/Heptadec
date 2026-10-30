@@ -21,20 +21,10 @@ const KEY_PREFIXES = ["avatars/", "logos/"];
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
-// An avatar is stored at 128 pixels and a logo is shown at a few sizes, so a
-// file larger than this is a phone camera rather than an image.
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 type IBindings = IAuthVars["Bindings"];
 
-/**
- * Everything needed to sign, or null when this deployment cannot.
- *
- * The bucket binding is only half of it. Signing is an S3 operation, so it also
- * needs the account's R2 access key, which is a secret rather than a binding —
- * a deployment with the bucket but no key serves images it cannot replace, and
- * says so here rather than at the point of upload.
- */
 function signer(env: IBindings): Omit<IUploadTarget, "key" | "contentType"> | null {
   const {
     R2_BUCKET_NAME,
@@ -43,8 +33,6 @@ function signer(env: IBindings): Omit<IUploadTarget, "key" | "contentType"> | nu
     R2_SECRET_ACCESS_KEY,
     R2_SESSION_TOKEN,
   } = env;
-  // An unset variable arrives as "" from a .env file and as undefined from a
-  // wrangler var, and both mean the same thing.
   if (
     !R2_BUCKET_NAME ||
     !CLOUDFLARE_ACCOUNT_ID ||
@@ -66,7 +54,6 @@ function notConfigured(): BadRequestException {
   return new BadRequestException("Image storage is not configured on this deployment.");
 }
 
-/** The key an image is stored under. Derived, never taken from input. */
 function keyFor(target: ImageTarget, memberId: string, organizationId: string): string {
   return target === "avatar"
     ? `${avatarKeyPrefixFor(organizationId)}${memberId}`
@@ -78,9 +65,6 @@ export function imageRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/images/config", (c) =>
     c.json<IImagesConfigResponse>({
-      // Whether an upload can be signed, which is the bucket's settings. It does
-      // not depend on the binding: the Node server has no binding and can still
-      // sign, because the bytes go to the bucket directly either way.
       configured: signer(c.env) !== null,
       publicBase: publicBaseFrom(c.env),
     }),
@@ -92,9 +76,6 @@ export function imageRoutes(): Hono<IAuthVars> {
       throw notConfigured();
     }
 
-    // Validated here, at the boundary, because this is the one request whose
-    // fields decide what the browser is authorised to write. Past this line it
-    // is the signature's problem.
     const body = readBody(await c.req.json(), "That upload could not be read.");
     const target = readString(body, "target", "An image is required.", 16);
     if (target !== "avatar" && target !== "logo") {
@@ -117,8 +98,6 @@ export function imageRoutes(): Hono<IAuthVars> {
       requireOwner(c, "Only an owner can change the logo");
     }
 
-    // An avatar is keyed by membership, and the request's scope already carries
-    // the caller's membership row. A logo is keyed by the organization.
     const membershipId =
       target === "avatar" ? organization.caller.id : organization.organizationId;
 
@@ -132,8 +111,6 @@ export function imageRoutes(): Hono<IAuthVars> {
     });
   });
 
-  // Only reached when the deployment has no public base. With one, the browser
-  // loads objects from the bucket directly and this never runs.
   routes.get("/api/images/*", async (c) => {
     const key = c.req.path.slice(MEDIA_PATH_PREFIX.length);
     const object =

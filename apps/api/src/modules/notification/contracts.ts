@@ -3,7 +3,7 @@ export const NOTIFICATION_KINDS = ["slack", "email", "resend"] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export function isNotificationKind(value: string): value is NotificationKind {
-  return (NOTIFICATION_KINDS as readonly string[]).includes(value);
+  return NOTIFICATION_KINDS.some((kind) => kind === value);
 }
 
 export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {

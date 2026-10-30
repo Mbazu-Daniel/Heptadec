@@ -32,6 +32,7 @@ export const AUDIT_EVENTS = [
   "mcp_token.revoked",
   "ai_provider.created",
   "ai_provider.deleted",
+  "ai_provider.updated",
   "billing.auto_renew_changed",
   "billing.checkout_started",
   "organization.created",
@@ -41,7 +42,7 @@ export const AUDIT_EVENTS = [
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];
 
 export function isAuditEvent(value: string): value is AuditEvent {
-  return (AUDIT_EVENTS as readonly string[]).includes(value);
+  return AUDIT_EVENTS.some((event) => event === value);
 }
 
 export const AUDIT_TARGET_KINDS = [
@@ -65,7 +66,7 @@ export const AUDIT_TARGET_KINDS = [
 export type AuditTargetKind = (typeof AUDIT_TARGET_KINDS)[number];
 
 export function isAuditTargetKind(value: string): value is AuditTargetKind {
-  return (AUDIT_TARGET_KINDS as readonly string[]).includes(value);
+  return AUDIT_TARGET_KINDS.some((kind) => kind === value);
 }
 
 export interface IAuditLog {

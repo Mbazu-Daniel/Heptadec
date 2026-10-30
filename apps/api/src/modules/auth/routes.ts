@@ -12,18 +12,17 @@ import {
 } from "../../common/middleware/require-session";
 import {
   PROVIDERS,
+  isProviderId,
   type IMe,
   type IProvider,
   type IProvidersResponse,
-  type ProviderId,
 } from "./contracts";
 import { mediaUrl, publicBaseFrom } from "../images/urls";
 
 function enabledProviders(db: IAuthVars["Bindings"]["db"]): IProvider[] {
-  const enabled = Object.keys(
-    authFor(db).options.socialProviders ?? {},
-  ) as ProviderId[];
-  return enabled.map((id) => ({ id, label: PROVIDERS[id].label }));
+  return Object.keys(authFor(db).options.socialProviders ?? {})
+    .filter(isProviderId)
+    .map((id) => ({ id, label: PROVIDERS[id].label }));
 }
 
 export function authRoutes(): Hono<IAuthVars> {

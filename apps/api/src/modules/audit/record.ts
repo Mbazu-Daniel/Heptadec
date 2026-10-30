@@ -4,7 +4,6 @@ import type { IAuthVars } from "../../common/middleware/require-session";
 import type { AuditEvent, AuditTargetKind } from "./contracts";
 import { and, eq } from "drizzle-orm";
 
-/** The shape any audit-writing caller passes: an id, a name, an email. */
 export interface IActorSource {
   id: string;
   name: string;
@@ -20,13 +19,6 @@ interface IAuditInput {
   detail?: string;
 }
 
-/**
- * Records that something happened, and who did it.
- *
- * The actor is the session's own, so no caller has to name one: the label is
- * the display name the person has inside the organization, and falls back to
- * the name on the account.
- */
 export async function recordAudit(
   c: Context<IAuthVars>,
   input: IAuditInput,
@@ -50,10 +42,6 @@ export async function recordAudit(
   );
 }
 
-/**
- * Records that something happened, and who did it, for somebody who is not in
- * a session: an account that has just been created, an invitation.
- */
 export async function recordAuditFor(
   user: IActorSource,
   db: HeptadecDatabase,

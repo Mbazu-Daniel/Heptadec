@@ -1,5 +1,6 @@
 import { config } from "../../common/config/env";
 import { BadGatewayException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import { BILLING_CURRENCY } from "./catalog";
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -96,7 +97,11 @@ async function post(
   if (!response.ok) {
     throw new BadGatewayException(`Bachs refused the request (${response.status})`);
   }
-  return (await response.json()) as Record<string, unknown>;
+  const payload: unknown = await response.json();
+  if (!isJsonObject(payload)) {
+    throw new BadGatewayException("Bachs returned a response this app cannot read");
+  }
+  return payload;
 }
 
 function returnUrls(): { success_url?: string; cancel_url?: string } {

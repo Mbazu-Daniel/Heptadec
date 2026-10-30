@@ -35,18 +35,12 @@ async function* streamWith(
   }
 }
 
-export async function* streamQuery(
+export async function* streamModel(
   row: AiProviderRow,
-  question: string,
-  schemaContext: string,
   instructions: string,
+  prompt: string,
 ): AsyncGenerator<string, void, undefined> {
-  yield* streamWith(
-    row,
-    instructions,
-    `Schema:\n${schemaContext}\n\nQuestion: ${question}`,
-    ANSWER_TIMEOUT_MS,
-  );
+  yield* streamWith(row, instructions, prompt, ANSWER_TIMEOUT_MS);
 }
 
 export async function complete(

@@ -1,6 +1,3 @@
-// Same eight collections, same rows, same ids as docker/initdb/01-schema.sql —
-// applied with `mongosh --file /dev/stdin`. MongoDB declares no foreign keys, so
-// the references stay ids in the documents and the diagram draws no edges.
 
 const COLLECTIONS = [
   "order_items",

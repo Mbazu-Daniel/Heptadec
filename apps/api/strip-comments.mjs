@@ -29,6 +29,9 @@ const ENDS_VALUE = new Set([
 
 const COMMENT_KINDS = new Set([K.SingleLineCommentTrivia, K.MultiLineCommentTrivia]);
 
+const COMPILER_DIRECTIVE =
+  /^\/\/\/?\s*@ts-(expect-error|ignore|nocheck|check)\b|^\/\/\/\s*<reference\b/;
+
 const roots = process.argv.slice(2);
 const changed = [];
 let removedBlocks = 0;
@@ -37,21 +40,33 @@ let removedLines = 0;
 function expand(text, start, end) {
   const lineStart = text.lastIndexOf("\n", start - 1) + 1;
   const nl = text.indexOf("\n", end);
-  const lineEnd = nl === -1 ? text.length : nl + 1;
+  const lineEnd = nl === -1 ? text.length : nl;
+  const nextLineStart = nl === -1 ? text.length : nl + 1;
   const ownsLine = /^\s*$/.test(text.slice(lineStart, start));
   const restIsBlank = /^\s*$/.test(text.slice(end, lineEnd));
-  if (ownsLine && restIsBlank) return [lineStart, lineEnd];
+  if (ownsLine && restIsBlank) return [lineStart, nextLineStart];
   if (ownsLine) return [lineStart, end];
-  if (restIsBlank) return [start, lineEnd];
+  if (restIsBlank) {
+    let from = start;
+    while (from > lineStart && (text[from - 1] === " " || text[from - 1] === "\t")) {
+      from -= 1;
+    }
+    return [from, end];
+  }
   return [start, end];
+}
+
+function jsxCommentSpan(text, start, end) {
+  if (text[start - 1] !== "{" || text[end] !== "}") return null;
+  let before = start - 2;
+  while (before >= 0 && /\s/.test(text[before])) before -= 1;
+  const parent = text[before];
+  if (parent !== ">" && parent !== "}") return null;
+  return [start - 1, end + 1];
 }
 
 function strip(file) {
   const source = readFileSync(file, "utf8");
-  if (source.startsWith("#!")) {
-    console.log(`SKIP (shebang): ${file}`);
-    return;
-  }
   const variant = file.endsWith(".tsx") ? LanguageVariant.JSX : LanguageVariant.Standard;
   const scanner = createScanner(false, variant, source);
 
@@ -86,7 +101,16 @@ function strip(file) {
     }
 
     if (COMMENT_KINDS.has(kind)) {
-      spans.push(expand(source, scanner.getTokenStart(), scanner.getTokenEnd()));
+      const start = scanner.getTokenStart();
+      const end = scanner.getTokenEnd();
+      if (COMPILER_DIRECTIVE.test(source.slice(start, end))) {
+        continue;
+      }
+      const jsx =
+        variant === LanguageVariant.JSX ? jsxCommentSpan(source, start, end) : null;
+      spans.push(
+        jsx === null ? expand(source, start, end) : expand(source, jsx[0], jsx[1]),
+      );
       continue;
     }
 
@@ -102,10 +126,6 @@ function strip(file) {
     else removedLines += 1;
     out = out.slice(0, start) + out.slice(end);
   }
-
-  out = out.replace(/^\s+$/gm, "");
-  out = out.replace(/\n{3,}/g, "\n\n");
-  out = out.replace(/^\n+/, "");
 
   if (out !== source) {
     writeFileSync(file, out);

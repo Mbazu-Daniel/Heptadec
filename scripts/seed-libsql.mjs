@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Applies a SQLite fixture to a sqld server, which is how the LibSQL test-stack
-// engine takes schema.
-//
-// sqld's HTTP API runs one statement per array entry rather than a whole script,
-// so the fixture is split first. The split is safe because the fixtures in
-// docker/schema keep every semicolon at the end of a statement and never inside
-// a string — if one ever needs to, this is where to change.
 
 import { readFileSync } from "node:fs";
 
@@ -38,8 +31,13 @@ if (!response.ok) {
 }
 
 const body = await response.json();
-const failure = typeof body?.error === "string" ? body.error : null;
-if (failure !== null) {
-  console.error(`seed: libsql rejected a statement: ${failure}`);
+const results = Array.isArray(body) ? body : [body];
+const failure = results.find(
+  (entry) => typeof entry?.error === "object" && entry.error !== null,
+);
+if (failure !== undefined) {
+  console.error(
+    `seed: libsql rejected a statement: ${JSON.stringify(failure.error)}`,
+  );
   process.exit(1);
 }

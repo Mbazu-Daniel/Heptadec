@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// Loads soonwhy-shaped telemetry into every engine the test stack runs, so
-// Heptadec has something worth browsing in each connector.
-//
-//   node scripts/seed-telemetry.mjs
-//
-// Data follows the TelemetryEvent shape from soonwhy's Phase 0 spec: every log
-// carries a trace id, a span id, the service and environment it came from, and
-// an attribute blob. Requests and traces are separate signals over the same
-// trace ids, so a query that joins them tells a story.
-//
-// Idempotent: tables and indexes are dropped before they are recreated.
 
 import { execFileSync } from "node:child_process";
 
@@ -50,7 +39,6 @@ const REQUEST_COUNT = 600;
 const TRACE_COUNT = 200;
 const SPANS_PER_TRACE = 5;
 
-// A fixed seed keeps re-runs comparable: the same rows land every time.
 let seed = 0x5eed1eaf;
 function next() {
   seed = (seed * 1103515245 + 12345) & 0x7fffffff;
@@ -249,7 +237,6 @@ function traceRow(span) {
   ];
 }
 
-// MySQL and MariaDB take no 'T' or 'Z' in a DATETIME literal.
 function mysqlTime(value) {
   const text = iso(value);
   return `${text.slice(0, 10)} ${text.slice(11, 23)}`;
@@ -293,7 +280,6 @@ function docker(container, args, input) {
   });
 }
 
-// ---------------------------------------------------------------- relational
 
 const LOG_DDL = `
 DROP TABLE IF EXISTS logs;
@@ -431,7 +417,6 @@ seedMysqlFlavour("heptadec-test-mysql", "mysql", "BIGINT AUTO_INCREMENT PRIMARY 
 console.log("seed: mariadb");
 seedMysqlFlavour("heptadec-test-mariadb", "mariadb", "BIGINT AUTO_INCREMENT PRIMARY KEY", "DATETIME(3)");
 
-// ------------------------------------------------------------- clickhouse
 
 console.log("seed: clickhouse");
 docker(
@@ -544,7 +529,6 @@ for (const group of chunk(clickhouseTraces, 300)) {
   docker("heptadec-test-clickhouse", ["clickhouse-client", "--user", PG.user, "--password", PG.password, "--database", PG.database], `INSERT INTO traces (${TRACE_COLUMNS}) VALUES\n${group.join(",\n")};`);
 }
 
-// ------------------------------------------------------------------ libsql
 
 console.log("seed: libsql");
 const libsqlStatements = [
@@ -594,7 +578,6 @@ async function libsqlCount(table) {
   return String(payload[0]?.results?.[0]?.count ?? payload[0]?.rows?.[0]?.[0] ?? "?");
 }
 
-// ----------------------------------------------------------------- quickwit
 
 console.log("seed: quickwit");
 const quickwitIndex = (indexId, fields) => ({
@@ -694,7 +677,6 @@ await quickwitCreate(
 );
 await quickwitIngest("traces", traces.map((span) => JSON.stringify({ ...span, start_time: iso(span.start_time) })).join("\n"));
 
-// -------------------------------------------------------------------- redis
 
 console.log("seed: redis");
 function bulkAppend(chunks) {
@@ -761,7 +743,6 @@ traces.forEach((span, index) => {
 });
 docker("heptadec-test-redis", ["redis-cli", "--pipe"], bulkAppend(redisCommands));
 
-// --------------------------------------------------------------------- mongo
 
 console.log("seed: mongo");
 const MONGO = ["mongosh", "-u", PG.user, "-p", PG.password, "--authenticationDatabase", "admin", PG.database, "--quiet"];
@@ -777,7 +758,6 @@ mongoInsert("logs", logs.map((log) => ({ ...log, timestamp: iso(log.timestamp) }
 mongoInsert("requests", requests.map((request) => ({ ...request, timestamp: iso(request.timestamp) })));
 mongoInsert("traces", traces.map((span) => ({ ...span, start_time: iso(span.start_time) })));
 
-// ------------------------------------------------------------------ verifying
 
 console.log("seed: verifying");
 const checks = [

@@ -23,7 +23,7 @@ import type {
   ISchemaTable,
 } from "./contracts";
 
-type Introspected = Omit<ISchemaResponse, "sourceId">;
+export type Introspected = Omit<ISchemaResponse, "sourceId">;
 
 const MAX_TABLES = 500;
 

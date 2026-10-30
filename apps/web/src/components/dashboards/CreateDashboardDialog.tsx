@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { IDataSource } from "@heptadec/api/data-source-contracts";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   createDashboard,
   generateDashboard,
@@ -44,67 +44,27 @@ export function CreateDashboardDialog({
   onClose: () => void;
   onCreated: (dashboardId: string) => void;
 }) {
-  const [sources, setSources] = useState<IDataSource[] | null>(null);
-  const [providerCount, setProviderCount] = useState<number | null>(null);
+  const sources = useQuery({
+    queryKey: ["data-sources"],
+    queryFn: listDataSources,
+  });
+  const providers = useQuery({
+    queryKey: ["ai-providers"],
+    queryFn: listAiProviders,
+  });
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
   const [chosen, setChosen] = useState<string[]>([]);
   const [withAi, setWithAi] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    listDataSources().then(
-      (found) => {
-        if (live) {
-          setSources(found.dataSources);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(
-            messageFor(caught, "Data sources could not be read."),
-          );
-        }
-      },
-    );
-    listAiProviders().then(
-      (found) => {
-        if (live) {
-          setProviderCount(found.providers.length);
-        }
-      },
-      () => {
-        if (live) {
-          setProviderCount(0);
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const selected = sources?.filter((source) => chosen.includes(source.id)) ?? [];
+  const sourceList = sources.data?.dataSources ?? null;
+  const selected = sourceList?.filter((source) => chosen.includes(source.id)) ?? [];
   const analysable = selected.some((source) => source.tooling);
-  const buildWithAi =
-    withAi && analysable && (providerCount ?? 0) > 0 && !busy;
+  const providerCount = providers.data?.providers.length ?? 0;
 
-  function toggle(id: string): void {
-    setChosen((current) =>
-      current.includes(id)
-        ? current.filter((entry) => entry !== id)
-        : [...current, id],
-    );
-  }
-
-  async function submit(): Promise<void> {
-    setProblem(null);
-    setStatus(buildWithAi ? "Reading the structure…" : null);
-    setBusy(true);
-    try {
+  const create = useMutation({
+    mutationFn: async () => {
       if (buildWithAi) {
         const result = await generateDashboard(
           {
@@ -114,25 +74,38 @@ export function CreateDashboardDialog({
           },
           { onStatus: setStatus },
         );
-        onCreated(result.dashboard.id);
-        return;
+        return result.dashboard.id;
       }
       const created = await createDashboard(name.trim(), chosen);
-      onCreated(created.dashboard.id);
-    } catch (caught) {
-      setBusy(false);
-      setStatus(null);
-      setProblem(messageFor(caught, "That dashboard could not be created."));
-    }
+      return created.dashboard.id;
+    },
+    onSuccess: onCreated,
+  });
+
+  const buildWithAi =
+    withAi && analysable && providerCount > 0 && !create.isPending;
+
+  function toggle(id: string): void {
+    setChosen((current) =>
+      current.includes(id)
+        ? current.filter((entry) => entry !== id)
+        : [...current, id],
+    );
   }
 
-  const ready = name.trim() !== "" && chosen.length > 0 && !busy;
+  const problem = sources.isError
+    ? messageFor(sources.error, "Data sources could not be read.")
+    : create.isError
+      ? messageFor(create.error, "That dashboard could not be created.")
+      : null;
+
+  const ready = name.trim() !== "" && chosen.length > 0 && !create.isPending;
 
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) {
+        if (!open && !create.isPending) {
           onClose();
         }
       }}
@@ -156,7 +129,7 @@ export function CreateDashboardDialog({
         <FieldGroup>
           <FieldLabel>Data sources</FieldLabel>
           <div className="max-h-56 overflow-y-auto rounded-md border">
-            {(sources ?? []).map((source) => (
+            {(sourceList ?? []).map((source) => (
               <label
                 key={source.id}
                 className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50"
@@ -173,12 +146,12 @@ export function CreateDashboardDialog({
                 </span>
               </label>
             ))}
-            {sources !== null && sources.length === 0 && (
+            {sourceList !== null && sourceList.length === 0 && (
               <p className="px-3 py-2 text-xs text-muted-foreground">
                 No data sources yet. Connect one first.
               </p>
             )}
-            {sources === null && (
+            {sourceList === null && (
               <p className="px-3 py-2 text-xs text-muted-foreground">
                 Loading…
               </p>
@@ -209,7 +182,7 @@ export function CreateDashboardDialog({
           />
           Build it with AI
         </label>
-        {(providerCount ?? 0) === 0 && (
+        {providerCount === 0 && (
           <p className="text-xs text-muted-foreground">
             Add an AI provider to build it with AI; you can still create it empty.
           </p>
@@ -229,12 +202,12 @@ export function CreateDashboardDialog({
           <Button
             variant="ghost"
             onClick={onClose}
-            disabled={busy}
+            disabled={create.isPending}
             className={SMALL_BUTTON_CLASSNAME}
           >
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={!ready}>
+          <Button onClick={() => create.mutate()} disabled={!ready}>
             {buildWithAi ? "Create with AI" : "Create dashboard"}
           </Button>
         </DialogFooter>

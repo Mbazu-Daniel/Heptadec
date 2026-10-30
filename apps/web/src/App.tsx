@@ -9,7 +9,8 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import { fetchMe, fetchOrganizations, switchOrganization } from "./api";
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchMe, fetchOrganizations, switchOrganization, ApiError } from "./api";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import type { IOrganizationsResponse } from "@heptadec/api/organization-contracts";
 import { authClient } from "./auth";
@@ -186,11 +187,13 @@ function ShareRoute() {
   return <PublicDashboard token={token} />;
 }
 
-function App() {  const [me, setMe] = useState<IMe | null>(null);
+function App() {
+  const [me, setMe] = useState<IMe | null>(null);
   const [orgs, setOrgs] = useState<IOrganizationsResponse | null>(null);
   const [checked, setChecked] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   const reload = useCallback(async () => {
     try {
@@ -200,9 +203,14 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
       ]);
       setMe(meResult);
       setOrgs(orgResult);
-    } catch {
-      setMe(null);
-      setOrgs(null);
+    } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        (caught.code === "unauthorized" || caught.code === "forbidden")
+      ) {
+        setMe(null);
+        setOrgs(null);
+      }
     } finally {
       setChecked(true);
     }
@@ -218,9 +226,10 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         await reload();
         return;
       }
+      queryClient.clear();
       await reload();
     },
-    [reload],
+    [queryClient, reload],
   );
 
   const onEnterOrganization = useCallback(
@@ -232,8 +241,9 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
 
   const onSignOut = useCallback(async () => {
     await authClient.signOut();
+    queryClient.clear();
     setMe(null);
-  }, []);
+  }, [queryClient]);
 
   const onOpenOrganization = useCallback(
     (organizationId: string) => {
@@ -249,9 +259,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
     void reload();
   }, [reload]);
 
-  // A session that carries organizations but no active one cannot answer the
-  // member routes, so the first membership is taken as the active one. The
-  // routing already treats that membership as the current organization.
   useEffect(() => {
     const first = orgs?.organizations[0];
     if (orgs !== null && orgs.activeOrganizationId === null && first !== undefined) {

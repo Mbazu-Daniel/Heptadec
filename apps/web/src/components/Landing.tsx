@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { ThemeSwitch } from "./ui/theme-switch";
 import {
   ENGINE_SPECS,
-  type DataSourceKind,
+  isDataSourceKind,
 } from "@heptadec/api/data-source-contracts";
 import { EngineIcon } from "../lib/engine-icon";
 import { REPO, REPO_URL } from "../lib/repo";
 
-const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
+const ENGINE_KINDS = Object.keys(ENGINE_SPECS).filter(isDataSourceKind);
 
 function scrollToSection(id: string): void {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -129,7 +129,6 @@ function GitHubStars({ label }: { label?: string }) {
         }
       })
       .catch(() => undefined);
-    // Timeout after 5 seconds to avoid blocking the page if GitHub API is slow
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     return () => {
       clearTimeout(timeoutId);

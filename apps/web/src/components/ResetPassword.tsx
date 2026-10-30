@@ -20,7 +20,6 @@ export function ResetPassword() {
   const [done, setDone] = useState(false);
 
   const token = params.get("token");
-  // Better Auth can hand the token over as a query on this path or as a fragment.
   const fromHash =
     token === null
       ? new URLSearchParams(window.location.hash.replace(/^#/, "")).get("token")

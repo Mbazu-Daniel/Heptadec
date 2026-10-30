@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { ANSWER_EVENTS } from "../src/modules/ai/contracts";
 import { authFor } from "../src/common/config/better-auth";
-import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
+import { db, request, signUp, syncedStructure, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { aiProvider, aiChat, dataSource } = schema;
 
@@ -749,9 +749,11 @@ it("sends every table, so one late in the list is not hidden from the model", as
       apiKey: "sk-x",
     });
 
-    const described = await request(`/api/data-sources/${sourceId}/schema`, {
+    await syncedStructure(sourceId);
+    const described = await request(`/api/data-sources/${sourceId}/structure`, {
       headers: { cookie },
     });
+    expect(described.status).toBe(200);
     const { tables } = (await described.json()) as {
       tables: Array<{ name: string }>;
     };

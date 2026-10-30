@@ -11,7 +11,6 @@ import {
   type ISectionPanelContext,
   type WorkspaceView,
 } from "./workspace-sections";
-import { Breadcrumbs, type ICrumb } from "./workspace";
 import { NotFound } from "./NotFound";
 
 interface IDashboardProps {
@@ -42,8 +41,7 @@ export function Dashboard({
   const view: WorkspaceView =
     section === undefined ? "sources" : viewForSlug(section)!;
   const [openDashboard, setOpenDashboard] = useState<string | null>(null);
-  const [trail, setTrail] = useState<ICrumb[]>([]);
-  const [resetToken, setResetToken] = useState(0);
+  const [openSource, setOpenSource] = useState<string | null>(null);
 
   function openDashboards(): void {
     setOpenDashboard(null);
@@ -52,19 +50,16 @@ export function Dashboard({
 
   function goToSection(next: WorkspaceView): void {
     setOpenDashboard(null);
-    setTrail([]);
-    if (next === "sources") {
-      setResetToken((count) => count + 1);
-    }
+    setOpenSource(null);
     navigate(orgSlug ? `/${orgSlug}/${slugForView(next)}` : "/");
   }
 
   const panelContext: ISectionPanelContext = {
     active,
-    resetToken,
     openDashboard,
-    setTrail,
+    openSource,
     setOpenDashboard,
+    setOpenSource,
     openDashboards,
     goToSection,
     onOrganizationChanged,
@@ -84,18 +79,7 @@ export function Dashboard({
         onSignOut={onSignOut}
       />
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-          <SidebarTrigger />
-          <Breadcrumbs
-            crumbs={[
-              {
-                label: sectionForView(view).label,
-                onSelect: () => goToSection(view),
-              },
-              ...trail,
-            ]}
-          />
-        </header>
+        <SidebarTrigger className="absolute top-2 left-3 z-30 md:hidden" />
         {sectionForView(view).render(panelContext)}
       </SidebarInset>
     </SidebarProvider>

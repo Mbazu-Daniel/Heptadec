@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { ENGINE_SPECS } from "@heptadec/api/data-source-contracts";
-import type { DataSourceKind } from "@heptadec/api/data-source-contracts";
+import {
+  ENGINE_SPECS,
+  isDataSourceKind,
+} from "@heptadec/api/data-source-contracts";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import type { IOrganizationsResponse } from "@heptadec/api/organization-contracts";
 import { completeOnboarding, messageFor, saveMemberDisplayName } from "../api";
@@ -30,7 +32,7 @@ interface IStep {
   body: string;
 }
 
-const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
+const ENGINE_KINDS = Object.keys(ENGINE_SPECS).filter(isDataSourceKind);
 
 export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
   const [step, setStep] = useState(0);

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { IconSparkles, IconTrash } from "@tabler/icons-react";
 import type {
   IDashboardProposal,
@@ -30,77 +31,50 @@ export function AskAiPanel({
   onChanged: (updated: IDashboardWithWidgets) => void;
 }) {
   const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [applying, setApplying] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
   const [proposal, setProposal] = useState<IDashboardProposal | null>(null);
   const [approved, setApproved] = useState<number[]>([]);
+  const [refused, setRefused] = useState<string | null>(null);
 
-  const analysable = dashboard.sources.filter(
-    (source) => source.tooling,
-  );
+  const analysable = dashboard.sources.filter((source) => source.tooling);
 
-  async function ask(): Promise<void> {
-    const asked = question.trim();
-    if (asked === "" || busy) {
-      return;
-    }
-    setBusy(true);
-    setProblem(null);
-    setProposal(null);
-    setStatus("Reading the structure…");
-    try {
-      const result = await askDashboard(dashboard.id, asked, {
-        onStatus: setStatus,
-      });
+  const ask = useMutation({
+    mutationFn: () =>
+      askDashboard(dashboard.id, question.trim(), { onStatus: setStatus }),
+    onSuccess: (result) => {
       setProposal(result.proposal);
       setApproved(result.proposal.actions.map((_action, index) => index));
-    } catch (caught) {
-      setProblem(messageFor(caught, "That request could not be answered."));
-    } finally {
-      setBusy(false);
-      setStatus(null);
-    }
-  }
+      setRefused(null);
+    },
+  });
 
-  async function apply(): Promise<void> {
-    if (proposal === null || applying) {
-      return;
-    }
-    const actions = proposal.actions.filter((_action, index) =>
-      approved.includes(index),
-    );
-    if (actions.length === 0) {
-      return;
-    }
-    setApplying(true);
-    setProblem(null);
-    try {
-      const result = await applyDashboardActions(dashboard.id, actions);
+  const apply = useMutation({
+    mutationFn: () => {
+      const actions = (proposal?.actions ?? []).filter((_action, index) =>
+        approved.includes(index),
+      );
+      return applyDashboardActions(dashboard.id, actions);
+    },
+    onSuccess: (result) => {
       onChanged(result.dashboard);
-      const refused = result.applied.filter((entry) => entry.problem !== null);
-      if (refused.length === 0) {
+      const rejected = result.applied.filter((entry) => entry.problem !== null);
+      if (rejected.length === 0) {
         onClose();
         return;
       }
       setProposal(null);
-      setProblem(
-        refused
+      setRefused(
+        rejected
           .map((entry) => {
-            const action = proposal.actions[entry.index];
+            const action = proposal?.actions[entry.index];
             const label =
               action === undefined ? "A change" : describe(action, dashboard);
             return `${label} — ${entry.problem}`;
           })
           .join("\n"),
       );
-    } catch (caught) {
-      setProblem(messageFor(caught, "Those changes could not be applied."));
-    } finally {
-      setApplying(false);
-    }
-  }
+    },
+  });
 
   function toggle(index: number): void {
     setApproved((current) =>
@@ -110,10 +84,24 @@ export function AskAiPanel({
     );
   }
 
-  const asking = question.trim() !== "" && !busy && !applying;
+  function askNow(): void {
+    if (question.trim() !== "" && !ask.isPending && !apply.isPending) {
+      setProposal(null);
+      setStatus("Reading the structure…");
+      ask.mutate();
+    }
+  }
+
+  const problem = ask.isError
+    ? messageFor(ask.error, "That request could not be answered.")
+    : apply.isError
+      ? messageFor(apply.error, "Those changes could not be applied.")
+      : refused;
+
+  const asking = question.trim() !== "" && !ask.isPending && !apply.isPending;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !ask.isPending && onClose()}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -147,12 +135,12 @@ export function AskAiPanel({
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
-                void ask();
+                askNow();
               }
             }}
           />
           <Button
-            onClick={() => void ask()}
+            onClick={askNow}
             disabled={!asking || analysable.length === 0}
             className={SMALL_BUTTON_CLASSNAME}
           >
@@ -160,7 +148,7 @@ export function AskAiPanel({
           </Button>
         </div>
 
-        {status !== null && (
+        {status !== null && ask.isPending && (
           <p className="text-xs text-muted-foreground">{status}</p>
         )}
 
@@ -204,17 +192,17 @@ export function AskAiPanel({
           <Button
             variant="ghost"
             onClick={onClose}
-            disabled={busy || applying}
+            disabled={ask.isPending || apply.isPending}
             className={SMALL_BUTTON_CLASSNAME}
           >
             Close
           </Button>
           {proposal !== null && (
             <Button
-              onClick={() => void apply()}
-              disabled={applying || approved.length === 0}
+              onClick={() => apply.mutate()}
+              disabled={apply.isPending || approved.length === 0}
             >
-              {applying
+              {apply.isPending
                 ? "Applying…"
                 : `Apply ${approved.length} change${approved.length === 1 ? "" : "s"}`}
             </Button>

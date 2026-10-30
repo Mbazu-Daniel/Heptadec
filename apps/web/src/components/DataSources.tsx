@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconPlus } from "@tabler/icons-react";
 import type {
   DataSourceKind,
@@ -6,7 +7,7 @@ import type {
   IDataSource,
   IStructureSummary,
 } from "@heptadec/api/data-source-contracts";
-import { ENGINE_SPECS, defaultConnectionMode, kindFromConnectionUrl } from "@heptadec/api/data-source-contracts";
+import { ENGINE_SPECS, defaultConnectionMode, isDataSourceKind, kindFromConnectionUrl } from "@heptadec/api/data-source-contracts";
 import {
   createDataSource,
   deleteDataSource,
@@ -29,23 +30,18 @@ import {
   SMALL_BUTTON_CLASSNAME,
   VIEW_CLASSNAME,
   Workspace,
-  type ICrumb,
 } from "./workspace";
 import { EngineForm } from "./connection/EngineForm";
 import { SourceMenu } from "./connection/SourceMenu";
 import { SourceSettingsDialog } from "./connection/SourceSettingsDialog";
 import { connectionPayload, PORT_MESSAGE } from "./connection/payload";
 import { parseConnectionUrl } from "../lib/connection-url-parser";
+import { dataSourceKeys } from "../lib/queries";
 import { SourceDetail } from "./SourceDetail";
 import { SchemaBrowser } from "./schema/SchemaBrowser";
 
-const ENGINES = Object.keys(ENGINE_SPECS) as DataSourceKind[];
+const ENGINES = Object.keys(ENGINE_SPECS).filter(isDataSourceKind);
 
-type TestState =
-  | { status: "idle" }
-  | { status: "testing" }
-  | { status: "ok"; total: number }
-  | { status: "failed"; message: string };
 function targetOf(source: IDataSource): string {
   if (source.host === null) {
     return source.database ?? "";
@@ -58,96 +54,70 @@ function targetOf(source: IDataSource): string {
 }
 
 export function DataSources({
-  resetToken,
-  onTrail,
+  openSourceId,
+  onOpenSource,
 }: {
-  resetToken?: number;
-  onTrail?: (crumbs: ICrumb[]) => void;
+  openSourceId: string | null;
+  onOpenSource: (sourceId: string | null) => void;
 }) {
-  const [sources, setSources] = useState<IDataSource[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
-
-  const [openedId, setOpenedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const sourcesQuery = useQuery({
+    queryKey: dataSourceKeys.list,
+    queryFn: listDataSources,
+  });
+  const sources = sourcesQuery.data?.dataSources ?? [];
 
   const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<DataSourceKind>("postgres");
   const [name, setName] = useState("");
-  // There is no mode choice in the UI: an engine always connects its default
-  // way, so the mode is derived rather than stored.
   const mode = defaultConnectionMode(kind);
-  // The URL import starts closed, like a plain field form that can be filled
-  // by a paste once the importer is switched on.
   const [importOpen, setImportOpen] = useState(false);
   const [connectionUrl, setConnectionUrl] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [readOnly, setReadOnly] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [testState, setTestState] = useState<TestState>({ status: "idle" });
 
-  // An open ellipsis menu points at the source being changed or removed.
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<IDataSource | null>(null);
-  const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const settingsSource =
     sources.find((source) => source.id === settingsId) ?? null;
+  const opened = sources.find((source) => source.id === openSourceId) ?? null;
 
-  async function reload(): Promise<void> {
-    try {
-      const result = await listDataSources();
-      setSources(result.dataSources);
-      setListError(null);
-    } catch (caught) {
-      setListError(messageFor(caught, "Sources could not load."));
-    } finally {
-      setLoaded(true);
-    }
-  }
+  const saveSource = useMutation({
+    mutationFn: createDataSource,
+    onSuccess: () => {
+      setFormOpen(false);
+      queryClient.invalidateQueries({ queryKey: dataSourceKeys.list });
+    },
+  });
+  const testConnection = useMutation({ mutationFn: testDataSourceConnection });
+  const removeSource = useMutation({
+    mutationFn: (source: IDataSource) => deleteDataSource(source.id),
+    onSuccess: (_result, source) => {
+      if (openSourceId === source.id) {
+        onOpenSource(null);
+      }
+      setRemoveTarget(null);
+      queryClient.invalidateQueries({ queryKey: dataSourceKeys.list });
+    },
+  });
 
-  useEffect(() => {
-    void reload();
-  }, []);
+  const pasted =
+    importOpen && connectionUrl.trim() !== ""
+      ? parseConnectionUrl(connectionUrl, kind)
+      : {};
+  const fields = Object.keys(pasted).length === 0 ? values : pasted;
 
-  useEffect(() => {
-    if (resetToken === undefined) {
-      return;
-    }
-    setOpenedId(null);
-  }, [resetToken]);
-
-  useEffect(() => {
-    if (openedId === null) {
-      onTrail?.([]);
-    }
-  }, [openedId, onTrail]);
-
-  const opened = sources.find((source) => source.id === openedId) ?? null;
-
-  // A pasted URL is an import: what it parses replaces the fields wholesale.
-  useEffect(() => {
-    if (connectionUrl.trim() === "") {
-      return;
-    }
-    const parsed = parseConnectionUrl(connectionUrl, kind);
-    if (Object.keys(parsed).length === 0) {
-      return; // Not a readable URL yet; leave the fields until it is.
-    }
-    setValues(parsed);
-  }, [connectionUrl, kind]);
-
-  function resetConnection(kind: DataSourceKind): void {
-    setKind(kind);
+  function resetConnection(next: DataSourceKind): void {
+    setKind(next);
     setValues({});
     setConnectionUrl("");
     setFormError(null);
-    setTestState({ status: "idle" });
+    testConnection.reset();
   }
 
-  // Switching the import off discards the paste with it: with the URL box
-  // gone there is nowhere for its truth to live, so the fields take over.
   function toggleUrlImport(): void {
     if (importOpen) {
       setConnectionUrl("");
@@ -155,14 +125,12 @@ export function DataSources({
     setImportOpen(!importOpen);
   }
 
-  // The pasted URL names its own engine — the scheme is the same word the
-  // server accepts a pasted URL by — so importing has no engine to pick.
   function setUrl(next: string): void {
     setConnectionUrl(next);
     const inferred = kindFromConnectionUrl(next);
     if (inferred !== null && inferred !== kind) {
       setKind(inferred);
-      setTestState({ status: "idle" });
+      testConnection.reset();
     }
   }
 
@@ -174,96 +142,61 @@ export function DataSources({
     setFormOpen(true);
   }
 
-  function buildPayload(): ICreateDataSourceRequest | null {
-    return connectionPayload({
+  function buildPayload(): ICreateDataSourceRequest | string {
+    if (name.trim().length === 0) {
+      return "A name is required";
+    }
+    if (importOpen && connectionUrl.trim() === "") {
+      return "Paste a connection URL";
+    }
+    const payload = connectionPayload({
       kind,
       mode,
       connectionUrl,
       name,
       readOnly,
-      values,
+      values: fields,
+    });
+    return payload === null ? PORT_MESSAGE : payload;
+  }
+
+  function submit(event: FormEvent): void {
+    event.preventDefault();
+    const payload = buildPayload();
+    if (typeof payload === "string") {
+      setFormError(payload);
+      return;
+    }
+    setFormError(null);
+    saveSource.mutate(payload);
+  }
+
+  function checkConnection(): void {
+    const payload = buildPayload();
+    if (typeof payload === "string") {
+      setFormError(payload);
+      return;
+    }
+    setFormError(null);
+    testConnection.mutate(payload);
+  }
+
+  function remove(target: IDataSource): void {
+    setRemoveError(null);
+    removeSource.mutate(target, {
+      onError: (caught) =>
+        setRemoveError(messageFor(caught, "The source was not removed.")),
     });
   }
 
-  async function submit(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (name.trim().length === 0) {
-      setFormError("A name is required");
-      return;
-    }
-    if (importOpen && connectionUrl.trim() === "") {
-      setFormError("Paste a connection URL");
-      return;
-    }
-    const payload = buildPayload();
-    if (payload === null) {
-      setFormError(PORT_MESSAGE);
-      return;
-    }
-    setBusy(true);
-    setFormError(null);
-    try {
-      await createDataSource(payload);
-      setFormOpen(false);
-      await reload();
-    } catch (caught) {
-      setFormError(messageFor(caught, "The source was not saved."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function testConnection(): Promise<void> {
-    if (importOpen && connectionUrl.trim() === "") {
-      setTestState({ status: "failed", message: "Paste a connection URL" });
-      return;
-    }
-    const payload = buildPayload();
-    if (payload === null) {
-      setTestState({ status: "failed", message: PORT_MESSAGE });
-      return;
-    }
-    setTestState({ status: "testing" });
-    setFormError(null);
-    try {
-      const result = await testDataSourceConnection(payload);
-      setTestState({ status: "ok", total: result.total });
-    } catch (caught) {
-      setTestState({
-        status: "failed",
-        message: messageFor(caught, "The database could not be reached"),
-      });
-    }
-  }
-
-  async function remove(target: IDataSource): Promise<void> {
-    setRemoving(true);
-    setRemoveError(null);
-    try {
-      await deleteDataSource(target.id);
-      if (openedId === target.id) {
-        setOpenedId(null);
-      }
-      setRemoveTarget(null);
-      await reload();
-    } catch (caught) {
-      setRemoveError(messageFor(caught, "The source was not removed."));
-    } finally {
-      setRemoving(false);
-    }
-  }
-
   if (opened !== null) {
-    // A source whose statements are SQL or an aggregation pipeline reports a
-    // structure the app can read and diagram. A command or search source has
-    // nothing to introspect, so it keeps the plain detail view.
     if (opened.queryLanguage !== "sql" && opened.queryLanguage !== "pipeline") {
       return (
         <section className={VIEW_CLASSNAME}>
           <SourceDetail
             key={opened.id}
             source={opened}
-            onBack={() => setOpenedId(null)}
+            onBack={() => onOpenSource(null)}
           />
         </section>
       );
@@ -273,18 +206,8 @@ export function DataSources({
         <SchemaBrowser
           key={opened.id}
           source={opened}
-          onTrail={onTrail}
-          onBack={() => setOpenedId(null)}
-          onRemove={async (target) => {
-            setListError(null);
-            try {
-              await deleteDataSource(target.id);
-              setOpenedId(null);
-              await reload();
-            } catch (caught) {
-              setListError(messageFor(caught, "The source was not removed."));
-            }
-          }}
+          onBack={() => onOpenSource(null)}
+          onRemove={(target) => remove(target)}
           onBrowseRows={(target, back) => (
             <SourceDetail source={target} onBack={back} />
           )}
@@ -295,13 +218,7 @@ export function DataSources({
 
   return (
     <section className={VIEW_CLASSNAME}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-          {sources.length} connected
-        </span>
-      </div>
-
-      <div className="flex items-center gap-2 px-6 py-3">
+      <div className="flex shrink-0 items-center gap-2 px-6 py-1.5">
         <Button
           className="ml-auto h-9 gap-1.5 px-4 text-sm"
           onClick={openForm}
@@ -314,9 +231,14 @@ export function DataSources({
       <Workspace
         view={
           <>
-            {listError ? <Alert className="mb-3">{listError}</Alert> : null}
+            {sourcesQuery.isError ? (
+              <Alert className="mb-3">
+                {messageFor(sourcesQuery.error, "Sources could not load.")}
+              </Alert>
+            ) : null}
+            {removeError ? <Alert className="mb-3">{removeError}</Alert> : null}
 
-            {!loaded ? null : sources.length === 0 ? (
+            {sourcesQuery.isPending ? null : sources.length === 0 ? (
               <>
                 <EmptyState
                   title="No data sources yet"
@@ -337,7 +259,7 @@ export function DataSources({
                   <li key={source.id} className="relative">
                     <button
                       type="button"
-                      onClick={() => setOpenedId(source.id)}
+                      onClick={() => onOpenSource(source.id)}
                       className="flex min-h-36 w-full flex-col justify-center gap-3 border border-border bg-card/30 p-6 pr-12 text-left transition-colors hover:border-cyan/40"
                     >
                       <span className="flex items-center gap-3">
@@ -395,9 +317,11 @@ export function DataSources({
                 <span className="text-xs text-muted-foreground">Engine</span>
                 <select
                   value={kind}
-                  onChange={(event) =>
-                    resetConnection(event.target.value as DataSourceKind)
-                  }
+                  onChange={(event) => {
+                    if (isDataSourceKind(event.target.value)) {
+                      resetConnection(event.target.value);
+                    }
+                  }}
                   className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
                 >
                   {ENGINES.map((option) => (
@@ -434,14 +358,12 @@ export function DataSources({
               kind={kind}
               mode={mode}
               url={connectionUrl}
-              values={values}
+              values={fields}
               showUrlImport={importOpen}
               onUrlChange={setUrl}
               onChange={(field, next) => {
-                // A hand edit takes over from the paste: the typed fields are
-                // what gets sent, so the URL stops being the source of truth.
                 setConnectionUrl("");
-                setValues((current) => ({ ...current, [field]: next }));
+                setValues({ ...fields, [field]: next });
               }}
             />
 
@@ -458,15 +380,20 @@ export function DataSources({
             )}
 
             {formError ? <Alert>{formError}</Alert> : null}
-
-            {testState.status === "ok" ? (
-              <p role="status" className="font-mono text-xs text-green">
-                Reachable — {testState.total} object
-                {testState.total === 1 ? "" : "s"} found.
-              </p>
+            {saveSource.isError ? (
+              <Alert>{messageFor(saveSource.error, "The source was not saved.")}</Alert>
             ) : null}
-            {testState.status === "failed" ? (
-              <Alert>{testState.message}</Alert>
+            {testConnection.isError ? (
+              <Alert>
+                {messageFor(testConnection.error, "The database could not be reached")}
+              </Alert>
+            ) : null}
+
+            {testConnection.data ? (
+              <p role="status" className="font-mono text-xs text-green">
+                Reachable — {testConnection.data.total} object
+                {testConnection.data.total === 1 ? "" : "s"} found.
+              </p>
             ) : null}
 
             <DialogFooter className="gap-2">
@@ -481,16 +408,14 @@ export function DataSources({
               <Button
                 type="button"
                 variant="ghost"
-                disabled={testState.status === "testing" || busy}
-                onClick={() => void testConnection()}
+                disabled={testConnection.isPending || saveSource.isPending}
+                onClick={checkConnection}
                 className="rounded-none"
               >
-                {testState.status === "testing"
-                  ? "Testing…"
-                  : "Test connection"}
+                {testConnection.isPending ? "Testing…" : "Test connection"}
               </Button>
-              <Button type="submit" disabled={busy} className="rounded-none">
-                {busy ? "Saving" : "Add source"}
+              <Button type="submit" disabled={saveSource.isPending} className="rounded-none">
+                {saveSource.isPending ? "Saving" : "Add source"}
               </Button>
             </DialogFooter>
           </form>
@@ -508,7 +433,7 @@ export function DataSources({
           }}
           onSaved={() => {
             setSettingsId(null);
-            void reload();
+            queryClient.invalidateQueries({ queryKey: dataSourceKeys.list });
           }}
         />
       )}
@@ -546,11 +471,11 @@ export function DataSources({
               </Button>
               <Button
                 type="button"
-                disabled={removing}
+                disabled={removeSource.isPending}
                 className="rounded-none bg-red text-background hover:bg-red/85"
-                onClick={() => void remove(removeTarget)}
+                onClick={() => remove(removeTarget)}
               >
-                {removing ? "Removing" : "Remove"}
+                {removeSource.isPending ? "Removing" : "Remove"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readAvatar } from "../lib/avatar";
 import {
   fetchMemberProfile,
@@ -31,108 +32,67 @@ interface IMemberProfileProps {
 }
 
 export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
+  const queryClient = useQueryClient();
+  const profile = useQuery({
+    queryKey: ["member-profile"],
+    queryFn: fetchMemberProfile,
+  });
+
   const [image, setImage] = useState<string | null>(me.image);
-  const [displayName, setDisplayName] = useState("");
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const displayName = typedName ?? profile.data?.displayName ?? "";
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const imagesConfigured = useImagesConfigured();
 
-  useEffect(() => {
-    let live = true;
-    fetchMemberProfile()
-      .then((profile) => {
-        if (live) {
-          setDisplayName(profile.displayName ?? "");
-        }
-      })
-      .catch((caught: unknown) => {
-        if (live) {
-          setError(
-            messageFor(caught, "Your name could not be loaded."),
-          );
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  function start(): void {
-    setBusy(true);
-    setError(null);
+  const reset = (): void => {
+    setLocalError(null);
     setNotice(null);
-  }
+  };
 
-  function stop(): void {
-    setBusy(false);
-  }
-
-  async function chooseImage(file: File): Promise<void> {
-    start();
-    try {
-      const picture = await readAvatar(file);
-      if (picture === null) {
-        setError("Pick an image under 8 MB.");
-        return;
-      }
-      const path = await uploadImage("avatar", picture);
-      setImage((await saveMemberImage(path)).image);
+  const saveImage = useMutation({
+    mutationFn: async (picture: Blob) =>
+      (await saveMemberImage(await uploadImage("avatar", picture))).image,
+    onSuccess: (savedImage) => {
+      setImage(savedImage);
       setNotice("Your image is updated.");
+      queryClient.invalidateQueries({ queryKey: ["member-profile"] });
       onReload();
-    } catch (caught) {
-      setError(messageFor(caught, "That image could not be read."));
-    } finally {
-      stop();
-    }
-  }
-
-  async function removeImage(): Promise<void> {
-    start();
-    try {
-      setImage((await saveMemberImage(null)).image);
+    },
+  });
+  const removeImage = useMutation({
+    mutationFn: () => saveMemberImage(null),
+    onSuccess: (found) => {
+      setImage(found.image);
       setNotice("Your image is removed.");
       onReload();
-    } catch {
-      setError("That image could not be removed.");
-    } finally {
-      stop();
-    }
-  }
-
-  async function saveName(): Promise<void> {
-    start();
-    try {
-      await saveMemberDisplayName(
+    },
+  });
+  const saveName = useMutation({
+    mutationFn: () =>
+      saveMemberDisplayName(
         displayName.trim().length === 0 ? null : displayName.trim(),
-      );
+      ),
+    onSuccess: () => {
       setNotice("Your name is updated.");
+      queryClient.invalidateQueries({ queryKey: ["member-profile"] });
       onReload();
-    } catch (caught) {
-      setError(messageFor(caught, "The name was not saved."));
-    } finally {
-      stop();
-    }
-  }
-
-  async function changePassword(): Promise<void> {
-    if (next !== confirm) {
-      setError("The new password and its repeat do not match.");
-      return;
-    }
-    start();
-    try {
-      const result = await authClient.changePassword({
+    },
+  });
+  const changePassword = useMutation({
+    mutationFn: () =>
+      authClient.changePassword({
         currentPassword: current,
         newPassword: next,
-      });
+      }),
+    onSuccess: (result) => {
       if (result.error) {
-        setError(
+        setLocalError(
           result.error.code === "INVALID_PASSWORD"
             ? "The current password is not right."
             : (result.error.message ?? "The password was not changed."),
@@ -143,12 +103,44 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
       setNext("");
       setConfirm("");
       setNotice("Your password is changed.");
-    } catch {
-      setError("That could not be saved. Try again in a moment.");
-    } finally {
-      stop();
+    },
+    onError: () => setLocalError("That could not be saved. Try again in a moment."),
+  });
+
+  async function pickImage(file: File): Promise<void> {
+    reset();
+    const picture = await readAvatar(file);
+    if (picture === null) {
+      setLocalError("Pick an image under 8 MB.");
+      return;
     }
+    saveImage.mutate(picture);
   }
+
+  function submitPassword(): void {
+    reset();
+    if (next !== confirm) {
+      setLocalError("The new password and its repeat do not match.");
+      return;
+    }
+    changePassword.mutate();
+  }
+
+  const busy =
+    saveImage.isPending ||
+    removeImage.isPending ||
+    saveName.isPending ||
+    changePassword.isPending;
+
+  const error =
+    localError ??
+    (profile.isError
+      ? messageFor(profile.error, "Your name could not be loaded.")
+      : saveImage.isError
+        ? messageFor(saveImage.error, "That image could not be read.")
+        : saveName.isError
+          ? messageFor(saveName.error, "The name was not saved.")
+          : null);
 
   return (
     <AuthPage
@@ -202,7 +194,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (file) {
-                        void chooseImage(file);
+                        void pickImage(file);
                       }
                     }}
                   />
@@ -219,7 +211,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
                       type="button"
                       disabled={busy}
                       className={AUTH_GHOST_BUTTON_CLASSNAME}
-                      onClick={() => void removeImage()}
+                      onClick={() => removeImage.mutate()}
                     >
                       Remove image
                     </button>
@@ -262,7 +254,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
               id="profile-name"
               className={AUTH_INPUT_CLASSNAME}
               value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
+              onChange={(event) => setTypedName(event.target.value)}
               maxLength={120}
               placeholder="Platform Lead"
               autoComplete="name"
@@ -272,7 +264,11 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
               team list. Leave it empty to fall back to the name on your account.
             </p>
           </div>
-          <SectionActions onSave={saveName} busy={busy} label="Save name" />
+          <SectionActions
+            onSave={() => saveName.mutate()}
+            busy={busy || profile.data === undefined}
+            label="Save name"
+          />
         </section>
 
         <section className="flex flex-col gap-5 border-t border-(--mk-hairline) pt-8">
@@ -330,11 +326,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
               <p className="text-sm text-(--mk-fg-muted)">
                 At least {MIN_PASSWORD} characters.
               </p>
-              <SectionActions
-                onSave={changePassword}
-                busy={busy}
-                label="Change password"
-              />
+              <SectionActions onSave={submitPassword} busy={busy} label="Change password" />
             </>
           ) : (
             <p className="text-sm text-(--mk-fg-muted)">
@@ -353,7 +345,7 @@ function SectionActions({
   busy,
   label,
 }: {
-  onSave: () => Promise<void>;
+  onSave: () => void;
   busy: boolean;
   label: string;
 }) {
@@ -362,7 +354,7 @@ function SectionActions({
       type="button"
       disabled={busy}
       className={`${AUTH_PRIMARY_BUTTON_CLASSNAME} max-w-[240px]`}
-      onClick={() => void onSave()}
+      onClick={onSave}
     >
       {label}
     </button>

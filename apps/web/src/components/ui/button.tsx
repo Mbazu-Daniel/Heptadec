@@ -9,6 +9,8 @@ const buttonVariants = cva(
       variant: {
         default:
           "border-transparent bg-cyan text-on-accent hover:bg-cyan/85 hover:text-on-accent",
+        secondary:
+          "border-border bg-secondary text-foreground hover:bg-secondary/80 hover:text-foreground",
         ghost:
           "border-transparent bg-transparent text-muted-foreground shadow-none backdrop-blur-none hover:bg-transparent hover:text-foreground hover:shadow-none",
         social: "w-full border-border",

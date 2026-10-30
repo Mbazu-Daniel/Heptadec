@@ -28,8 +28,6 @@ export function EmptyState({
   className,
 }: {
   title: string;
-  /** One short line of what to do next, when the title alone leaves the
-   * reader without a way out. */
   body?: string;
   action?: React.ReactNode;
   className?: string;

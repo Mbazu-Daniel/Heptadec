@@ -1,9 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconTrash } from "@tabler/icons-react";
 import {
   ALERT_OPERATORS,
@@ -72,9 +68,6 @@ function when(iso: string | null): string {
   return iso === null ? "never" : new Date(iso).toLocaleString();
 }
 
-/** One state, read with one instrument: a dot for the mood, words for the why.
-    Green holds for healthy attention, amber for problems that need a move,
-    muted for information that only became interesting when asked for. */
 function StatusPill({
   tone,
   children,
@@ -101,117 +94,89 @@ function StatusPill({
   );
 }
 
-/** The right-edge cluster every card in the expanded row shares: Edit for the
-    changes it owns, delete for the ones it regrets. One shape, learned once. */
-
-
 function freshness(seconds: number): string {
   return (
     FRESHNESS.find((option) => option.value === seconds)?.label ?? `${seconds}s`
   );
 }
 
-
-/**
- * Schedules and alerts in one place, grouped by the saved query they both hang
- * off. A schedule is the clock on a query and an alert is the reaction on the
- * same query, so showing them as two tables made one relationship look like two
- * unrelated features — and hid an alert whose query nothing ever runs.
- */
 export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
-  const [jobs, setJobs] = useState<IScheduledJob[] | null>(null);
-  const [queries, setQueries] = useState<
-    ISavedQueryListResponse["savedQueries"]
-  >([]);
-  const [rules, setRules] = useState<IAlertRule[]>([]);
-  const [log, setLog] = useState<
-    Awaited<ReturnType<typeof listAlertDeliveries>> | null
-  >(null);
-  const [channelCount, setChannelCount] = useState<number | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // What is being added or edited. An edit carries the row it is editing, so
-  // the dialog opens prefilled and writes with PUT instead of creating.
+  const queryClient = useQueryClient();
+  const jobsQuery = useQuery({
+    queryKey: ["scheduled-jobs"],
+    queryFn: listScheduledJobs,
+  });
+  const savedQueriesQuery = useQuery({
+    queryKey: ["saved-queries-all"],
+    queryFn: listAllSavedQueries,
+  });
+  const rulesQuery = useQuery({
+    queryKey: ["alert-rules"],
+    queryFn: listAlertRules,
+  });
+  const deliveriesQuery = useQuery({
+    queryKey: ["alert-deliveries"],
+    queryFn: listAlertDeliveries,
+  });
+  const channelsQuery = useQuery({
+    queryKey: ["notification-channels"],
+    queryFn: listNotificationChannels,
+  });
+
+  const jobs = jobsQuery.data?.scheduledJobs ?? [];
+  const queries = savedQueriesQuery.data?.savedQueries ?? [];
+  const rules = rulesQuery.data?.alertRules ?? [];
+  const log = deliveriesQuery.data ?? null;
+  const channelCount = channelsQuery.data?.notificationChannels.length ?? null;
+
   const [adding, setAdding] = useState<
     | { kind: "schedule"; job: IScheduledJob | null; queryId: string }
     | { kind: "alert"; rule: IAlertRule | null; queryId: string }
     | null
   >(null);
-  // Which rows are opened. The list stays collapsed until a row is clicked.
   const [expanded, setExpanded] = useState<readonly string[]>([]);
 
-  const reload = useCallback(async () => {
-    setProblem(null);
-    try {
-      const [scheduled, saved, alertRules, deliveries, connected] =
-        await Promise.all([
-          listScheduledJobs(),
-          listAllSavedQueries(),
-          listAlertRules(),
-          listAlertDeliveries(),
-          listNotificationChannels(),
-        ]);
-      setJobs(scheduled.scheduledJobs);
-      setQueries(saved.savedQueries);
-      setRules(alertRules.alertRules);
-      setLog(deliveries);
-      setChannelCount(connected.notificationChannels.length);
-    } catch (caught) {
-      setProblem(messageFor(caught, "Monitoring could not be loaded."));
-    }
-  }, []);
+  const removeSchedule = useMutation({
+    mutationFn: (job: IScheduledJob) => deleteScheduledJob(job.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scheduled-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+    },
+  });
+  const removeAlert = useMutation({
+    mutationFn: (rule: IAlertRule) => deleteAlertRule(rule.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["alert-rules"] }),
+  });
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const loadProblem = jobsQuery.isError
+    ? messageFor(jobsQuery.error, "Schedules could not be loaded.")
+    : savedQueriesQuery.isError
+      ? messageFor(savedQueriesQuery.error, "Saved queries could not be loaded.")
+      : rulesQuery.isError
+        ? messageFor(rulesQuery.error, "Alerts could not be loaded.")
+        : deliveriesQuery.isError
+          ? messageFor(deliveriesQuery.error, "Deliveries could not be loaded.")
+          : null;
+  const removeProblem = removeSchedule.isError
+    ? messageFor(removeSchedule.error, "That schedule was not removed.")
+    : removeAlert.isError
+      ? messageFor(removeAlert.error, "That alert was not removed.")
+      : null;
 
-  async function removeSchedule(job: IScheduledJob): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await deleteScheduledJob(job.id);
-      await reload();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That schedule was not removed."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeAlert(rule: IAlertRule): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await deleteAlertRule(rule.id);
-      await reload();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That alert was not removed."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (jobs === null) {
+  if (jobsQuery.isPending) {
     return (
       <div className={VIEW_CLASSNAME}>
         <Workspace
           view={
-            <>
-              {/* Shown here as well: without it a load that never resolves
-                  spins forever instead of saying what went wrong. */}
-              {problem !== null ? (
-                <Alert className="mb-3">{problem}</Alert>
-              ) : null}
-              <p className="py-8 text-center font-mono text-xs text-muted-foreground">
-                Loading monitoring.
-              </p>
-            </>
+            <p className="py-8 text-center font-mono text-xs text-muted-foreground">
+              Loading monitoring.
+            </p>
           }
         />
       </div>
     );
   }
-
 
   const entries = queries
     .map((query) => ({
@@ -222,23 +187,19 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
     .filter((entry) => entry.schedules.length > 0 || entry.rules.length > 0)
     .sort(
       (a, b) =>
-        // Queries on a timer first; the ones still waiting for a clock last.
         Number(b.schedules.length > 0) - Number(a.schedules.length > 0),
     );
 
-  const waiting = entries.filter((entry) => entry.schedules.length === 0)
-    .length;
   const chosen =
     adding === null
       ? null
       : (queries.find((query) => query.id === adding.queryId) ?? null);
 
-  /** The deliveries made against one query's alerts, newest first. */
-  function deliveriesFor(rules: readonly IAlertRule[]): IAlertDelivery[] {
+  function deliveriesFor(entryRules: readonly IAlertRule[]): IAlertDelivery[] {
     if (log === null) {
       return [];
     }
-    const ofOurs = new Set(rules.map((rule) => rule.id));
+    const ofOurs = new Set(entryRules.map((rule) => rule.id));
     return log.alertDeliveries
       .filter((delivery) => ofOurs.has(delivery.alertRuleId))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -246,11 +207,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
 
   return (
     <div className={VIEW_CLASSNAME}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-          {rules.length} {rules.length === 1 ? "alert" : "alerts"}
-          {waiting > 0 ? ` · ${waiting} without a schedule` : ""}
-        </span>
+      <div className="flex shrink-0 items-center justify-end gap-2 px-6 py-1.5">
         <Button
           onClick={() => {
             setAdding({
@@ -269,7 +226,10 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
       <Workspace
         view={
           <>
-            {problem !== null ? <Alert className="mb-3">{problem}</Alert> : null}
+            {loadProblem !== null ? <Alert className="mb-3">{loadProblem}</Alert> : null}
+            {removeProblem !== null ? (
+              <Alert className="mb-3">{removeProblem}</Alert>
+            ) : null}
 
             {entries.length === 0 ? (
               <EmptyState
@@ -280,9 +240,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                     : "Pick a saved query and put it on a timer."
                 }
                 action={
-                  // A query is written on the source it reads, so an empty
-                  // watcher with nothing to watch sends the reader there
-                  // rather than leaving the instruction with no way to follow it.
                   queries.length === 0 ? (
                     <Button onClick={onOpenSources} className={SMALL_BUTTON_CLASSNAME}>
                       Go to data sources
@@ -316,9 +273,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                           {open ? "expand_more" : "chevron_right"}
                         </span>
                         <span className="min-w-0 flex-1">
-                          {/* The list is names only — schedule first, query
-                              as the stand-in when nothing is scheduled. The
-                              query and its cadence live inside the row. */}
                           <span className="block truncate text-sm">
                             {timed ? entry.schedules[0]!.name : entry.query.name}
                           </span>
@@ -338,9 +292,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
 
                       {open ? (
                         <div className="grid gap-4 px-4 pb-4 pl-11">
-                          {/* The schedule gets a real card: what runs, when,
-                              how fresh, and the two verbs it owns — edit and
-                              stop — instead of unlabelled fragments. */}
                           {timed ? (
                             <div className="flex items-start gap-3 rounded-lg border border-border p-3">
                               <span
@@ -376,7 +327,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                               <div className="flex shrink-0 items-center gap-1">
                                 <Button
                                   variant="ghost"
-                                  disabled={busy}
+                                  disabled={removeSchedule.isPending}
                                   onClick={() => {
                                     setAdding({
                                       kind: "schedule",
@@ -390,10 +341,8 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                 </Button>
                                 <Button
                                   variant="ghost"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void removeSchedule(entry.schedules[0]!)
-                                  }
+                                  disabled={removeSchedule.isPending}
+                                  onClick={() => removeSchedule.mutate(entry.schedules[0]!)}
                                   className="h-6 px-2 text-red"
                                   title={`Remove the schedule ${entry.schedules[0]!.name}`}
                                 >
@@ -474,17 +423,12 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                         </span>
                                       </p>
                                       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                        {/* The server knows whether anything runs this
-                                            rule's query, and says so per rule. Read
-                                            that rather than working it out from the
-                                            query's schedules here, where the two can
-                                            disagree about a rule nothing runs. */}
                                         <StatusPill tone={rule.scheduled ? "ok" : "warning"}>
                                           {rule.scheduled
                                             ? "Checks each scheduled run"
                                             : "Not scheduled"}
                                         </StatusPill>
-                                        {channelCount === null ? (
+                                        {channelsQuery.isPending ? (
                                           <StatusPill tone="muted">
                                             Reading channels…
                                           </StatusPill>
@@ -503,7 +447,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                     <div className="flex shrink-0 items-center gap-1">
                                       <Button
                                         variant="ghost"
-                                        disabled={busy}
+                                        disabled={removeAlert.isPending}
                                         onClick={() => {
                                           setAdding({
                                             kind: "alert",
@@ -518,8 +462,8 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                                       </Button>
                                       <Button
                                         variant="ghost"
-                                        disabled={busy}
-                                        onClick={() => void removeAlert(rule)}
+                                        disabled={removeAlert.isPending}
+                                        onClick={() => removeAlert.mutate(rule)}
                                         className="h-6 px-2 text-red"
                                         title={`Remove the alert ${rule.name}`}
                                       >
@@ -586,10 +530,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
           query={chosen}
           job={adding.job}
           onClose={() => setAdding(null)}
-          onSaved={async () => {
-            setAdding(null);
-            await reload();
-          }}
+          onSaved={() => setAdding(null)}
         />
       ) : null}
 
@@ -598,10 +539,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
           query={chosen}
           rule={adding.rule}
           onClose={() => setAdding(null)}
-          onSaved={async () => {
-            setAdding(null);
-            await reload();
-          }}
+          onSaved={() => setAdding(null)}
         />
       ) : null}
     </div>
@@ -615,17 +553,11 @@ function ScheduleDialog({
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
-  /** Set when editing an existing schedule; null when creating one. */
   job: IScheduledJob | null;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: () => void;
 }) {
-  // A schedule runs one saved query, and the row this was opened from already
-  // said which. Writing a query is not this dialog's job — a Saved Query belongs
-  // to the source it reads and is written there — so this turns one query into
-  // a timer and nothing else.
-  // Editing opens on the schedule's own words: parseWhen reverses buildCron,
-  // and an unreadable cron falls back to the default form rather than a guess.
+  const queryClient = useQueryClient();
   const editing = job !== null;
   const [name, setName] = useState(job?.name ?? "");
   const [when, setWhen] = useState<IWhen>(
@@ -635,18 +567,11 @@ function ScheduleDialog({
     job?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
   );
   const [ttlSeconds, setTtlSeconds] = useState(job?.ttlSeconds ?? 3600);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const cron = buildCron(when);
 
-  async function save(): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
-      // savedQueryId is absent on purpose when editing: the query a schedule
-      // runs is the schedule's identity, so moving it means creating a new
-      // schedule rather than rewriting history.
+  const save = useMutation({
+    mutationFn: async () => {
       const input = {
         name,
         cron,
@@ -658,13 +583,13 @@ function ScheduleDialog({
       } else {
         await createScheduledJob({ ...input, savedQueryId: query.id });
       }
-      await onSaved();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That schedule was not saved."));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scheduled-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+      onSaved();
+    },
+  });
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -675,14 +600,23 @@ function ScheduleDialog({
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          {problem !== null ? <Alert>{problem}</Alert> : null}
+          {save.isError ? (
+            <Alert>
+              {messageFor(save.error, "That schedule was not saved.")}
+            </Alert>
+          ) : null}
 
-          {/* The query was chosen before this dialog opened — the list it came
-              from is one row, so a picker over it would offer no choice. */}
           <p className="text-xs text-muted-foreground">
             Scheduling <span className="font-mono text-fg">{query.name}</span>
           </p>
 
+          {job !== null && parseWhen(job.cron) === null ? (
+            <Alert>
+              This schedule runs on <span className="font-mono">{job.cron}</span>,
+              which the editor cannot show. Saving replaces it with the choices
+              below.
+            </Alert>
+          ) : null}
 
           <FieldGroup>
             <FieldLabel htmlFor="schedule-name">Name</FieldLabel>
@@ -820,11 +754,11 @@ function ScheduleDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => void save()}
-            disabled={busy || name.trim().length === 0}
+            onClick={() => save.mutate()}
+            disabled={save.isPending || name.trim().length === 0}
             className={SMALL_BUTTON_CLASSNAME}
           >
-            {busy ? "Saving…" : editing ? "Save changes" : "Save schedule"}
+            {save.isPending ? "Saving…" : editing ? "Save changes" : "Save schedule"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -839,14 +773,11 @@ function AlertDialog({
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
-  /** Set when editing an existing rule; null when creating one. */
   rule: IAlertRule | null;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: () => void;
 }) {
-  // An alert watches one saved query's column, and the row it was opened from
-  // already said which — so it is named here rather than chosen from a list of
-  // one.
+  const queryClient = useQueryClient();
   const editing = rule !== null;
   const [name, setName] = useState(rule?.name ?? "");
   const [column, setColumn] = useState(rule?.column ?? "");
@@ -856,13 +787,9 @@ function AlertDialog({
   const [threshold, setThreshold] = useState(
     rule === null ? "" : String(rule.threshold),
   );
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  async function save(): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
+  const save = useMutation({
+    mutationFn: async () => {
       const input = {
         name,
         column,
@@ -874,13 +801,12 @@ function AlertDialog({
       } else {
         await createAlertRule({ ...input, savedQueryId: query.id });
       }
-      await onSaved();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That alert was not saved."));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+      onSaved();
+    },
+  });
 
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
@@ -889,7 +815,9 @@ function AlertDialog({
           <DialogTitle>{editing ? "Edit alert" : "New alert"}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          {problem !== null ? <Alert>{problem}</Alert> : null}
+          {save.isError ? (
+            <Alert>{messageFor(save.error, "That alert was not saved.")}</Alert>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Watching a column of{" "}
             <span className="font-mono text-fg">{query.name}</span>
@@ -948,16 +876,16 @@ function AlertDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => void save()}
+            onClick={() => save.mutate()}
             disabled={
-              busy ||
+              save.isPending ||
               name.trim().length === 0 ||
               column.trim().length === 0 ||
               threshold.trim().length === 0
             }
             className={SMALL_BUTTON_CLASSNAME}
           >
-            {busy ? "Saving…" : editing ? "Save changes" : "Save alert"}
+            {save.isPending ? "Saving…" : editing ? "Save changes" : "Save alert"}
           </Button>
         </DialogFooter>
       </DialogContent>

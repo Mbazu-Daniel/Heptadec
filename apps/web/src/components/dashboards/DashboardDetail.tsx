@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconPencil,
   IconPlayerPlay,
@@ -8,7 +9,6 @@ import {
 } from "@tabler/icons-react";
 import type {
   IDashboardSource,
-  IDashboardWithWidgets,
   IWidget,
   IWidgetData,
 } from "@heptadec/api/dashboard-contracts";
@@ -37,75 +37,40 @@ export function DashboardDetail({
   dashboardId: string;
   onBack: () => void;
 }) {
-  const [dashboard, setDashboard] = useState<IDashboardWithWidgets | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const dashboardKey = ["dashboard", dashboardId] as const;
+  const dashboardQuery = useQuery({
+    queryKey: dashboardKey,
+    queryFn: () => fetchDashboard(dashboardId),
+  });
+  const dashboard = dashboardQuery.data?.dashboard ?? null;
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<IWidget | null>(null);
   const [sharing, setSharing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  useEffect(() => {
-    let live = true;
-    fetchDashboard(dashboardId).then(
-      (found) => {
-        if (live) {
-          setDashboard(found.dashboard);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(messageFor(caught, "That dashboard could not be read."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [dashboardId]);
+  const removeWidget = useMutation({
+    mutationFn: (widget: IWidget) => deleteWidget(widget.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: dashboardKey }),
+  });
+  const removeDashboard = useMutation({
+    mutationFn: () => deleteDashboard(dashboardId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      onBack();
+    },
+  });
 
-  function saved(saved: IWidget): void {
-    setDashboard((current) =>
-      current === null
-        ? current
-        : {
-            ...current,
-            widgets: current.widgets.some((entry) => entry.id === saved.id)
-              ? current.widgets.map((entry) =>
-                  entry.id === saved.id ? saved : entry,
-                )
-              : [...current.widgets, saved],
-          },
-    );
+  function saved(): void {
+    queryClient.invalidateQueries({ queryKey: dashboardKey });
     setAdding(false);
     setEditing(null);
   }
 
-  async function remove(widget: IWidget): Promise<void> {
-    try {
-      await deleteWidget(widget.id);
-      setDashboard((current) =>
-        current === null
-          ? current
-          : { ...current, widgets: current.widgets.filter((entry) => entry.id !== widget.id) },
-      );
-    } catch (caught) {
-      setProblem(messageFor(caught, "That chart could not be removed."));
-    }
-  }
-
-  async function removeDashboard(): Promise<void> {
-    try {
-      await deleteDashboard(dashboardId);
-      onBack();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That dashboard could not be removed."));
-    }
-  }
-
   return (
     <div className={VIEW_CLASSNAME}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="flex shrink-0 items-center gap-2 px-6 py-1.5">
         {dashboard !== null && dashboard.sources.length > 0 && (
           <span className="flex items-center gap-1.5">
             {dashboard.sources.map((source) => (
@@ -119,14 +84,11 @@ export function DashboardDetail({
             ))}
           </span>
         )}
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-          {dashboard === null ? "" : `${dashboard.widgets.length} charts`}
-        </span>
         <Button
           variant="ghost"
           onClick={() => setAsking(true)}
           disabled={dashboard === null}
-          className="h-7 gap-1.5 px-2.5 text-xs"
+          className="ml-auto h-7 gap-1.5 px-2.5 text-xs"
         >
           <IconSparkles size={13} strokeWidth={1.5} />
           Ask AI
@@ -151,7 +113,7 @@ export function DashboardDetail({
           <span className="flex items-center gap-1">
             <Button
               variant="ghost"
-              onClick={() => void removeDashboard()}
+              onClick={() => removeDashboard.mutate()}
               className="h-7 px-2 text-xs text-red"
             >
               Confirm
@@ -176,9 +138,23 @@ export function DashboardDetail({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-6">
-        {problem !== null ? <Alert>{problem}</Alert> : null}
+        {dashboardQuery.isError ? (
+          <Alert>
+            {messageFor(dashboardQuery.error, "That dashboard could not be read.")}
+          </Alert>
+        ) : null}
+        {removeWidget.isError ? (
+          <Alert>
+            {messageFor(removeWidget.error, "That chart could not be removed.")}
+          </Alert>
+        ) : null}
+        {removeDashboard.isError ? (
+          <Alert>
+            {messageFor(removeDashboard.error, "That dashboard could not be removed.")}
+          </Alert>
+        ) : null}
         {dashboard === null ? (
-          problem === null ? (
+          dashboardQuery.isPending ? (
             <p className="font-mono text-xs text-muted-foreground">
               Reading the dashboard…
             </p>
@@ -195,7 +171,7 @@ export function DashboardDetail({
                 key={widget.id}
                 widget={widget}
                 onEdit={() => setEditing(widget)}
-                onRemove={() => void remove(widget)}
+                onRemove={() => removeWidget.mutate(widget)}
               />
             ))}
           </div>
@@ -224,7 +200,9 @@ export function DashboardDetail({
         <AskAiPanel
           dashboard={dashboard}
           onClose={() => setAsking(false)}
-          onChanged={(updated) => setDashboard(updated)}
+          onChanged={(updated) =>
+            queryClient.setQueryData(dashboardKey, { dashboard: updated })
+          }
         />
       ) : null}
       {sharing ? (
@@ -246,41 +224,23 @@ function DashboardWidget({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const [data, setData] = useState<IWidgetData | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    setData(null);
-    setProblem(null);
-    fetchWidgetData(widget.id).then(
-      (found) => {
-        if (live) {
-          setData(found);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(messageFor(caught, "That chart could not be drawn."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [widget.id]);
-  async function refresh(): Promise<void> {
-    setRefreshing(true);
-    setProblem(null);
-    try {
-      setData(await refreshWidgetData(widget.id));
-    } catch (caught) {
-      setProblem(messageFor(caught, "That chart could not be refreshed."));
-    } finally {
-      setRefreshing(false);
-    }
-  }
+  const queryClient = useQueryClient();
+  const widgetKey = ["widget-data", widget.id] as const;
+  const dataQuery = useQuery({
+    queryKey: widgetKey,
+    queryFn: () => fetchWidgetData(widget.id),
+    staleTime: Infinity,
+  });
+  const refresh = useMutation({
+    mutationFn: () => refreshWidgetData(widget.id),
+    onSuccess: (found) => queryClient.setQueryData(widgetKey, found),
+  });
+  const data: IWidgetData | null = dataQuery.data ?? null;
+  const problem = dataQuery.isError
+    ? messageFor(dataQuery.error, "That chart could not be drawn.")
+    : refresh.isError
+      ? messageFor(refresh.error, "That chart could not be refreshed.")
+      : null;
 
   return (
     <WidgetCard
@@ -293,8 +253,8 @@ function DashboardWidget({
         <>
           <Button
             variant="ghost"
-            onClick={() => void refresh()}
-            disabled={refreshing}
+            onClick={() => refresh.mutate()}
+            disabled={refresh.isPending}
             className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-fg"
             title="Run the query now and cache it"
           >

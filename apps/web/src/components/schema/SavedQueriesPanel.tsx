@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconBookmark, IconHistory, IconTrash } from "@tabler/icons-react";
 import type { ISavedQuery } from "@heptadec/api/saved-query-contracts";
 import {
@@ -7,6 +8,7 @@ import {
   listSavedQueries,
   messageFor,
 } from "../../api";
+import { dataSourceKeys } from "../../lib/queries";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -16,68 +18,45 @@ import { VersionHistory } from "./VersionHistory";
 export function SavedQueriesPanel({
   sourceId,
   activeSql,
-  reloadToken,
   onLoad,
 }: {
   sourceId: string;
   activeSql: string;
-  reloadToken?: number;
   onLoad: (sql: string) => void;
 }) {
-  const [queries, setQueries] = useState<ISavedQuery[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const savedQueriesKey = dataSourceKeys.savedQueries(sourceId);
+  const queriesQuery = useQuery({
+    queryKey: savedQueriesKey,
+    queryFn: () => listSavedQueries(sourceId),
+  });
+  const queries = queriesQuery.data?.savedQueries ?? null;
+
   const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
 
-  const currentSource = useRef(sourceId);
-
-  useEffect(() => {
-    currentSource.current = sourceId;
-    setQueries(null);
-    reload(sourceId);
-  }, [sourceId, reloadToken]);
-
-  async function reload(forSource: string): Promise<void> {
-    try {
-      const found = await listSavedQueries(forSource);
-      if (currentSource.current === forSource) {
-        setQueries(found.savedQueries);
-      }
-    } catch (caught) {
-      if (currentSource.current === forSource) {
-        setProblem(messageFor(caught, "Saved queries could not be read."));
-      }
-    }
-  }
-
-  async function save(): Promise<void> {
-    setSaving(true);
-    setProblem(null);
-    try {
-      const { savedQuery } = await createSavedQuery(sourceId, {
-        name,
-        sql: activeSql,
-      });
-      setQueries((current) => [...(current ?? []), savedQuery]);
+  const save = useMutation({
+    mutationFn: () =>
+      createSavedQuery(sourceId, { name, sql: activeSql }),
+    onSuccess: () => {
       setName("");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That query could not be saved."));
-    } finally {
-      setSaving(false);
-    }
-  }
+      queryClient.invalidateQueries({ queryKey: savedQueriesKey });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (query: ISavedQuery) => deleteSavedQuery(query.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: savedQueriesKey }),
+  });
 
-  async function remove(query: ISavedQuery): Promise<void> {
-    try {
-      await deleteSavedQuery(query.id);
-      setQueries((current) =>
-        (current ?? []).filter((entry) => entry.id !== query.id),
-      );
-    } catch (caught) {
-      setProblem(messageFor(caught, "That query could not be deleted."));
-    }
-  }
+  const problem =
+    queriesQuery.isError
+      ? messageFor(queriesQuery.error, "Saved queries could not be read.")
+      : save.isError
+        ? messageFor(save.error, "That query could not be saved.")
+        : remove.isError
+          ? messageFor(remove.error, "That query could not be deleted.")
+          : null;
 
   return (
     <aside className="flex w-full flex-col gap-3 overflow-auto bg-card/40 px-4 py-4">
@@ -94,8 +73,10 @@ export function SavedQueriesPanel({
           className="h-8 px-2 text-xs"
         />
         <Button
-          onClick={() => void save()}
-          disabled={saving || name.trim().length === 0 || activeSql.trim().length === 0}
+          onClick={() => save.mutate()}
+          disabled={
+            save.isPending || name.trim().length === 0 || activeSql.trim().length === 0
+          }
           className="h-8 gap-1.5 text-xs"
         >
           <IconBookmark size={14} />
@@ -137,7 +118,7 @@ export function SavedQueriesPanel({
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => void remove(query)}
+                onClick={() => remove.mutate(query)}
                 className="h-7 w-7 shrink-0 p-0 text-red"
                 title={`Delete ${query.name}`}
               >
@@ -151,7 +132,9 @@ export function SavedQueriesPanel({
       {historyFor !== null ? (
         <VersionHistory
           savedQueryId={historyFor}
-          onRestored={() => void reload(sourceId)}
+          onRestored={() =>
+            queryClient.invalidateQueries({ queryKey: savedQueriesKey })
+          }
           onClose={() => setHistoryFor(null)}
         />
       ) : null}

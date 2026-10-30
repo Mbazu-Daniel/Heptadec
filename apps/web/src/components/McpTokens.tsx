@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconPlugConnected, IconTrash } from "@tabler/icons-react";
-import {
-  MCP_TOOLS,
-  type IMcpToken,
-} from "@heptadec/api/mcp-contracts";
+import { MCP_TOOLS } from "@heptadec/api/mcp-contracts";
 import {
   createMcpToken,
   listMcpTokens,
@@ -37,10 +35,15 @@ function when(iso: string | null): string {
 const DEFAULT_CAPABILITIES: string[] = [...MCP_TOOLS];
 
 export function McpTokens({ isOwner }: { isOwner: boolean }) {
-  const [tokens, setTokens] = useState<IMcpToken[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const tokensQuery = useQuery({
+    queryKey: ["mcp-tokens"],
+    queryFn: listMcpTokens,
+    enabled: isOwner,
+  });
+  const tokens = tokensQuery.data?.tokens;
+
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
@@ -54,53 +57,27 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
     );
   }
 
-  const reload = useCallback(async () => {
-    if (!isOwner) {
-      return;
-    }
-    setProblem(null);
-    try {
-      const listed = await listMcpTokens();
-      setTokens(listed.tokens);
-    } catch (caught) {
-      setProblem(messageFor(caught, "The MCP tokens could not be loaded."));
-    }
-  }, [isOwner]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  async function create(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    setBusy(true);
-    setProblem(null);
-    try {
-      const created = await createMcpToken(name, capabilities);
+  const createToken = useMutation({
+    mutationFn: () => createMcpToken(name, capabilities),
+    onSuccess: (created) => {
       setIssued(created.token);
       setName("");
       setCapabilities([...DEFAULT_CAPABILITIES]);
-      await reload();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That token could not be created."));
-    } finally {
-      setBusy(false);
-    }
-  }
+      queryClient.invalidateQueries({ queryKey: ["mcp-tokens"] });
+    },
+  });
 
-  async function revoke(tokenId: string): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setNotice(null);
-    try {
-      await revokeMcpToken(tokenId);
-      await reload();
+  const revokeToken = useMutation({
+    mutationFn: (tokenId: string) => revokeMcpToken(tokenId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["mcp-tokens"] });
       setNotice("That token was revoked.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That token could not be revoked."));
-    } finally {
-      setBusy(false);
-    }
+    },
+  });
+
+  function create(event: FormEvent): void {
+    event.preventDefault();
+    createToken.mutate();
   }
 
   function closeDialog(): void {
@@ -114,7 +91,21 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
         <div className="flex min-h-0 flex-1 flex-col pt-6">
           {isOwner ? (
             <>
-              {problem ? <Alert>{problem}</Alert> : null}
+              {tokensQuery.isError ? (
+                <Alert>
+                  {messageFor(tokensQuery.error, "The MCP tokens could not be loaded.")}
+                </Alert>
+              ) : null}
+              {createToken.isError ? (
+                <Alert>
+                  {messageFor(createToken.error, "That token could not be created.")}
+                </Alert>
+              ) : null}
+              {revokeToken.isError ? (
+                <Alert>
+                  {messageFor(revokeToken.error, "That token could not be revoked.")}
+                </Alert>
+              ) : null}
               {notice ? <Alert tone="success">{notice}</Alert> : null}
 
               <div className="px-6 pb-3">
@@ -124,7 +115,7 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
                 </Button>
               </div>
 
-              {tokens === null ? (
+              {tokens === undefined ? (
                 <p className="px-6 text-xs text-muted-foreground">Loading</p>
               ) : tokens.length === 0 ? (
                 <EmptyState
@@ -169,8 +160,8 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
                               <Button
                                 variant="ghost"
                                 className={`${SMALL_BUTTON_CLASSNAME} text-red`}
-                                disabled={busy}
-                                onClick={() => void revoke(token.id)}
+                                disabled={revokeToken.isPending}
+                                onClick={() => revokeToken.mutate(token.id)}
                               >
                                 <IconTrash size={14} strokeWidth={1.5} />
                                 Revoke
@@ -194,7 +185,7 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
             <CreateTokenDialog
               name={name}
               issued={issued}
-              busy={busy}
+              busy={createToken.isPending}
               onNameChange={setName}
               onCreate={create}
               onClose={closeDialog}
@@ -222,7 +213,7 @@ function CreateTokenDialog({
   issued: string | null;
   busy: boolean;
   onNameChange: (next: string) => void;
-  onCreate: (event: FormEvent) => Promise<void>;
+  onCreate: (event: FormEvent) => void;
   onClose: () => void;
   capabilities: string[];
   onToggleCapability: (tool: string) => void;

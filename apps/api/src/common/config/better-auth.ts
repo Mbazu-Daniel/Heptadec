@@ -6,7 +6,7 @@ import { apiKey } from "@better-auth/api-key";
 import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { config, socialCredentials } from "./env";
 import { requestOrigins } from "./origins";
-import { PROVIDERS, type ProviderId } from "../../modules/auth/contracts";
+import { PROVIDERS, isProviderId, type ProviderId } from "../../modules/auth/contracts";
 import { sendPasswordResetEmail } from "../../modules/auth/password-reset";
 import { ac, roles } from "../../modules/rbac/permissions";
 import { sendInvitationEmail } from "../../modules/invitation/mailer";
@@ -21,7 +21,10 @@ type SocialCredentials = { clientId: string; clientSecret: string };
 
 function socialProviders(): Partial<Record<ProviderId, SocialCredentials>> {
   const providers: Partial<Record<ProviderId, SocialCredentials>> = {};
-  for (const id of Object.keys(PROVIDERS) as ProviderId[]) {
+  for (const id of Object.keys(PROVIDERS)) {
+    if (!isProviderId(id)) {
+      continue;
+    }
     const { clientId, clientSecret } = socialCredentials(id);
     if (clientId && clientSecret) {
       providers[id] = { clientId, clientSecret };
@@ -149,10 +152,6 @@ function buildAuth(db: HeptadecDatabase) {
       database: {
         generateId: () => crypto.randomUUID(),
       },
-      // A cookie scoped to "localhost" is dropped by the browser on any other
-      // host, so a deployed origin keeps the cookie to itself. Only the local
-      // development origins share it, where the web app and the API answer on
-      // different ports.
       crossSubDomainCookies: {
         enabled: cookieHost.endsWith("localhost"),
         domain: cookieHost.endsWith("localhost") ? cookieHost : undefined,

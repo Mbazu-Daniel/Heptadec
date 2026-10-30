@@ -15,7 +15,7 @@ import {
 } from "./connection";
 import { jsonValue } from "../../common/http/json-value";
 
-export const STATEMENT_TIMEOUT_MS = 15000;
+export const STATEMENT_TIMEOUT_MS = 30_000;
 
 const MAX_SCAN_KEYS = 500;
 
@@ -47,8 +47,6 @@ export function toRows(
   return rows.map((row) => jsonValue(row) as Record<string, unknown>);
 }
 
-// MongoDB documents arrive holding BSON values, so their types have to be read
-// off the driver's classes rather than off JavaScript's.
 export function bsonTypeName(value: unknown): string {
   if (value === null) {
     return "null";
@@ -110,17 +108,12 @@ export function openMysql(connection: IStoredConnection) {
   return createConnection(mysqlOptions(connection));
 }
 
-// MongoDB takes a URL. A tls source is a direct host reached over TLS; the
-// driver resolves mongodb+srv itself, and a split host/port cannot round-trip
-// one, so only mongodb:// is accepted when the source is created.
 export function openMongo(connection: IStoredConnection): MongoClient {
   const { host, port } = tcpAddress(connection);
   const credentials =
     connection.username === null
       ? ""
       : `${encodeURIComponent(connection.username)}:${encodeURIComponent(connection.password ?? "")}@`;
-  // `options` is the connection string's own query — authSource, replicaSet —
-  // kept verbatim so a pasted URL keeps working.
   const query = new URLSearchParams(
     connection.options === null
       ? []
@@ -167,7 +160,6 @@ function libsqlOptions(connection: IStoredConnection) {
   return { url, ...(token === null ? {} : { authToken: token }) };
 }
 
-// A SQLite source is a file path on Node and a libsql:// URL on Workers.
 function sqliteUrl(connection: IStoredConnection): { url: string } {
   const database = databaseName(connection);
   return {

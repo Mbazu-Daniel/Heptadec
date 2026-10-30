@@ -1,10 +1,14 @@
 import { BadRequestException } from "../exceptions";
 
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function readBody(payload: unknown, message: string): Record<string, unknown> {
-  if (typeof payload !== "object" || payload === null) {
+  if (!isJsonObject(payload)) {
     throw new BadRequestException(message);
   }
-  return payload as Record<string, unknown>;
+  return payload;
 }
 
 export function readString(
@@ -36,6 +40,20 @@ export function readOptionalString(
   return readString(body, field, message, max);
 }
 
+export function readStringOrKeep(
+  body: Record<string, unknown>,
+  field: string,
+  keep: string,
+  message: string,
+  max?: number,
+): string {
+  const value = body[field];
+  if (value === undefined || value === null || value === "") {
+    return keep;
+  }
+  return readString(body, field, message, max);
+}
+
 export function readStringList(
   body: Record<string, unknown>,
   field: string,
@@ -46,10 +64,10 @@ export function readStringList(
   if (!Array.isArray(value) || value.length === 0) {
     throw new BadRequestException(message);
   }
-  for (const entry of value) {
+  return value.map((entry) => {
     if (typeof entry !== "string" || entry.length === 0 || entry.length > max) {
       throw new BadRequestException(message);
     }
-  }
-  return value as string[];
+    return entry;
+  });
 }

@@ -1,4 +1,5 @@
 import { BadRequestException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import { bsonTypeName, openMongo, toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IMongoPipeline, IQueryResponse } from "./contracts";
@@ -8,10 +9,10 @@ import { assertMongoReads } from "./read-policy";
 const MAX_STAGES = 32;
 
 export function readMongoPipeline(value: unknown): IMongoPipeline {
-  if (typeof value !== "object" || value === null) {
+  if (!isJsonObject(value)) {
     throw new BadRequestException("A pipeline is required");
   }
-  const body = value as Record<string, unknown>;
+  const body = value;
 
   const collection = body.collection;
   if (typeof collection !== "string" || collection.trim().length === 0) {
@@ -31,18 +32,20 @@ export function readMongoPipeline(value: unknown): IMongoPipeline {
     );
   }
 
+  const checked: Record<string, unknown>[] = [];
   for (const stage of stages) {
-    if (typeof stage !== "object" || stage === null || Array.isArray(stage)) {
+    if (!isJsonObject(stage)) {
       throw new BadRequestException("Each pipeline stage must be an object");
     }
     if (Object.keys(stage).length === 0) {
       throw new BadRequestException("A pipeline stage cannot be empty");
     }
+    checked.push(stage);
   }
 
   return {
     collection: collection.trim(),
-    pipeline: stages as Record<string, unknown>[],
+    pipeline: checked,
   };
 }
 

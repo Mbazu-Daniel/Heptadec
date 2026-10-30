@@ -6,6 +6,7 @@ import {
   libsqlClientFor,
   openMysql,
   toRows,
+  STATEMENT_TIMEOUT_MS,
 } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import { asRelational } from "../data-source/connection";
@@ -28,14 +29,6 @@ type SqlRunner = (
   statement: string,
 ) => Promise<IQueryResponse>;
 
-/**
- * Which dialect runs a statement, not which engine asked for it: MariaDB speaks
- * MySQL and libsql speaks SQLite, so an engine inherits its runner by naming a
- * dialect in the catalog rather than by being listed here.
- *
- * Keyed by the dialect union, so a dialect added later stops compiling until
- * its runner exists, instead of reaching a throwing default at runtime.
- */
 const SQL_RUNNERS: Record<SqlDialect, SqlRunner> = {
   postgres: (connection, statement) =>
     runPostgresQuery(asRelational(connection), statement),
@@ -73,6 +66,9 @@ async function runMysqlStatement(
   const client = await openMysql(connection);
   const startedAt = Date.now();
   try {
+    if (connection.readOnly) {
+      await client.query("SET SESSION TRANSACTION READ ONLY");
+    }
     const [rows, fields] = await client.query(statement);
     const typed = toRows(rows as Array<Record<string, unknown>>);
     const budgeted = applyBudget(typed);
@@ -133,11 +129,14 @@ async function runSqliteStatement(
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    if (connection.readOnly) {
+      await client.execute("PRAGMA query_only = ON");
+    }
     const run = client.execute(statement);
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => reject(new Error("statement timeout")),
-        15000,
+        STATEMENT_TIMEOUT_MS,
       );
     });
     const result = await Promise.race([run, timeout]);

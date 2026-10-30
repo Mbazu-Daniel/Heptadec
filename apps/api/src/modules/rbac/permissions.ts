@@ -36,5 +36,5 @@ export const viewer = ac.newRole({});
 export const roles = { owner, editor, viewer };
 
 export function isRole(value: string): value is Role {
-  return (ROLES as readonly string[]).includes(value);
+  return ROLES.some((role) => role === value);
 }

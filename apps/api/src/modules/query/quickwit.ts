@@ -1,4 +1,5 @@
 import { BadRequestException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import { quickwitSearch } from "../data-source/quickwit-client";
 import { toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
@@ -6,10 +7,10 @@ import type { ISearchStatement, IQueryResponse } from "./contracts";
 import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
 
 export function readSearchStatement(value: unknown): ISearchStatement {
-  if (typeof value !== "object" || value === null) {
+  if (!isJsonObject(value)) {
     throw new BadRequestException("A search is required");
   }
-  const body = value as Record<string, unknown>;
+  const body = value;
 
   const index = body.index;
   if (typeof index !== "string" || index.trim().length === 0) {

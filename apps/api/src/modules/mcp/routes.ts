@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { apikey } from "@heptadec/db";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { IAuthVars } from "../../common/middleware/require-session";
@@ -123,6 +124,20 @@ export function mcpRoutes(): Hono<IAuthVars> {
     const organization = activeOrganization(c);
     requireOwner(c, "Only owners can revoke MCP tokens");
 
+    const owned = await organization.db
+      .select({ id: apikey.id })
+      .from(apikey)
+      .where(
+        and(
+          eq(apikey.id, c.req.param("id")),
+          organization.where(apikey.referenceId),
+        ),
+      )
+      .limit(1);
+    if (owned.length === 0) {
+      throw new NotFoundException("That MCP token does not exist");
+    }
+
     const result = await authFor(organization.db).api.updateApiKey({
       body: {
         configId: MCP_CONFIG_ID,
@@ -131,10 +146,6 @@ export function mcpRoutes(): Hono<IAuthVars> {
       },
       headers: c.req.raw.headers,
     });
-
-    if (result.referenceId !== organization.organizationId) {
-      throw new NotFoundException("That MCP token does not exist");
-    }
 
     await recordAudit(c, {
       organizationId: organization.organizationId,
@@ -182,7 +193,7 @@ function toToken(row: {
 }): IMcpToken {
   return {
     id: row.id,
-    name: row.name ?? "",
+    name: row.name ?? "Unnamed token",
     createdAt: row.createdAt.toISOString(),
     lastRequest: row.lastRequest?.toISOString() ?? null,
     enabled: row.enabled,
@@ -195,10 +206,12 @@ function readCapabilities(raw: Record<string, unknown>): string[] {
   if (!Array.isArray(capabilities) || capabilities.length === 0) {
     throw new BadRequestException("At least one capability is required");
   }
-  if (capabilities.some((capability) => typeof capability !== "string")) {
-    throw new BadRequestException("Capabilities must be text");
-  }
-  const list = capabilities as string[];
+  const list = capabilities.map((capability) => {
+    if (typeof capability !== "string") {
+      throw new BadRequestException("Capabilities must be text");
+    }
+    return capability;
+  });
   assertValidCapabilities(list);
   return list;
 }

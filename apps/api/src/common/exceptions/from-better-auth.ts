@@ -4,7 +4,7 @@ import { ForbiddenException } from "./forbidden";
 import { BadRequestException } from "./bad-request";
 import { UnauthorizedException } from "./unauthorized";
 
-function mapErrorCode(code: string): string {
+function mapErrorCode(code: string): string | undefined {
   const messages: Record<string, string> = {
     USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "An account with this email already exists",
     USER_ALREADY_EXISTS: "An account with this email already exists",
@@ -23,12 +23,15 @@ function mapErrorCode(code: string): string {
     STATE_INVALID: "Sign in session expired. Please try again",
     STATE_MISMATCH: "Sign in session mismatch. Please try again",
   };
-  return messages[code] ?? "";
+  return messages[code];
 }
 
 export function fromBetterAuth(error: APIError): ApiException | null {
-  const code = error.body?.code as string | undefined;
-  const message = mapErrorCode(code ?? "") ?? error.body?.message ?? error.message;
+  const code = error.body?.code;
+  const message =
+    (typeof code === "string" ? mapErrorCode(code) : undefined) ??
+    error.body?.message ??
+    error.message;
 
   if (error.statusCode === 401 || error.status === "UNAUTHORIZED") {
     return new UnauthorizedException(message);

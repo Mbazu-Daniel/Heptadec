@@ -21,7 +21,7 @@ import {
   NotFoundException,
 } from "../../common/exceptions";
 import { driverFailure } from "../../common/driver-error";
-import { readBody, readString } from "../../common/http/body";
+import { readBody, readString, readStringOrKeep } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
@@ -46,6 +46,7 @@ import type {
   IDeleteAiProviderResponse,
   IGenerateQueryResponse,
   IListModelsResponse,
+  IUpdateAiProviderResponse,
 } from "./contracts";
 
 const { aiProvider, aiChat, dataSource } = schema;
@@ -105,7 +106,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
     const isDefault = payload.isDefault === true;
 
-    const baseUrl = providerBaseUrl(spec, payload);
+    const baseUrl = providerBaseUrl(spec, payload, null);
 
     const now = new Date();
     const [row] = await organization.db.transaction(async (tx) => {
@@ -113,7 +114,12 @@ export function aiRoutes(): Hono<IAuthVars> {
         await tx
           .update(aiProvider)
           .set({ isDefault: false, updatedAt: now })
-          .where(organization.where(aiProvider.organizationId));
+          .where(
+            and(
+              organization.where(aiProvider.organizationId),
+              eq(aiProvider.isDefault, true),
+            ),
+          );
       }
       return tx
         .insert(aiProvider)
@@ -193,6 +199,95 @@ export function aiRoutes(): Hono<IAuthVars> {
     return c.json(body);
   });
 
+  routes.patch("/api/ai/providers/:id", requireSession, async (c) => {
+    const organization = activeOrganization(c);
+    requireOwner(c, "Only owners can manage AI providers");
+
+    const found = await oneRow(organization.db, aiProvider, c.req.param("id"), organization);
+    if (found === undefined) {
+      throw new NotFoundException("That provider does not exist");
+    }
+
+    const payload = readBody(await c.req.json(), "A provider is required");
+
+    const name = readStringOrKeep(payload, "name", found.name, "Give the provider a name", MAX_NAME);
+    const provider = readStringOrKeep(payload, "provider", found.provider, "Choose a provider", 40);
+    const spec = providerSpec(provider);
+    if (spec === null) {
+      throw new BadRequestException("That provider is not one we know");
+    }
+    if (!speaksProtocol(spec)) {
+      throw new BadRequestException(
+        `${spec.label} is not supported yet — its API does not speak the protocol this app speaks`,
+      );
+    }
+    const model = readStringOrKeep(payload, "model", found.model, "Name the model to use", MAX_MODEL);
+    const apiKey = readStringOrKeep(payload, "apiKey", "", "Paste the provider's API key", 400);
+    const isDefault =
+      typeof payload.isDefault === "boolean" ? payload.isDefault : found.isDefault;
+    const baseUrl = providerBaseUrl(
+      spec,
+      payload,
+      provider === found.provider ? found.baseUrl : null,
+    );
+
+    const now = new Date();
+    await organization.db.transaction(async (tx) => {
+      if (isDefault) {
+        await tx
+          .update(aiProvider)
+          .set({ isDefault: false, updatedAt: now })
+          .where(
+            and(
+              organization.where(aiProvider.organizationId),
+              eq(aiProvider.isDefault, true),
+            ),
+          );
+      }
+      await tx
+        .update(aiProvider)
+        .set({
+          name,
+          provider,
+          model,
+          baseUrl,
+          apiKey: apiKey === "" ? found.apiKey : await encryptSecret(apiKey),
+          isDefault,
+          updatedAt: now,
+        })
+        .where(
+          and(eq(aiProvider.id, found.id), organization.where(aiProvider.organizationId)),
+        );
+    });
+
+    const updated = await oneRow(organization.db, aiProvider, found.id, organization);
+    if (updated === undefined) {
+      throw new NotFoundException("That provider could not be read after update");
+    }
+
+    const body: IUpdateAiProviderResponse = {
+      id: updated.id,
+      name: updated.name,
+      provider: updated.provider,
+      providerLabel: spec.label,
+      model: updated.model,
+      baseUrl: updated.baseUrl,
+      isDefault: updated.isDefault,
+      createdAt: updated.createdAt.toISOString(),
+    };
+
+    await recordAudit(c, {
+      organizationId: organization.organizationId,
+      event: "ai_provider.updated",
+      targetKind: "ai_provider",
+      targetId: found.id,
+      targetLabel: found.name,
+      detail: `${spec.label} · ${model}`,
+    });
+
+    return c.json(body);
+  });
+
   routes.get("/api/ai/providers/:id/models", requireSession, async (c) => {
     const organization = activeOrganization(c);
     requireOwner(c, "Only owners can manage AI providers");
@@ -228,7 +323,7 @@ export function aiRoutes(): Hono<IAuthVars> {
     const apiKey = readString(payload, "apiKey", "Paste the provider's API key", 400);
     const config: IModelConfig = {
       provider,
-      baseUrl: providerBaseUrl(spec, payload),
+      baseUrl: providerBaseUrl(spec, payload, null),
       apiKey,
     };
 
@@ -390,19 +485,24 @@ export function aiRoutes(): Hono<IAuthVars> {
   return routes;
 }
 
-/**
- * The base URL a spec talks to, from the request when the spec has none of its
- * own. Creation and the model listing share it so a URL that saves is a URL
- * that can be listed.
- */
 function providerBaseUrl(
   spec: IAiProviderSpec,
   payload: Record<string, unknown>,
+  keep: string | null,
 ): string | null {
   if (!spec.needsBaseUrl) {
     return baseUrlFor(spec, null);
   }
-  const given = readString(payload, "baseUrl", "That provider needs a base URL", 200);
+  const given = readStringOrKeep(
+    payload,
+    "baseUrl",
+    keep ?? "",
+    "That provider needs a base URL",
+    200,
+  );
+  if (given === "") {
+    throw new BadRequestException("That provider needs a base URL");
+  }
   if (!/^https?:\/\//.test(given)) {
     throw new BadRequestException("The base URL must start with http:// or https://");
   }
@@ -431,15 +531,18 @@ function optionalIdList(
   field: string,
 ): string[] {
   const value = payload[field];
-  if (!Array.isArray(value)) {
+  if (value === undefined) {
     return [];
   }
-  for (const entry of value) {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException("That data source id is not valid");
+  }
+  return value.map((entry) => {
     if (typeof entry !== "string" || entry.length === 0 || entry.length > 64) {
       throw new BadRequestException("That data source id is not valid");
     }
-  }
-  return value as string[];
+    return entry;
+  });
 }
 
 async function routeToSource(

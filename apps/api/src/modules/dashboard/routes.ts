@@ -34,7 +34,11 @@ import {
   toDashboard,
   toWidget,
 } from "./detail";
-import type { ChartType, ICreateDashboardRequest } from "./contracts";
+import {
+  isChartType,
+  type ChartType,
+  type ICreateDashboardRequest,
+} from "./contracts";
 
 const MAX_NAME = 120;
 
@@ -44,17 +48,15 @@ const MAX_COLUMN = 128;
 
 const MAX_SOURCE_ID = 64;
 
-const CHART_TYPES = ["bar", "line", "pie"] as const;
-
 function readChartType(
   body: Record<string, unknown>,
   message: string,
 ): ChartType {
   const value = readString(body, "chartType", message, MAX_COLUMN);
-  if (!(CHART_TYPES as readonly string[]).includes(value)) {
+  if (!isChartType(value)) {
     throw new BadRequestException(message);
   }
-  return value as ChartType;
+  return value;
 }
 
 export function dashboardRoutes(): Hono<IAuthVars> {

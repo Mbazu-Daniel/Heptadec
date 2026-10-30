@@ -35,7 +35,13 @@ async function startProvider(): Promise<{
           object: "chat.completion.chunk",
           created: 1,
           model: "test",
-          choices: [{ index: 0, delta: { content }, finish_reason: null }],
+          choices: [
+            {
+              index: 0,
+              delta: { content },
+              finish_reason: index >= parts.length ? "stop" : null,
+            },
+          ],
         })}\n\n`,
       );
       setImmediate(push);

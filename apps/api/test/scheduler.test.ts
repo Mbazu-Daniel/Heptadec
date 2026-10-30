@@ -230,8 +230,6 @@ it("evaluates the alert rules watching a query when its job runs", async () => {
 
   await runDueJobs(db, new Date());
 
-  // Nothing is connected to receive it, so the breach is recorded rather than
-  // sent — which is the whole of what a run does about alerts.
   const rows = await db
     .select()
     .from(alertDelivery)

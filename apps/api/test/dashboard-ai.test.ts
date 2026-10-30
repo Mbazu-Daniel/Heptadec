@@ -114,9 +114,6 @@ async function startProvider(
       const body = JSON.parse(Buffer.concat(incoming).toString()) as {
         stream?: boolean;
       };
-      // A plan is asked for and answered in one piece, so this answers the way an
-      // OpenAI-compatible provider does: a stream when the call asks for one, a
-      // single completion when it does not.
       if (body.stream !== true) {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
@@ -166,7 +163,13 @@ async function startProvider(
             object: "chat.completion.chunk",
             created: 1,
             model: "test",
-            choices: [{ index: 0, delta: { content }, finish_reason: null }],
+            choices: [
+              {
+                index: 0,
+                delta: { content },
+                finish_reason: index >= parts.length ? "stop" : null,
+              },
+            ],
           })}\n\n`,
         );
         setImmediate(push);

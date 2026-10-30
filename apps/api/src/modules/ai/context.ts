@@ -3,16 +3,6 @@ import type { IStoredConnection } from "../data-source/connection";
 import { listObjects, previewObject } from "../data-source/preview";
 import { MAX_SCAN_KEYS } from "../data-source/clients";
 
-const CHARACTER_BUDGET = 12_000;
-
-const MAX_TABLES = 120;
-
-/**
- * Format a described structure as the "schema" half of an AI prompt. The caller
- * has already read the real structure, so this only describes what it found and
- * stays within a character budget: a source with hundreds of tables would
- * otherwise crowd out the question itself.
- */
 export function schemaContext(schema: ISchemaResponse): string {
   const lines: string[] = [
     `Database: ${schema.database}`,
@@ -20,27 +10,15 @@ export function schemaContext(schema: ISchemaResponse): string {
     "",
   ];
 
-  for (const table of schema.tables.slice(0, MAX_TABLES)) {
+  for (const table of schema.tables) {
     const columns = table.columns
       .map((column) => `${column.name}: ${column.dataType}`)
       .join(", ");
-    const described = `${table.name}(${columns})`;
-    if (lines.join("\n").length + described.length > CHARACTER_BUDGET) {
-      lines.push(
-        `-- ... ${schema.tables.length - MAX_TABLES} more omitted for length`,
-      );
-      break;
-    }
-    lines.push(described);
+    lines.push(`${table.name}(${columns})`);
   }
 
   return lines.join("\n");
 }
-/**
- * Redis has no tables, so what the model is shown is the key space that was
- * actually observed: the prefixes in use, how many keys each holds, and a
- * sample key per prefix so it can pick a real one rather than invent one.
- */
 export async function redisContext(connection: IStoredConnection): Promise<string> {
   const keys = await listObjects(connection);
   const prefixes = new Map<string, string[]>();
@@ -73,11 +51,6 @@ export async function redisContext(connection: IStoredConnection): Promise<strin
   return lines.join("\n");
 }
 
-/**
- * Quickwit describes itself with indexes and fields, not tables. The field names
- * come from one cheap probe search per index, so the model is given fields that
- * really exist rather than ones it guesses at.
- */
 export async function quickwitContext(connection: IStoredConnection): Promise<string> {
   const indexes = await listObjects(connection);
   const probed = await Promise.all(

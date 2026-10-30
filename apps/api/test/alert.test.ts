@@ -148,12 +148,6 @@ async function rule(
   });
 }
 
-/**
- * Asks the app to check a saved query's alerts. This is what a scheduled run
- * does about them, so a breach reaching every channel is driven through the
- * app's own seam rather than by backdating a job's `nextRunAt` and calling the
- * tick by hand.
- */
 async function checkNow(
   cookie: string,
   savedQueryId: string,
@@ -266,7 +260,6 @@ it("fires a breached threshold and reaches every channel that is connected", asy
     expect(slack.message).toBe(payload.text);
     expect(rows.find((row) => row.channel === "email")!.status).toBe("failed");
 
-    // The answer is the row it wrote, not a second account of the same send.
     expect(reported.map((entry) => entry.channel).sort()).toEqual(["email", "slack"]);
     expect(reported.find((entry) => entry.channel === "slack")!.status).toBe("sent");
     expect(reported.find((entry) => entry.channel === "slack")!.message).toBe(payload.text);
@@ -479,8 +472,6 @@ it("marks a rule whose query no schedule runs, so it does not fire on its own", 
   const unscheduled = alertRules.find((entry) => entry.id === body.alertRule.id);
   expect(unscheduled?.scheduled).toBe(false);
 
-  // Scheduling the query is what makes the rule fire on its own, and nothing
-  // else changes.
   const job = await request("/api/scheduled-jobs", {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },

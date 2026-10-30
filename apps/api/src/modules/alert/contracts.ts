@@ -6,7 +6,7 @@ export const ALERT_OPERATORS = [">", ">=", "<", "<=", "="] as const;
 export type AlertOperator = (typeof ALERT_OPERATORS)[number];
 
 export function isAlertOperator(value: string): value is AlertOperator {
-  return (ALERT_OPERATORS as readonly string[]).includes(value);
+  return ALERT_OPERATORS.some((operator) => operator === value);
 }
 
 export interface IAlertRule {
@@ -16,11 +16,6 @@ export interface IAlertRule {
   column: string;
   operator: AlertOperator;
   threshold: number;
-  /**
-   * Whether a scheduled job runs this rule's query. A rule with no schedule
-   * never fires on its own: it is only ever evaluated when someone asks for a
-   * check, so it sits there looking live and delivers nothing by itself.
-   */
   scheduled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -60,10 +55,6 @@ export interface ICreateAlertRuleRequest {
   threshold: number;
 }
 
-/**
- * A full replacement of an alert rule's watch. The query it reads is the
- * rule's identity and cannot change here.
- */
 export interface IUpdateAlertRuleRequest {
   name: string;
   column: string;

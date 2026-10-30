@@ -19,6 +19,7 @@ import {
   type IOrganizationScope,
 } from "../../common/session/current-organization";
 import {
+  ApiException,
   BadRequestException,
   ForbiddenException,
   NotFoundException,
@@ -28,6 +29,7 @@ import {
   logDriverFailure,
 } from "../../common/driver-error";
 import {
+  isJsonObject,
   readBody,
   readOptionalString,
   readString,
@@ -58,9 +60,10 @@ import {
   readDashboardSources,
   readWidgets,
 } from "./detail";
-import type {
-  ChartType,
-  IAddChartAction,
+import {
+  isChartType,
+  type ChartType,
+  type IAddChartAction,
   IApplyProposalResponse,
   IAppliedAction,
   IAskDashboardResponse,
@@ -92,7 +95,7 @@ const MAX_CHARTS = 16;
 
 const MAX_ACTIONS = 16;
 
-const CHART_TYPES = ["bar", "line", "pie"] as const;
+type IPostgresSource = typeof dataSource.$inferSelect;
 
 interface IChartDraft {
   sourceId: string;
@@ -400,9 +403,7 @@ function dashboardAiRoutes() {
 }
 
 function readChartType(raw: unknown): ChartType | null {
-  return typeof raw === "string" && (CHART_TYPES as readonly string[]).includes(raw)
-    ? (raw as ChartType)
-    : null;
+  return typeof raw === "string" && isChartType(raw) ? raw : null;
 }
 
 function readId(raw: unknown): string | null {
@@ -424,10 +425,7 @@ function readJsonObject(text: string): Record<string, unknown> | null {
   }
   try {
     const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return null;
-    }
-    return parsed as Record<string, unknown>;
+    return isJsonObject(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -469,10 +467,10 @@ async function buildChart(
   raw: unknown,
   allowed: DataSourceRow[],
 ): Promise<IChartDraft> {
-  if (typeof raw !== "object" || raw === null) {
+  if (!isJsonObject(raw)) {
     throw new BadRequestException("That chart was not readable");
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
 
   const sourceId = readId(entry.sourceId);
   const source =
@@ -750,10 +748,10 @@ ${question}`;
 }
 
 function readAction(raw: unknown): IProposalAction | null {
-  if (typeof raw !== "object" || raw === null) {
+  if (!isJsonObject(raw)) {
     return null;
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
 
   if (entry.kind === "remove") {
     const widgetId = readId(entry.widgetId);
@@ -858,14 +856,18 @@ function readProposal(
 
 function skippedFor(caught: unknown, raw: unknown): string {
   const title =
-    typeof raw === "object" && raw !== null && "title" in raw
-      ? String((raw as Record<string, unknown>).title)
-      : "a chart";
+    isJsonObject(raw) && typeof raw.title === "string" ? raw.title : "a chart";
   return `${title} — ${messageOf(caught)}`;
 }
 
 function messageOf(caught: unknown): string {
-  return caught instanceof Error ? caught.message : "That change failed";
+  if (caught instanceof ApiException) {
+    return caught.message;
+  }
+  return (
+    driverFailure(caught, "apply that dashboard change") ??
+    "That change was refused"
+  );
 }
 
 export { dashboardAiRoutes };

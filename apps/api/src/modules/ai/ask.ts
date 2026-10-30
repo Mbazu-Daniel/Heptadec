@@ -19,23 +19,11 @@ import {
 export interface IGeneratedQuery {
   sql: string | null;
   pipeline: IMongoPipeline | null;
-  /** A Redis command, which is what that engine is asked for instead of SQL. */
   command: string | null;
-  /** A Quickwit search, which is what a search source is asked for. */
   search: ISearchStatement | null;
-  /**
-   * What came back, in the three shapes it can take.
-   *
-   * A model that declines is not a model that answers wrongly, and telling the
-   * two apart is the difference between "that question has no answer in your
-   * data" and "try asking again" — so a statement that arrived in a shape the
-   * server will not run is reported as its own outcome rather than folded into
-   * a refusal.
-   */
   outcome: "answered" | "declined" | "unreadable";
 }
 
-/** The statement part of an answer, before the outcome is decided. */
 type IDraft = Pick<IGeneratedQuery, "sql" | "pipeline" | "command" | "search">;
 
 const REFUSED: IDraft = {
@@ -111,8 +99,6 @@ const ASK_STYLES: Record<
   },
 };
 
-/** The style for asking this engine a question, or null when the engine
- * cannot be asked. */
 export function askStyleOf(engine: IEngineSpec): IAskStyle | null {
   const language = engine.queryLanguage;
   if (language === null) {
@@ -142,9 +128,6 @@ async function storedSchemaContext(request: IAskRequest): Promise<string> {
   );
 }
 
-/** Read a statement the model wrote, through the rules its language runs:
- * a refusal is a refusal, an unreadable shape is its own outcome, and
- * everything else becomes the draft the ask route stores and hands over. */
 function readAnswer(
   text: string,
   readDraft: (cleaned: string) => IDraft | null,
@@ -162,12 +145,6 @@ function readAnswer(
     : { ...draft, outcome: "answered" };
 }
 
-/**
- * Read a statement the model wrote as JSON, through the same reader a browser's
- * would pass through — so a search or a pipeline the model produced is held to
- * exactly the rules one typed by hand is, rather than to a second copy of them
- * that can drift.
- */
 function readJsonAnswer<T>(text: string, read: (value: unknown) => T): T | null {
   try {
     return read(JSON.parse(text));

@@ -17,16 +17,25 @@ const DEFAULT_BASE_URLS: Record<string, string> = {
   ollama: "http://localhost:11434/v1",
 };
 
+interface IModelsDevModel {
+  name?: string | null;
+}
+
 interface IModelsDevProvider {
   id: string;
   name: string;
   api?: string | null;
   npm?: string | null;
-  models?: Record<string, unknown> | null;
+  models?: Record<string, IModelsDevModel> | null;
 }
 
 function protocolFor(npm: string | null | undefined): AiProtocol | "anthropic" {
   return npm === "@ai-sdk/anthropic" ? "anthropic" : "openai-compatible";
+}
+
+export interface IAiProviderModel {
+  id: string;
+  label: string;
 }
 
 export interface IAiProviderSpec {
@@ -35,10 +44,8 @@ export interface IAiProviderSpec {
   baseUrl: string;
   needsBaseUrl: boolean;
   exampleBaseUrl?: string;
-  /** The wire protocol this provider speaks. */
   protocol: AiProtocol | "anthropic";
-  /** Static model ids from the catalog, so the form can offer them without a key. */
-  models?: readonly string[];
+  models?: readonly IAiProviderModel[];
 }
 
 function toSpec(provider: IModelsDevProvider): IAiProviderSpec {
@@ -49,13 +56,17 @@ function toSpec(provider: IModelsDevProvider): IAiProviderSpec {
     baseUrl,
     needsBaseUrl: baseUrl === "",
     protocol: protocolFor(provider.npm),
-    models: provider.models ? Object.keys(provider.models) : undefined,
+    models:
+      provider.models === null || provider.models === undefined
+        ? undefined
+        : Object.entries(provider.models).map(([id, model]) => ({
+            id,
+            label: model.name || id,
+          })),
   };
 }
 
-export const AI_PROVIDERS: IAiProviderSpec[] = (
-  Object.values(modelsApi) as IModelsDevProvider[]
-)
+export const AI_PROVIDERS: IAiProviderSpec[] = Object.values(modelsApi)
   .map(toSpec)
   .concat([
     {

@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { AiProviderRow } from "@heptadec/db";
 import { decryptSecret } from "../data-source/secret";
 import { providerEndpointFor } from "./transport";
@@ -6,15 +7,6 @@ import { providerEndpointFor } from "./transport";
 const ANSWER_TIMEOUT_MS = 60_000;
 
 const PLAN_TIMEOUT_MS = 180_000;
-
-/**
- * Whether a stored model id already carries the `provider/model` namespace Mastra
- * expects. A model named for a custom endpoint usually has none; one saved from a
- * router-style provider (`ollama/qwen2`) keeps what it was saved as.
- */
-function isNamespaced(model: string): model is `${string}/${string}` {
-  return model.includes("/");
-}
 
 async function answerAgent(
   row: AiProviderRow,
@@ -26,11 +18,11 @@ async function answerAgent(
     id: "answer-agent",
     name: "Answer Agent",
     instructions: system,
-    model: {
-      id: isNamespaced(row.model) ? row.model : `custom/${row.model}`,
-      url: endpoint.baseUrl,
+    model: createOpenAICompatible({
+      name: endpoint.spec.id,
       apiKey,
-    },
+      baseURL: endpoint.baseUrl,
+    }).chatModel(row.model),
   });
 }
 
@@ -46,8 +38,16 @@ async function* streamWith(
     modelSettings: { maxRetries: 0 },
   });
 
-  for await (const chunk of stream.textStream) {
-    yield chunk;
+  for await (const chunk of stream.fullStream) {
+    if (chunk.type === "text-delta") {
+      yield chunk.payload.text;
+      continue;
+    }
+    if (chunk.type === "error") {
+      throw chunk.payload.error instanceof Error
+        ? chunk.payload.error
+        : new Error("the provider request failed");
+    }
   }
 }
 

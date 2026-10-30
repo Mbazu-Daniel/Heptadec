@@ -303,7 +303,7 @@ export async function removeAiProvider(providerId: string): Promise<void> {
   await request(`/api/ai/providers/${providerId}`, "DELETE");
 }
 
-export interface IStreamHandlers<T> {
+export interface IStreamHandlers {
   onStatus?: (message: string) => void;
   onDelta?: (text: string) => void;
   onSkipped?: (titles: string[]) => void;
@@ -313,7 +313,7 @@ export interface IStreamHandlers<T> {
 async function streamRequest<T>(
   path: string,
   body: unknown,
-  handlers: IStreamHandlers<T>,
+  handlers: IStreamHandlers,
 ): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
@@ -370,7 +370,7 @@ async function streamRequest<T>(
   return finished;
 }
 
-export type IAskHandlers = IStreamHandlers<IGenerateQueryResponse>;
+export type IAskHandlers = IStreamHandlers;
 
 export async function askQuestion(
   dataSourceIds: readonly string[],
@@ -709,7 +709,7 @@ export function createDashboard(
 
 export function generateDashboard(
   input: { name: string; dataSourceIds: string[]; brief?: string },
-  handlers: IStreamHandlers<IGenerateDashboardResponse>,
+  handlers: IStreamHandlers,
 ): Promise<IGenerateDashboardResponse> {
   return streamRequest("/api/dashboards/generate", input, handlers);
 }
@@ -717,7 +717,7 @@ export function generateDashboard(
 export function askDashboard(
   dashboardId: string,
   question: string,
-  handlers: IStreamHandlers<IAskDashboardResponse>,
+  handlers: IStreamHandlers,
 ): Promise<IAskDashboardResponse> {
   return streamRequest(
     `/api/dashboards/${dashboardId}/ask`,

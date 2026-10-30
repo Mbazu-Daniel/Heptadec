@@ -16,6 +16,7 @@ import {
 import { Alert, EmptyState } from "./ui/feedback";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { draftOf } from "../lib/answer";
 import {
   SMALL_BUTTON_CLASSNAME,
   TABLE_CELL_CLASSNAME,
@@ -194,15 +195,16 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     setDrafted(false);
     try {
       const answer = await askQuestion([source.id], question.trim(), undefined, {});
-      if (answer.command !== null) {
-        setCommand(answer.command);
+      const draft = draftOf(answer);
+      if (draft.kind === "command") {
+        setCommand(draft.command);
         setDrafted(true);
         return;
       }
-      if (answer.search !== null) {
-        setSelected(answer.search.index);
-        setSearch(answer.search.query);
-        setAppliedSearch(answer.search.query);
+      if (draft.kind === "search") {
+        setSelected(draft.search.index);
+        setSearch(draft.search.query);
+        setAppliedSearch(draft.search.query);
         setDrafted(true);
         return;
       }

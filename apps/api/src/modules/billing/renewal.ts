@@ -1,9 +1,9 @@
-import { desc, eq } from "drizzle-orm";
-import { billingCustomer, billingPayment, type HeptadecDatabase } from "@heptadec/db";
-import { isBillingCadence } from "./contracts";
+import { eq } from "drizzle-orm";
+import { billingCustomer, type HeptadecDatabase } from "@heptadec/db";
 import { billingConfigured, priceFor } from "./catalog";
 import { createRenewalCharge } from "./client";
 import { entitlementFor } from "./entitlement";
+import { currentPeriod, paymentMetadata } from "./period";
 
 const PENDING_CHARGE_TTL_MS = 60 * 60 * 1000;
 
@@ -37,19 +37,8 @@ export async function checkBillingRenewals(
       continue;
     }
 
-    const latest = await db
-      .select({ id: billingPayment.id, cadence: billingPayment.cadence })
-      .from(billingPayment)
-      .where(eq(billingPayment.organizationId, customer.organizationId))
-      .orderBy(desc(billingPayment.createdAt))
-      .limit(1);
-
-    const paid = latest[0];
-    if (
-      paid === undefined ||
-      paid.cadence === null ||
-      !isBillingCadence(paid.cadence)
-    ) {
+    const period = await currentPeriod(db, customer.organizationId);
+    if (period === null) {
       continue;
     }
 
@@ -57,12 +46,9 @@ export async function checkBillingRenewals(
       const charge = await createRenewalCharge({
         customerId: customer.customerId,
         paymentMethodId: customer.paymentMethodId,
-        amount: priceFor(paid.cadence),
-        reference: `renewal-${customer.organizationId}-${paid.id}`,
-        metadata: {
-          organization_id: customer.organizationId,
-          cadence: paid.cadence,
-        },
+        amount: priceFor(period.cadence),
+        reference: `renewal-${customer.organizationId}-${period.paymentId}`,
+        metadata: paymentMetadata(customer.organizationId, period.cadence),
       });
       if (charge.status === "failed") {
         await stopAutoRenew(db, customer.id, now);

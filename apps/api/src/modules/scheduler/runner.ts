@@ -1,5 +1,9 @@
 import { and, eq, isNull, lte, or } from "drizzle-orm";
-import { scheduledJob, type HeptadecDatabase } from "@heptadec/db";
+import {
+  scheduledJob,
+  schedulerLease,
+  type HeptadecDatabase,
+} from "@heptadec/db";
 import { organizationScope } from "../../common/session/current-organization";
 import { checkRunAlerts } from "../alert/evaluate";
 import { entitlementFor, type IEntitlement } from "../billing/entitlement";
@@ -11,13 +15,21 @@ const LEASE_MS = 5 * 60_000;
 
 const MAX_JOBS_PER_TICK = 20;
 
-const BILLING_SWEEP_MS = 15 * 60_000;
+const BILLING_SWEEP_LEASE = "billing-sweep";
 
-let lastBillingSweepAt = 0;
+const BILLING_SWEEP_MS = 15 * 60_000;
 
 type IJob = typeof scheduledJob.$inferSelect;
 
-export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void> {
+export async function runSchedulerTick(
+  db: HeptadecDatabase,
+  now: Date,
+): Promise<void> {
+  await runSchedules(db, now);
+  await runSweeps(db, now);
+}
+
+async function runSchedules(db: HeptadecDatabase, now: Date): Promise<void> {
   const due = await db
     .select()
     .from(scheduledJob)
@@ -26,29 +38,30 @@ export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void>
     .limit(MAX_JOBS_PER_TICK);
 
   for (const job of due) {
-    if (!(await claim(db, job, now))) {
+    if (!(await claimJob(db, job, now))) {
       continue;
     }
     const entitlement = await entitlementFor(db, job.organizationId);
     await runOne(db, job, now, entitlement);
   }
-
-  await sweepBilling(db, now);
 }
 
-async function sweepBilling(db: HeptadecDatabase, now: Date): Promise<void> {
-  if (now.getTime() - lastBillingSweepAt < BILLING_SWEEP_MS) {
+async function runSweeps(db: HeptadecDatabase, now: Date): Promise<void> {
+  if (!(await claimLease(db, BILLING_SWEEP_LEASE, now, BILLING_SWEEP_MS))) {
     return;
   }
-  lastBillingSweepAt = now.getTime();
   await checkBillingRenewals(db, now);
   await checkBillingReminders(db, now);
 }
 
-async function claim(db: HeptadecDatabase, job: IJob, now: Date): Promise<boolean> {
+async function claimJob(
+  db: HeptadecDatabase,
+  job: IJob,
+  now: Date,
+): Promise<boolean> {
   const claimed = await db
     .update(scheduledJob)
-    .set({ leaseUntil: new Date(now.getTime() + LEASE_MS), updatedAt: now })
+    .set({ leaseUntil: until(now, LEASE_MS), updatedAt: now })
     .where(
       and(
         eq(scheduledJob.id, job.id),
@@ -57,6 +70,37 @@ async function claim(db: HeptadecDatabase, job: IJob, now: Date): Promise<boolea
     )
     .returning({ id: scheduledJob.id });
   return claimed.length > 0;
+}
+
+async function claimLease(
+  db: HeptadecDatabase,
+  name: string,
+  now: Date,
+  durationMs: number,
+): Promise<boolean> {
+  const renewed = await db
+    .update(schedulerLease)
+    .set({ leaseUntil: until(now, durationMs) })
+    .where(
+      and(
+        eq(schedulerLease.name, name),
+        lte(schedulerLease.leaseUntil, now),
+      ),
+    )
+    .returning({ name: schedulerLease.name });
+  if (renewed.length > 0) {
+    return true;
+  }
+  const created = await db
+    .insert(schedulerLease)
+    .values({ name, leaseUntil: until(now, durationMs) })
+    .onConflictDoNothing()
+    .returning({ name: schedulerLease.name });
+  return created.length > 0;
+}
+
+function until(now: Date, durationMs: number): Date {
+  return new Date(now.getTime() + durationMs);
 }
 
 async function runOne(
@@ -121,7 +165,7 @@ export function startScheduler(db: HeptadecDatabase, tickMs: number): () => void
       return;
     }
     running = true;
-    void runDueJobs(db, new Date())
+    void runSchedulerTick(db, new Date())
       .catch((caught: unknown) => {
         console.error("[scheduler] tick failed:", caught);
       })

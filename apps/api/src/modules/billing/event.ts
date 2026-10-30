@@ -1,5 +1,6 @@
 import { BadRequestException } from "../../common/exceptions";
 import { type BillingCadence, isBillingCadence } from "./contracts";
+import { CADENCE_METADATA_KEY, ORGANIZATION_METADATA_KEY } from "./period";
 
 export type BillingEvent = IPaidEvent | IFailedEvent | ICardSavedEvent;
 
@@ -131,14 +132,20 @@ function fromMetadata(metadata: Record<string, unknown> | null): {
   if (metadata === null) {
     return { organizationId: null, cadence: null };
   }
-  const cadence = optionalText(metadata.cadence);
+  const cadence = optionalText(metadata[CADENCE_METADATA_KEY]);
   if (cadence === null) {
-    return { organizationId: optionalText(metadata.organization_id), cadence: null };
+    return {
+      organizationId: optionalText(metadata[ORGANIZATION_METADATA_KEY]),
+      cadence: null,
+    };
   }
   if (!isBillingCadence(cadence)) {
     throw new BadRequestException("The delivery has an unknown plan");
   }
-  return { organizationId: optionalText(metadata.organization_id), cadence };
+  return {
+    organizationId: optionalText(metadata[ORGANIZATION_METADATA_KEY]),
+    cadence,
+  };
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {

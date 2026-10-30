@@ -1,7 +1,7 @@
 import { d1Database } from "@heptadec/db";
 import { buildApp } from "./app";
 import type { IWorkerEnv } from "./common/config/deployment";
-import { runDueJobs } from "./modules/scheduler";
+import { runSchedulerTick } from "./modules/scheduler";
 
 const app = buildApp({ compressResponses: false });
 
@@ -26,6 +26,6 @@ export default {
     return app.fetch(request, { db: d1Database(DB), images: IMAGES, ...vars });
   },
   scheduled: async (_event: ScheduledController, env: IWorkerEnv): Promise<void> => {
-    await runDueJobs(d1Database(env.DB), new Date());
+    await runSchedulerTick(d1Database(env.DB), new Date());
   },
 } satisfies ExportedHandler<IWorkerEnv>;

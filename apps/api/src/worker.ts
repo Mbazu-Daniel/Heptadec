@@ -17,13 +17,22 @@ function isWorkerPath(pathname: string): boolean {
 }
 
 export default {
-  fetch: async (request: Request, env: IWorkerEnv): Promise<Response> => {
+  fetch: async (
+    request: Request,
+    env: IWorkerEnv,
+    ctx: ExecutionContext,
+  ): Promise<Response> => {
     const { pathname } = new URL(request.url);
     const { ASSETS, DB, IMAGES, ...vars } = env;
     if (!isWorkerPath(pathname)) {
       return ASSETS.fetch(request);
     }
-    return app.fetch(request, { db: d1Database(DB), images: IMAGES, ...vars });
+    return app.fetch(request, {
+      db: d1Database(DB),
+      images: IMAGES,
+      waitUntil: (task: Promise<unknown>) => ctx.waitUntil(task),
+      ...vars,
+    });
   },
   scheduled: async (_event: ScheduledController, env: IWorkerEnv): Promise<void> => {
     await runDueJobs(d1Database(env.DB), new Date());

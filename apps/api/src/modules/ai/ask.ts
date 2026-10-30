@@ -1,9 +1,10 @@
+import type { DataSourceRow, HeptadecDatabase } from "@heptadec/db";
 import type {
   IEngineSpec,
   QueryLanguage,
 } from "../data-source/contracts";
-import type { IStoredConnection } from "../data-source/connection";
-import { introspectSchema } from "../schema/introspect";
+import { storedFromRow } from "../data-source/connection";
+import { schemaForAsk } from "../schema/structure";
 import { readMongoPipeline } from "../query/mongo";
 import { readSearchStatement } from "../query/quickwit";
 import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
@@ -44,6 +45,17 @@ const REFUSED: IDraft = {
   search: null,
 };
 
+/** What a question's context half is built from: the source it was asked about,
+ * and the hand-off a background structure sync needs. A style that answers from
+ * the app's store uses the row; a style that probes the live engine decrypts its
+ * own connection. */
+export interface IAskRequest {
+  db: HeptadecDatabase;
+  source: DataSourceRow;
+  now: Date;
+  waitUntil: (task: Promise<unknown>) => void;
+}
+
 /** How the ask path treats one query language: the instructions the model is
  * given, where the context half of the prompt comes from, and how its words
  * are read back as a statement. One row per language — a fifth queryable
@@ -52,7 +64,7 @@ export interface IAskStyle {
   language: QueryLanguage;
   instructions: string;
   /** The context half of the prompt, read from the actual source. */
-  context(sourceId: string, stored: IStoredConnection): Promise<string>;
+  context(request: IAskRequest): Promise<string>;
   /** The answer as the model wrote it, refused or unreadable included. */
   readAnswer(text: string): IGeneratedQuery;
 }
@@ -61,7 +73,7 @@ const ASK_STYLES: Record<
   QueryLanguage,
   {
     instructions(engine: IEngineSpec): string | null;
-    context(sourceId: string, stored: IStoredConnection): Promise<string>;
+    context(request: IAskRequest): Promise<string>;
     /** null means the answer arrived in a shape the server will not run. */
     readDraft(cleaned: string): IDraft | null;
   }
@@ -71,17 +83,18 @@ const ASK_STYLES: Record<
       engine.sqlDialect === null
         ? null
         : queryInstructions(engine.sqlDialect),
-    context: schemaSourceContext,
+    context: storedSchemaContext,
     readDraft: (cleaned) => ({ ...REFUSED, sql: cleaned }),
   },
   command: {
     instructions: () => redisInstructions,
-    context: (_sourceId, stored) => redisContext(stored),
+    context: async (request) =>
+      redisContext(await storedFromRow(request.source)),
     readDraft: (cleaned) => ({ ...REFUSED, command: cleaned }),
   },
   pipeline: {
     instructions: () => mongoInstructions,
-    context: schemaSourceContext,
+    context: storedSchemaContext,
     readDraft: (cleaned) => {
       const pipeline = readJsonAnswer(cleaned, readMongoPipeline);
       return pipeline === null ? null : { ...REFUSED, pipeline };
@@ -89,7 +102,8 @@ const ASK_STYLES: Record<
   },
   search: {
     instructions: () => quickwitInstructions,
-    context: (_sourceId, stored) => quickwitContext(stored),
+    context: async (request) =>
+      quickwitContext(await storedFromRow(request.source)),
     readDraft: (cleaned) => {
       const search = readJsonAnswer(cleaned, readSearchStatement);
       return search === null ? null : { ...REFUSED, search };
@@ -112,16 +126,20 @@ export function askStyleOf(engine: IEngineSpec): IAskStyle | null {
   return {
     language,
     instructions,
-    context: (sourceId, stored) => spec.context(sourceId, stored),
+    context: spec.context,
     readAnswer: (text) => readAnswer(text, spec.readDraft),
   };
 }
 
-async function schemaSourceContext(
-  sourceId: string,
-  stored: IStoredConnection,
-): Promise<string> {
-  return schemaContext({ sourceId, ...(await introspectSchema(stored)) });
+async function storedSchemaContext(request: IAskRequest): Promise<string> {
+  return schemaContext(
+    await schemaForAsk(
+      request.db,
+      request.source,
+      request.now,
+      request.waitUntil,
+    ),
+  );
 }
 
 /** Read a statement the model wrote, through the rules its language runs:

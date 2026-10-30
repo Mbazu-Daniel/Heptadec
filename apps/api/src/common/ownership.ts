@@ -13,6 +13,7 @@ const {
   dashboard,
   dashboardDataSource,
   dataSource,
+  dataSourceStructure,
   notificationChannel,
   queryResult,
   queryVersion,
@@ -41,6 +42,9 @@ export async function deleteOrganizationRows(
     await tx.delete(aiChat).where(scope.where(aiChat.organizationId));
     await tx.delete(aiProvider).where(scope.where(aiProvider.organizationId));
     await tx.delete(dataSource).where(scope.where(dataSource.organizationId));
+    await tx
+      .delete(dataSourceStructure)
+      .where(scope.where(dataSourceStructure.organizationId));
     await tx
       .delete(notificationChannel)
       .where(scope.where(notificationChannel.organizationId));

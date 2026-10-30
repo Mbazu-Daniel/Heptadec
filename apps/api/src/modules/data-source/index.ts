@@ -6,7 +6,6 @@ export type {
   IDataSource,
   IDataSourceListResponse,
   IDeleteDataSourceResponse,
-  IObjectsResponse,
   IPreviewObject,
   IPreviewResponse,
   ITestConnectionResponse,

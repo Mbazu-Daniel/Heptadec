@@ -7,6 +7,7 @@ import {
 } from "drizzle-orm";
 import {
   dataSource,
+  dataSourceStructure,
   type HeptadecDatabase,
 } from "@heptadec/db";
 import {
@@ -41,6 +42,12 @@ import {
 } from "./connection";
 import { engineFrom, engineOf, kindOf } from "./engines";
 import {
+  queueStructure,
+  readStructure,
+  structuresOf,
+} from "../schema/structure";
+import type { IStructureSummary } from "./contracts";
+import {
   PREVIEW_DEFAULT_LIMIT,
   PREVIEW_MAX_LIMIT,
   listObjects,
@@ -53,14 +60,16 @@ import {
   type IDataSource,
   type IDataSourceListResponse,
   type IDeleteDataSourceResponse,
-  type IObjectsResponse,
   type IPreviewResponse,
   type ITestConnectionResponse,
   type IUpdateDataSourceResponse,
 } from "./contracts";
 import type { DataSourceRow } from "@heptadec/db";
 
-function toIDataSource(row: DataSourceRow): IDataSource {
+function toIDataSource(
+  row: DataSourceRow,
+  structures: Map<string, IStructureSummary>,
+): IDataSource {
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -84,6 +93,7 @@ function toIDataSource(row: DataSourceRow): IDataSource {
     queryLanguage: engineOf(row).queryLanguage,
     canExplain: engineOf(row).supportsExplain,
     tooling: engineOf(row).supportsTooling,
+    structure: structures.get(row.id) ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -105,8 +115,14 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       .where(organization.where(dataSource.organizationId))
       .orderBy(dataSource.createdAt);
 
+    const structures = await structuresOf(
+      organization.db,
+      organization.organizationId,
+      new Date(),
+    );
+
     const body: IDataSourceListResponse = {
-      dataSources: rows.map(toIDataSource),
+      dataSources: rows.map((row) => toIDataSource(row, structures)),
     };
     return c.json(body);
   });
@@ -150,15 +166,27 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       })
       .returning();
 
+    const created = rows[0]!;
+
+    // The source is saved and the answer is on its way; reading its structure is
+    // handed to the background rather than done inside this request.
+    await queueStructure(organization.db, created, now, c.env.waitUntil);
+
+    const structures = await structuresOf(
+      organization.db,
+      organization.organizationId,
+      now,
+    );
+
     const body: ICreateDataSourceResponse = {
-      dataSource: toIDataSource(rows[0]!),
+      dataSource: toIDataSource(created, structures),
     };
     await recordAudit(c, {
       organizationId: organization.organizationId,
       event: "data_source.created",
       targetKind: "data_source",
-      targetId: rows[0]!.id,
-      targetLabel: rows[0]!.name,
+      targetId: created.id,
+      targetLabel: created.name,
     });
     return c.json(body);
   });
@@ -194,6 +222,7 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       current,
     );
 
+    const now = new Date();
     const updated = await organization.db
       .update(dataSource)
       .set({
@@ -224,20 +253,31 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
         ...(patch.token === undefined
           ? {}
           : { token: await sealed(patch.token) }),
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(eq(dataSource.id, current.id))
       .returning();
 
+    // Editing a source is the moment its structure may have moved, so the app
+    // reads it again in the background rather than answering from what it knew.
+    const patched = updated[0]!;
+    await queueStructure(organization.db, patched, now, c.env.waitUntil);
+
+    const structures = await structuresOf(
+      organization.db,
+      organization.organizationId,
+      now,
+    );
+
     const body: IUpdateDataSourceResponse = {
-      dataSource: toIDataSource(updated[0]!),
+      dataSource: toIDataSource(patched, structures),
     };
     await recordAudit(c, {
       organizationId: organization.organizationId,
       event: "data_source.updated",
       targetKind: "data_source",
-      targetId: updated[0]!.id,
-      targetLabel: updated[0]!.name,
+      targetId: patched.id,
+      targetLabel: patched.name,
     });
     return c.json(body);
   });
@@ -265,6 +305,11 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
       throw new NotFoundException("That data source does not exist");
     }
 
+    // What the app learned about the source goes with it.
+    await organization.db
+      .delete(dataSourceStructure)
+      .where(eq(dataSourceStructure.dataSourceId, removed[0]!.id));
+
     await recordAudit(c, {
       organizationId: organization.organizationId,
       event: "data_source.deleted",
@@ -274,37 +319,6 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     });
 
     const body: IDeleteDataSourceResponse = { removed: removed[0]!.id };
-    return c.json(body);
-  });
-
-  routes.get("/api/data-sources/:id/objects", requireSession, async (c) => {
-    const organization = activeOrganization(c);
-
-    if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
-      throw new ForbiddenException(
-        "Only owners and editors can browse data sources",
-      );
-    }
-
-    const rows = await organization.db
-      .select()
-      .from(dataSource)
-      .where(
-        and(
-          eq(dataSource.id, c.req.param("id")),
-          organization.where(dataSource.organizationId),
-        ),
-      )
-      .limit(1);
-    if (rows.length === 0) {
-      throw new NotFoundException("That data source does not exist");
-    }
-
-    const body: IObjectsResponse = {
-      objects: await reachable(async () =>
-        listObjects(await storedFromRow(rows[0]!)),
-      ),
-    };
     return c.json(body);
   });
 
@@ -341,20 +355,18 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     const limit = readPreviewLimit(payload.limit);
     const query = readPreviewQuery(payload.query, kind);
 
-    const stored = await storedFromRow(row);
-    const objects = await reachable(() => listObjects(stored));
+    // Which objects there are to preview is structure, so it comes from the
+    // store; only the rows inside one of them are read live.
+    const { objects } = await reachable(() =>
+      readStructure(organization.db, row, new Date(), c.env.waitUntil),
+    );
     const target = objects.find((entry) => entry.name === object);
-    if (!target) {
+    if (target === undefined) {
       throw new NotFoundException("That object does not exist");
     }
 
-    const body: IPreviewResponse = await reachable(() =>
-      previewObject(
-        stored,
-        target,
-        query,
-        limit,
-      ),
+    const body: IPreviewResponse = await reachable(async () =>
+      previewObject(await storedFromRow(row), target, query, limit),
     );
     return c.json(body);
   });

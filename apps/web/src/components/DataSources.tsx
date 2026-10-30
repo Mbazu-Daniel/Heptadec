@@ -4,6 +4,7 @@ import type {
   DataSourceKind,
   ICreateDataSourceRequest,
   IDataSource,
+  IStructureSummary,
 } from "@heptadec/api/data-source-contracts";
 import { ENGINE_SPECS, defaultConnectionMode, kindFromConnectionUrl } from "@heptadec/api/data-source-contracts";
 import {
@@ -260,6 +261,7 @@ export function DataSources({
       return (
         <section className={VIEW_CLASSNAME}>
           <SourceDetail
+            key={opened.id}
             source={opened}
             onBack={() => setOpenedId(null)}
           />
@@ -269,6 +271,7 @@ export function DataSources({
     return (
       <section className={VIEW_CLASSNAME}>
         <SchemaBrowser
+          key={opened.id}
           source={opened}
           onTrail={onTrail}
           onBack={() => setOpenedId(null)}
@@ -346,6 +349,9 @@ export function DataSources({
                       <span className="truncate font-mono text-sm text-muted-foreground">
                         {targetOf(source)}
                       </span>
+                      {source.structure === null ? null : (
+                        <StructureLine structure={source.structure} />
+                      )}
                     </button>
                     <SourceMenu
                       className="absolute top-2 right-2"
@@ -552,4 +558,25 @@ export function DataSources({
       )}
     </section>
   );
+}
+
+/**
+ * Where the app's reading of this source stands, in the one line a card can spare.
+ *
+ * The list carries this so a card can say "still being read" without opening any
+ * user's database to find out. A structure that is ready and fresh has nothing to
+ * report, which is why the line is absent rather than green.
+ */
+function StructureLine({ structure }: { structure: IStructureSummary }) {
+  const said = structure.syncing
+    ? { text: "Reading its structure…", tone: "text-amber-600" }
+    : structure.state === "failed"
+      ? { text: "Its structure could not be read", tone: "text-red" }
+      : structure.stale
+        ? { text: "Structure is out of date", tone: "text-amber-600" }
+        : null;
+  if (said === null) {
+    return null;
+  }
+  return <span className={`text-[11px] ${said.tone}`}>{said.text}</span>;
 }

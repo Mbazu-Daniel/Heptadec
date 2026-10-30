@@ -1,23 +1,33 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { dataSource, type HeptadecDatabase } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
-import { activeOrganization } from "../../common/session/current-organization";
+import {
+  activeOrganization,
+  oneRow,
+  type IRequestScope,
+} from "../../common/session/current-organization";
 import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
-import { storedFromRow } from "../data-source/connection";
+import { dataSource, type DataSourceRow } from "@heptadec/db";
 import { can } from "../rbac/authorize";
-import { introspectSchema } from "./introspect";
-import type { ISchemaResponse } from "./contracts";
+import { queueStructure, readStructure } from "./structure";
 
+/**
+ * The structure of one source, and the state of the app's reading of it.
+ *
+ * A structure is read in the background and kept, so these routes answer from the
+ * store: a source that has never been read says so as `pending` rather than making
+ * the request wait on the user's database, and a source that refused says so as
+ * `failed` with the reason, rather than 400ing the whole view.
+ */
 export function schemaRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
-  routes.get("/api/data-sources/:id/schema", requireSession, async (c) => {
+
+  routes.get("/api/data-sources/:id/structure", requireSession, async (c) => {
     const organization = activeOrganization(c);
 
     if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
@@ -26,26 +36,50 @@ export function schemaRoutes(): Hono<IAuthVars> {
       );
     }
 
-    const rows = await organization.db
-      .select()
-      .from(dataSource)
-      .where(
-        and(
-          eq(dataSource.id, c.req.param("id")),
-          organization.where(dataSource.organizationId),
-        ),
-      )
-      .limit(1);
-
-    const source = rows[0];
-    if (source === undefined) {
-      throw new NotFoundException("That data source does not exist");
-    }
-
-    const introspected = await introspectSchema(await storedFromRow(source));
-    const body: ISchemaResponse = { sourceId: source.id, ...introspected };
-    return c.json(body);
+    return c.json(
+      await readStructure(
+        organization.db,
+        await requiredSource(organization, c.req.param("id")),
+        new Date(),
+        c.env.waitUntil,
+      ),
+    );
   });
 
+  // Reading a source again is what a user asks for when the stored answer is
+  // older than they want, or the source refused and stopped on its own.
+  routes.post(
+    "/api/data-sources/:id/structure/refresh",
+    requireSession,
+    async (c) => {
+      const organization = activeOrganization(c);
+
+      if (!(await can(organization.db, c.req.raw.headers, "dataSource", "query"))) {
+        throw new ForbiddenException(
+          "Only owners and editors can read a source's structure",
+        );
+      }
+
+      const source = await requiredSource(organization, c.req.param("id"));
+      const now = new Date();
+      await queueStructure(organization.db, source, now, c.env.waitUntil);
+
+      return c.json(
+        await readStructure(organization.db, source, now, c.env.waitUntil),
+      );
+    },
+  );
+
   return routes;
+}
+
+async function requiredSource(
+  organization: IRequestScope,
+  id: string,
+): Promise<DataSourceRow> {
+  const source = await oneRow(organization.db, dataSource, id, organization);
+  if (source === undefined) {
+    throw new NotFoundException("That data source does not exist");
+  }
+  return source;
 }

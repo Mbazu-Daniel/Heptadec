@@ -153,7 +153,7 @@ export function mcpRoutes(): Hono<IAuthVars> {
     rateLimit(principal.keyId);
 
     const server = new McpServer({ name: "heptadec", version: "0.0.0" });
-    registerTools(server, principal, principal.permissions);
+    registerTools(server, principal, principal.permissions, c.env.waitUntil);
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

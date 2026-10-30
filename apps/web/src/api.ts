@@ -35,7 +35,6 @@ import type {
   ICreateDataSourceResponse,
   IDataSourceListResponse,
   IDeleteDataSourceResponse,
-  IObjectsResponse,
   IPreviewResponse,
   ITestConnectionResponse,
   IUpdateDataSourceRequest,
@@ -61,7 +60,7 @@ import {
   type IListModelsResponse,
   type IListProviderModelsRequest,
 } from "@heptadec/api/ai-contracts";
-import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
+import type { IStructureResponse } from "@heptadec/api/schema-contracts";
 import type {
   IExplainResponse,
   IMongoPipeline,
@@ -476,9 +475,15 @@ export function deleteDataSource(
   return request<IDeleteDataSourceResponse>(`/api/data-sources/${id}`, "DELETE");
 }
 
-export function fetchSchema(dataSourceId: string): Promise<ISchemaResponse> {
-  return request<ISchemaResponse>(
-    `/api/data-sources/${dataSourceId}/schema`,
+export function fetchStructure(id: string): Promise<IStructureResponse> {
+  return request<IStructureResponse>(`/api/data-sources/${id}/structure`);
+}
+
+/** Ask the app to read a source's structure again, now, in the background. */
+export function refreshStructure(id: string): Promise<IStructureResponse> {
+  return request<IStructureResponse>(
+    `/api/data-sources/${id}/structure/refresh`,
+    "POST",
   );
 }
 
@@ -490,10 +495,6 @@ export function testDataSourceConnection(
     "POST",
     input,
   );
-}
-
-export function listSourceObjects(id: string): Promise<IObjectsResponse> {
-  return request<IObjectsResponse>(`/api/data-sources/${id}/objects`);
 }
 
 export function previewSourceRows(

@@ -6,6 +6,7 @@ import { entitlementFor, type IEntitlement } from "../billing/entitlement";
 import { checkBillingReminders } from "../billing/reminder";
 import { checkBillingRenewals } from "../billing/renewal";
 import { nextRunAfter, parseCron } from "./cron";
+import { sweepStructure } from "../schema/structure";
 
 const LEASE_MS = 5 * 60_000;
 
@@ -34,6 +35,7 @@ export async function runDueJobs(db: HeptadecDatabase, now: Date): Promise<void>
   }
 
   await sweepBilling(db, now);
+  await sweepStructure(db, now);
 }
 
 async function sweepBilling(db: HeptadecDatabase, now: Date): Promise<void> {

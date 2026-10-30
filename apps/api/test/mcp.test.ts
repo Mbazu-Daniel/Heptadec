@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { authFor } from "../src/common/config/better-auth";
 import { MCP_TOOLS } from "../src/modules/mcp/contracts";
-import { app, db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
+import { app, db, ENV, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 let base = "";
 
@@ -18,7 +18,7 @@ async function startServer(): Promise<string> {
   }>((resolve) => {
     const server = serve(
       {
-        fetch: (request: Request) => app.fetch(request, { db }),
+        fetch: (request: Request) => app.fetch(request, ENV),
         port: 0,
         hostname: "127.0.0.1",
       },

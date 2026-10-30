@@ -65,9 +65,9 @@ export function SearchableSelect({
         type="button"
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
-        className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors duration-200 outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring/50 focus-visible:ring-2 focus-visible:ring-ring/25"
+        className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-3 pr-16 py-2 text-sm text-foreground transition-colors duration-200 outline-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring/50 focus-visible:ring-2 focus-visible:ring-ring/25"
       >
-        <span className="flex items-center gap-1.5 text-sm text-foreground truncate">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-foreground truncate">
           {selectedOption ? (
             <span className="truncate">
               {selectedOption.label}
@@ -76,27 +76,26 @@ export function SearchableSelect({
             <span className="text-muted-foreground/60">{placeholder}</span>
           )}
         </span>
-        <div className="flex items-center gap-1">
-          {selectedOption && !disabled && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleClear();
-              }}
-              className="flex items-center justify-center size-6 rounded-md text-muted-foreground hover:bg-accent hover:text-on-accent transition-colors"
-            >
-              <IconX className="size-3.5" />
-            </button>
-          )}
-          <IconChevronDown
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-              isOpen && "rotate-180"
-            )}
-          />
-        </div>
       </button>
+
+      <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        {selectedOption !== undefined && !disabled && (
+          <button
+            type="button"
+            onClick={handleClear}
+            aria-label={`Clear ${selectedOption.label}`}
+            className="pointer-events-auto flex items-center justify-center size-6 rounded-md text-muted-foreground hover:bg-accent hover:text-on-accent transition-colors"
+          >
+            <IconX className="size-3.5" />
+          </button>
+        )}
+        <IconChevronDown
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            isOpen && "rotate-180"
+          )}
+        />
+      </div>
 
       {isOpen && !disabled && (
         <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-lg">

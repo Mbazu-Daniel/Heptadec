@@ -1,18 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type {
   IDataSource,
-  IPreviewObject,
   IPreviewResponse,
 } from "@heptadec/api/data-source-contracts";
 import type { IResultGrid, IRedisQueryResponse } from "@heptadec/api/query-contracts";
 import {
   askQuestion,
-  listSourceObjects,
   messageFor,
   previewSourceRows,
   runRedisCommand,
   runSearch,
 } from "../api";
+import { useStructure } from "../lib/use-structure";
 import { Alert, EmptyState } from "./ui/feedback";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -85,10 +84,10 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
   const speaksCommand = language === "command";
   const speaksSqlOrPipeline = language === "sql" || language === "pipeline";
 
-  const [objects, setObjects] = useState<IPreviewObject[] | null>(null);
+  const { structure, problem } = useStructure(source.id);
+  const objects = structure?.objects ?? null;
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<IPreviewResponse | null>(null);
-  const [objectsError, setObjectsError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [search, setSearch] = useState("*");
@@ -101,29 +100,13 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
   const [drafted, setDrafted] = useState(false);
   const [question, setQuestion] = useState("");
 
+  // The first object is the one worth showing, and it arrives whenever the app's
+  // read of this source lands — which is not necessarily while this mounts.
   useEffect(() => {
-    let live = true;
-    setObjects(null);
-    setSelected(null);
-    setPreview(null);
-    setObjectsError(null);
-    listSourceObjects(source.id)
-      .then((result) => {
-        if (!live) {
-          return;
-        }
-        setObjects(result.objects);
-        setSelected(result.objects[0]?.name ?? null);
-      })
-      .catch((caught: unknown) => {
-        if (live) {
-          setObjectsError(messageFor(caught, "Objects could not load."));
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, [source.id]);
+    if (selected === null) {
+      setSelected(objects?.[0]?.name ?? null);
+    }
+  }, [objects, selected]);
 
   useEffect(() => {
     if (selected === null) {
@@ -229,7 +212,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
         </Button>
       </div>
 
-      {objectsError ? <Alert>{objectsError}</Alert> : null}
+      {problem !== null ? <Alert>{problem}</Alert> : null}
 
       {!speaksSqlOrPipeline ? (
         <form

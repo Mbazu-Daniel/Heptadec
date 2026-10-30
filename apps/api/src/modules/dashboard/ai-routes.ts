@@ -6,6 +6,7 @@ import {
   dataSource,
   savedQuery,
   widget,
+  type DataSourceRow,
   type HeptadecDatabase,
 } from "@heptadec/db";
 import {
@@ -35,7 +36,8 @@ import {
 import { can } from "../rbac/authorize";
 import { savedConnection } from "../data-source/connection";
 import { canUseTooling } from "../data-source/engines";
-import { introspectPostgres } from "../schema/postgres";
+import { schemaForAsk } from "../schema/structure";
+import type { ISchemaResponse } from "../schema/contracts";
 import { runPostgresQuery } from "../query/postgres";
 import { assertSqlReads } from "../query/read-policy";
 import type { IQueryResponse } from "../query/contracts";
@@ -91,8 +93,6 @@ const MAX_CHARTS = 16;
 const MAX_ACTIONS = 16;
 
 const CHART_TYPES = ["bar", "line", "pie"] as const;
-
-type IPostgresSource = typeof dataSource.$inferSelect;
 
 interface IChartDraft {
   sourceId: string;
@@ -189,7 +189,12 @@ function dashboardAiRoutes() {
             const blocks: string[] = [];
             for (const source of analysed) {
               await turn.status(`Reading ${source.name}…`);
-              const described = await introspectPostgres(await savedConnection(source));
+              const described = await schemaForAsk(
+                organization.db,
+                source,
+                new Date(),
+                c.env.waitUntil,
+              );
               blocks.push(schemaBlock(source, described));
             }
 
@@ -290,7 +295,12 @@ function dashboardAiRoutes() {
           const blocks: string[] = [];
           for (const source of analysed) {
             await turn.status(`Reading ${source.name}…`);
-            const described = await introspectPostgres(await savedConnection(source));
+            const described = await schemaForAsk(
+              organization.db,
+              source,
+              new Date(),
+              c.env.waitUntil,
+            );
             blocks.push(schemaBlock(source, described));
           }
 
@@ -457,7 +467,7 @@ function pickChartColumns(
 
 async function buildChart(
   raw: unknown,
-  allowed: IPostgresSource[],
+  allowed: DataSourceRow[],
 ): Promise<IChartDraft> {
   if (typeof raw !== "object" || raw === null) {
     throw new BadRequestException("That chart was not readable");
@@ -550,7 +560,7 @@ async function persistChart(
 async function applyAction(
   dashboardId: string,
   action: IProposalAction,
-  analysed: IPostgresSource[],
+  analysed: DataSourceRow[],
   widgets: IWidget[],
   organization: IOrganizationScope,
 ): Promise<string> {
@@ -580,7 +590,7 @@ async function applyAction(
 
 async function updateChart(
   action: IUpdateChartAction,
-  analysed: IPostgresSource[],
+  analysed: DataSourceRow[],
   widgets: IWidget[],
   organization: IOrganizationScope,
   now: Date,
@@ -673,7 +683,7 @@ function ownedWidget(widgetId: string, widgets: IWidget[]): IWidget {
 async function dashboardSources(
   dashboardId: string,
   organization: IOrganizationScope,
-): Promise<IPostgresSource[]> {
+): Promise<DataSourceRow[]> {
   const connected = await readDashboardSources(dashboardId, organization);
   if (connected.length === 0) {
     return [];
@@ -686,10 +696,10 @@ async function dashboardSources(
 }
 
 function schemaBlock(
-  source: IPostgresSource,
-  described: Awaited<ReturnType<typeof introspectPostgres>>,
+  source: DataSourceRow,
+  described: ISchemaResponse,
 ): string {
-  return `-- Source: ${source.name} (id: ${source.id})\n${schemaContext({ sourceId: source.id, ...described })}`;
+  return `-- Source: ${source.name} (id: ${source.id})\n${schemaContext(described)}`;
 }
 
 function planPrompt(blocks: string[], brief: string | undefined): string {

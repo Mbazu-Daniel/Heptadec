@@ -1,4 +1,7 @@
+import type { StructureState } from "@heptadec/db/structure-state";
 import type { IResultGrid } from "../query/contracts";
+
+export type { StructureState };
 
 export type ConnectionMode = "tcp" | "tls" | "socket";
 
@@ -581,6 +584,7 @@ export interface IDataSource {
   sqlDialect: SqlDialect | null;
   canExplain: boolean;
   tooling: boolean;
+  structure: IStructureSummary | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -604,8 +608,18 @@ export interface IPreviewObject {
   type: PreviewObjectType;
 }
 
-export interface IObjectsResponse {
-  objects: IPreviewObject[];
+/**
+ * Where a source's structure stands with the app: the state of its last sync and
+ * the age of what that sync stored. A source whose engine keeps no structure —
+ * a key space, an index list — has none of this, and `IDataSource.structure` is
+ * null for it.
+ */
+export interface IStructureSummary {
+  state: StructureState;
+  /** Whether a sync of this source is running or queued right now. */
+  syncing: boolean;
+  stale: boolean;
+  syncedAt: string | null;
 }
 
 export type IPreviewResponse = IResultGrid;

@@ -26,7 +26,6 @@ import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
-import { storedFromRow } from "../data-source/connection";
 import { canBeAsked, engineOf } from "../data-source/engines";
 import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
 import { baseUrlFor, speaksProtocol } from "./transport";
@@ -306,8 +305,12 @@ export function aiRoutes(): Hono<IAuthVars> {
         let answer = "";
         let problem: string | null = null;
         try {
-          const stored = await storedFromRow(source);
-          const context = await style.context(source.id, stored);
+          const context = await style.context({
+            db: organization.db,
+            source,
+            now: new Date(),
+            waitUntil: c.env.waitUntil,
+          });
 
           await turn.status(`Asking ${chosen.name} (${chosen.model})…`);
 

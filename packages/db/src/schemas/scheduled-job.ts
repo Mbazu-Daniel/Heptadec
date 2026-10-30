@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organization } from "./organization/organization";
 
 export const scheduledJob = sqliteTable(
   "scheduled_job",
@@ -7,7 +8,9 @@ export const scheduledJob = sqliteTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    organizationId: text("organization_id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     savedQueryId: text("saved_query_id").notNull(),
     name: text("name").notNull(),
     cron: text("cron").notNull(),
@@ -20,7 +23,6 @@ export const scheduledJob = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    // The scheduler asks "what is due" once a minute, over every organization's jobs.
     index("scheduled_job_next_run_idx").on(table.nextRunAt),
     index("scheduled_job_organization_idx").on(table.organizationId),
   ],

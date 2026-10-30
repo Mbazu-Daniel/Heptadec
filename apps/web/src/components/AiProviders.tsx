@@ -147,13 +147,12 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setModelsNote(null);
     setModel("");
     const spec = catalog.find((entry) => entry.id === next);
-    console.log("chooseProvider", next, "models:", spec?.models?.length, spec);
     if (spec?.models && spec.models.length > 0) {
       const listed = spec.models.map((id) => ({ id, label: null }));
       setModels(listed);
       setModelSource("provider");
       setModel(listed[0]?.id ?? "");
-      setModelsNote(`${listed.length} models (Mastra)`);
+      setModelsNote(`${listed.length} models`);
       return;
     }
     if (spec !== undefined && !spec.needsBaseUrl && apiKey.trim() !== "") {

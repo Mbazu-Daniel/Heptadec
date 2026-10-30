@@ -83,7 +83,7 @@ sequenceDiagram
 | Database ORM | Drizzle ORM | TypeScript ORM for SQLite, PostgreSQL, and Cloudflare D1 |
 | Authentication | Better Auth | Session management, credential auth, and organization plugins |
 | Database Drivers | pg, mysql2, redis, mongodb, @clickhouse/client-web, @libsql/client | Multi-engine database connection drivers |
-| AI Integration | AI SDK (@ai-sdk/openai-compatible) | Unified LLM streaming and completion interfaces |
+| AI Integration | Mastra (`@mastra/core`) | Agent-based LLM streaming and completion |
 | Integrations | Model Context Protocol SDK | Standardized interface for external AI assistants |
 | Email & Dispatch | Resend, Nodemailer | Transactional email delivery and alert dispatches |
 | Testing | Vitest | Fast TypeScript test runner |

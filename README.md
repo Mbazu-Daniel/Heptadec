@@ -1,262 +1,197 @@
 # Heptadec
 
-Unified data visualization, exploration, and monitoring platform for modern engineering teams.
+Query, visualize, and monitor the data systems your team already runs — from one place.
 
-## Overview
-
-Heptadec helps engineering and analytics teams explore, query, and monitor fragmented data systems from a single interface. Instead of juggling isolated client tools for relational tables, document stores, key-value caches, and search clusters, teams can connect all their databases, build visual dashboards, configure automated alerts, and generate queries using natural language.
-
-## System Architecture
+Heptadec connects to relational databases, document stores, key-value caches, and search engines, then gives a team one interface to explore them: a schema browser, an SQL/command runner, AI-assisted queries, dashboards, scheduled jobs, threshold alerts, share links, and a read-only MCP endpoint for external agents.
 
 ```mermaid
 flowchart LR
-  WebClient["Web Client"]
-  APIServer["API Server"]
-  AppDB[("App Database")]
-  DataSources[("Data Sources")]
-  AIProvider("AI Providers")
-
-  WebClient -- "HTTP / SSE" --> APIServer
-  APIServer -- "Session & Metadata" --> AppDB
-  APIServer -- "Run Queries" --> DataSources
-  APIServer -- "Prompts & Schemas" --> AIProvider
-
-  style WebClient fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#fff
-  style APIServer fill:#2e1065,stroke:#8b5cf6,stroke-width:2px,color:#fff
-  style AppDB fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
-  style DataSources fill:#022c22,stroke:#10b981,stroke-width:2px,color:#fff
-  style AIProvider fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fff
+  Web["Web client"] -- "HTTP / SSE" --> API["API"]
+  API -- "sessions, metadata, results" --> AppDB[("App database<br/>SQLite or D1")]
+  API -- "read-only queries" --> Sources[("Your data sources")]
+  API -- "schema-aware prompts" --> AI["AI providers"]
+  Cron["Cron trigger"] --> API
+  API -- "alerts" --> Channels["Slack / email"]
 ```
 
-## Features
+## Supported sources
 
-- **Multi-Engine Database Querying**: Connect directly to Postgres, MySQL, MariaDB, ClickHouse, SQLite, LibSQL, MongoDB, Redis, and Quickwit. Run raw SQL, MongoDB aggregation pipelines, Redis commands, or Quickwit search queries through a unified runner.
-- **Introspection and Schema Mapping**: Automatically inspect database structures, primary keys, foreign keys, and indexes to construct interactive relationship diagrams across supported engines.
-- **Natural Language Query Generation**: Translate plain English questions into read-only SQL, Mongo pipelines, or Redis commands using contextual schema pruning and configurable LLM providers (Groq, OpenAI, Anthropic, Google, DeepSeek, Ollama, and custom OpenAI-compatible endpoints).
-- **Automated Dashboards and AI Iteration**: Generate multi-chart visualization dashboards from connected data sources. Prompt the system to update, add, or remove charts dynamically.
-- **Model Context Protocol (MCP) Server**: Expose safe, read-only data access and schema introspection tools to external AI agents via authenticated MCP endpoints.
-- **Scheduled Jobs and Cache Materialization**: Run analytical queries on custom cron schedules across any IANA timezone, materializing query results for fast dashboard loading.
-- **Threshold Alerting and Multi-Channel Notifications**: Evaluate threshold rules on scheduled query results and deliver breach notifications to Slack webhooks, direct SMTP email, or Resend.
-- **Role-Based Access Control and Workspaces**: Manage multi-tenant organizations with distinct roles (owner, editor, viewer), password resets, team invitations, and full audit logging.
-- **Shareable Dashboard Links**: Create read-only, token-protected public links with configurable expiration and rate limiting.
+| Engine | Speaks |
+|---|---|
+| PostgreSQL, MySQL, MariaDB | SQL |
+| ClickHouse | SQL |
+| SQLite, LibSQL / Turso | SQL |
+| MongoDB | Aggregation pipelines |
+| Redis | Commands |
+| Quickwit | Search queries |
 
-### AI Natural Language Query Generation
+AI providers are configured in the app, not in the environment: Groq, OpenAI, Anthropic, Google, DeepSeek, Ollama, or any OpenAI-compatible endpoint.
 
-```mermaid
-sequenceDiagram
-  actor User
-  participant API as "API Server"
-  participant DB as "Data Source"
-  participant AI as "AI Provider"
+## Stack
 
-  User->>API: Send question in plain text
-  API->>DB: Introspect current schema
-  DB->>API: Return table and column metadata
-  API->>AI: Send prompt with schema context
-  AI->>API: Stream generated read-only query
-  API->>User: Stream query chunks via SSE
-```
+| Part | Choice |
+|---|---|
+| API | TypeScript, Hono, Drizzle ORM; runs on Node.js or Cloudflare Workers |
+| Web | React, Vite, Tailwind |
+| App database | SQLite locally and in Docker; D1 on Workers |
+| Images | Cloudflare R2 (signed browser uploads) |
+| Background work | In-process scheduler on Node; Cron Trigger + `waitUntil` on Workers |
+| Tests | Vitest integration suites against the real app and real databases |
 
-### Scheduled Queries and Threshold Alerting
+The workspace is `apps/api`, `apps/web`, and `packages/db`. The API owns the wire contract and hands it to the web app typed.
 
-```mermaid
-sequenceDiagram
-  participant Cron as "Scheduler Runner"
-  participant API as "Query Engine"
-  participant Cache as "Materialized Cache"
-  participant Alert as "Alert Evaluator"
-  participant Channel as "Notification Channel"
+## Quick start
 
-  Cron->>API: Trigger scheduled job tick
-  API->>Cache: Execute query and store result
-  API->>Alert: Evaluate rules against result grid
-  Alert->>Channel: Deliver breach notice
-```
+Requirements: Node.js 22 or newer, pnpm 12, and optionally Docker for the demo databases.
 
-## Technologies Used
-
-| Category | Technology | Description |
-|---|---|---|
-| Monorepo & Runtime | Node.js | Server runtime (v22+) |
-| Package Manager | pnpm | Fast, disk-efficient workspace package management |
-| Web Framework | Hono | Fast, lightweight web framework running on Node.js and Cloudflare Workers |
-| Database ORM | Drizzle ORM | TypeScript ORM for SQLite, PostgreSQL, and Cloudflare D1 |
-| Authentication | Better Auth | Session management, credential auth, and organization plugins |
-| Database Drivers | pg, mysql2, redis, mongodb, @clickhouse/client-web, @libsql/client | Multi-engine database connection drivers |
-| AI Integration | AI SDK (@ai-sdk/openai-compatible) | Unified LLM streaming and completion interfaces |
-| Integrations | Model Context Protocol SDK | Standardized interface for external AI assistants |
-| Email & Dispatch | Resend, Nodemailer | Transactional email delivery and alert dispatches |
-| Testing | Vitest | Fast TypeScript test runner |
-| Deployment | Cloudflare Workers, Docker | Hybrid deployment targets (Node.js containers or Cloudflare Edge) |
-
-## Installation
-
-### Prerequisites
-
-- Node.js (version 22 or higher)
-- pnpm (version 9 or higher)
-- Docker and Docker Compose (optional, for local demo databases)
-
-### Setup Steps
-
-1. Clone the repository:
 ```bash
-git clone git@github.com:Mbazu-Daniel/Heptadec.git
+git clone https://github.com/Mbazu-Daniel/Heptadec.git
 cd Heptadec
-```
-
-2. Install dependencies:
-```bash
 pnpm install
-```
-
-3. Configure environment variables:
-```bash
 cp .env.example .env
 ```
-Ensure you generate a secure key for `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` (a 32-byte base64 string used for AES-GCM data source credential encryption).
 
-4. Apply database migrations to set up the local application SQLite database:
+Generate the two secrets and put them in `.env`:
+
+```bash
+openssl rand -base64 32   # BETTER_AUTH_SECRET
+openssl rand -base64 32   # HEPTADEC_SECRET_KEY — keep this one; it encrypts stored credentials
+```
+
+Then create the app database and start both servers:
+
 ```bash
 pnpm db:migrate
-```
-
-5. (Optional) Start the local demo databases (Postgres, MySQL, Redis):
-```bash
-pnpm compose:up
-```
-
-6. Start development servers across the monorepo:
-```bash
 pnpm dev
 ```
-The API listens on `http://localhost:8787` and the client runs on `http://localhost:5173`.
 
-### Operating System Level Environment Variables
+The API listens on `http://localhost:8787` and the web app on `http://localhost:5173`.
 
-If you need to set environment variables or provider API keys directly on your host machine:
-
-- **Windows (PowerShell)**:
-```powershell
-setx HEPTADEC_SECRET_KEY "your_32_byte_base64_secret_key"
-```
-
-- **macOS / Linux (including Termux)**:
-```bash
-echo 'export HEPTADEC_SECRET_KEY="your_32_byte_base64_secret_key"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-## Usage
-
-### Connecting a Data Source
-
-You can register any supported data source using the API or the UI by specifying the engine type and connection parameters:
+To try the query features against seeded data, start the demo engines:
 
 ```bash
-curl -X POST http://localhost:8787/api/data-sources \
-  -H "Content-Type: application/json" \
-  -H "Cookie: better-auth.session_token=<YOUR_TOKEN>" \
-  -d '{
-    "kind": "postgres",
-    "name": "Production Warehouse",
-    "host": "localhost",
-    "port": 5432,
-    "database": "heptadec_demo",
-    "username": "postgres",
-    "password": "Delta1force",
-    "readOnly": true
-  }'
+pnpm compose:up    # Postgres, MySQL, Redis
+pnpm compose:down  # when finished
 ```
 
-### Running Queries
+### Commands
 
-Execute queries against any connection. The system resolves the correct driver and returns a normalized result grid:
-
-```bash
-curl -X POST http://localhost:8787/api/data-sources/<DATA_SOURCE_ID>/query \
-  -H "Content-Type: application/json" \
-  -H "Cookie: better-auth.session_token=<YOUR_TOKEN>" \
-  -d '{
-    "sql": "SELECT id, code, name FROM regions ORDER BY id LIMIT 5"
-  }'
-```
-
-### Asking the AI Assistant
-
-Stream query generation by providing a plain text prompt:
-
-```bash
-curl -N -X POST http://localhost:8787/api/ai/ask \
-  -H "Content-Type: application/json" \
-  -H "Cookie: better-auth.session_token=<YOUR_TOKEN>" \
-  -d '{
-    "question": "What are the top 5 products by price that are currently in stock?",
-    "dataSourceIds": ["<DATA_SOURCE_ID>"]
-  }'
-```
-
-## Deployment
-
-Two paths: Docker on any VPS, or a single Cloudflare Worker. Both apply the same Drizzle migrations.
-
-### Docker
-
-`docker-compose.app.yml` runs two containers: `api`, and `web` (nginx) serving the built client and proxying `/api`, `/health`, and `/mcp` to the API. The API applies pending migrations on start.
-
-```bash
-cp .env.example .env
-docker compose -f docker-compose.app.yml up -d --build
-```
-
-Four values matter:
-
-| Variable | How to make it |
+| Purpose | Command |
 |---|---|
-| `BETTER_AUTH_SECRET` | `openssl rand -base64 32` |
-| `HEPTADEC_SECRET_KEY` | `openssl rand -base64 32` |
-| `PUBLIC_URL` | The address users open; Compose passes it to the API as `BETTER_AUTH_URL` and `WEB_URL` |
-| `DATABASE_URL` | `file:./data/heptadec.db`, inside the `heptadec-appdata` volume |
+| Dev servers | `pnpm dev` |
+| Typecheck everything | `pnpm typecheck` |
+| Integration tests | `pnpm test` |
+| Billing tests | `pnpm test:billing` |
+| Start the full test stack | `pnpm compose:test:up` |
+| Seed the test stack | `pnpm seed:test` |
+| Generate / apply app migrations | `pnpm db:generate` / `pnpm db:migrate` |
+| Apply migrations to D1 | `pnpm db:migrate:d1` |
+| Deploy the Worker | `pnpm deploy` or `pnpm deploy:cloudflare` |
 
-The web container listens on `${WEB_PORT:-8080}`. Put Caddy, nginx, or a load balancer in front for TLS and pass the real hostname through. `pnpm app:up` and `pnpm app:down` wrap the same Compose file. Images for both targets are published to `ghcr.io/<owner>/<repo>/api` and `/web` on pushes to `main`; swap the `build:` blocks for `image:` lines to deploy those instead.
+## Configuration
 
-Back up the database, which lives entirely in that volume:
+Only two values are required to boot; everything else turns on an integration.
+
+| Variable | Purpose |
+|---|---|
+| `BETTER_AUTH_SECRET` | Signs session cookies. `openssl rand -base64 32`. |
+| `HEPTADEC_SECRET_KEY` | 32-byte base64 key (AES-GCM) for stored data-source and AI credentials. Rotating it makes every stored credential unreadable. |
+| `BETTER_AUTH_URL` | Public API address, e.g. `http://localhost:8787`. On Workers it falls back to `PUBLIC_URL`. |
+| `WEB_URL` | Public web address, e.g. `http://localhost:5173`. On Workers it falls back to `PUBLIC_URL`. |
+| `DATABASE_URL` | App database. `file:./dev.db` locally, `file:./data/heptadec.db` in Docker. |
+| `PUBLIC_URL` | The address users open; on Workers this is the value that matters. |
+
+Optional integrations:
+
+- **Google / GitHub sign-in** — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`.
+- **Email** — Resend (`RESEND_API_KEY`, `RESEND_FROM`) or Cloudflare Email Sending (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_EMAIL_TOKEN`, `CLOUDFLARE_EMAIL_FROM`). Without a transport, alerts record `skipped` and nothing breaks.
+- **Images** — `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (and optionally `R2_SESSION_TOKEN`) sign browser uploads. On Workers the bucket name lives in `wrangler.jsonc`; `R2_PUBLIC_ID` / `R2_CUSTOM_DOMAIN` control the public image URL.
+- **Billing** — see below.
+
+### Billing (optional)
+
+Payments run through [Bachs](https://bachs.io). With none of these set, the instance is free and self-hosted. With the key, the webhook secret, and both prices set, every organization must be inside its seven-day trial or a paid period, or the product endpoints answer `402 payment_required`.
+
+| Variable | Purpose |
+|---|---|
+| `BACHS_SECRET_KEY` | API key, `sk_live_…` |
+| `BACHS_WEBHOOK_SECRET` | Signing secret of the webhook endpoint, `whsec_…` |
+| `BACHS_PRICE_MONTHLY` | USD for 30 days |
+| `BACHS_PRICE_YEARLY` | USD for 365 days |
+| `BACHS_BASE_URL` | `https://api.bachs.io` live, `https://sandbox-api.bachs.io` sandbox |
+
+Point a webhook at `https://your-host/api/webhooks/bachs` and subscribe it to `checkout.completed`, `collection.succeeded`, `collection.failed`, and `payment_method.saved`.
+
+## Deploy to Cloudflare Workers
+
+One Worker serves the built SPA and the API from the same origin, so the browser keeps calling `/api/...` relatively and there is no second deployment.
+
+| Concern | How it runs |
+|---|---|
+| App database | D1 through the `DB` binding; the same Drizzle migrations apply |
+| Scheduler | A Cron Trigger calls the same job runner the Node timer calls |
+| Password hashing | PBKDF2-SHA256 over WebCrypto — no native module |
+| SQLite sources | `@libsql/client`, so local files on Node and `libsql://` URLs on Workers |
+| Postgres / MySQL / Redis | TCP through `cloudflare:sockets`; use Hyperdrive for production databases |
+| Static assets | Workers static assets with an SPA fallback |
+| Compression | Done at the edge; the Worker does not compress twice |
+
+`wrangler.jsonc` is committed and names the resources only — `heptadec` for D1, `heptadec-images` for R2 — so a fork does not deploy into another account. Rename them there before connecting an account that already uses those names.
+
+### One command from a laptop
 
 ```bash
-docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
-  tar czf /out/heptadec-$(date +%F).db.tar.gz -C /data .
+pnpm install
+pnpm exec wrangler login
 ```
 
-### Cloudflare Workers
+Put these in `.env`:
 
-One Worker serves the SPA and the API from the same origin, so the client keeps calling `/api/...` relatively. `PUBLIC_URL` names the address users open, and the app derives its auth and web URLs from it.
+```bash
+CLOUDFLARE_ACCOUNT_ID=...
+PUBLIC_URL=https://heptadec.example.com
+BETTER_AUTH_SECRET=...      # generated and saved back if empty
+HEPTADEC_SECRET_KEY=...     # generated and saved back if empty
+```
 
-Deploys run in **Cloudflare Workers Builds**: connect the repository once in the Cloudflare dashboard, and every push to `main` builds and deploys. `.github/workflows/ci.yml` only runs checks and publishes the container images; it holds no Cloudflare secrets.
+Then:
 
-#### Connect the repository
+```bash
+pnpm deploy:cloudflare
+```
 
-1. Create the resources. Wrangler finds them by the names in `wrangler.jsonc`:
+The script is idempotent: it checks the login, creates the D1 database and R2 bucket when missing, enables the bucket's public URL, sets the bucket's CORS rule for `PUBLIC_URL`, applies migrations, builds the SPA, deploys the Worker, and sets any missing secrets. Plain variables are written on the first deploy only — after that the dashboard owns them. `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` are never rotated automatically.
+
+### Continuous deployment from GitHub
+
+Cloudflare Workers Builds deploys the Worker on every push to `main`. CI itself holds no Cloudflare credentials.
+
+1. Create the resources once:
 
    ```bash
-   pnpm exec wrangler login
    pnpm exec wrangler d1 create heptadec
    pnpm exec wrangler r2 bucket create heptadec-images
    ```
 
-2. In the Cloudflare dashboard, open **Workers & Pages → Create application → Workers → Connect to Git**, pick this repository, and leave the root directory at the repository root. Name the Worker `heptadec` so it connects to the existing deployment rather than creating a second one. Set both commands yourself; the deploy command defaults to `npx wrangler deploy`, which deploys without the schema:
+2. In the dashboard: **Workers & Pages → Create application → Workers → Connect to Git**. Pick the repository, keep the root directory at the repo root, and name the Worker `heptadec`. Set both commands: build `pnpm run build`, deploy `pnpm run deploy`.
 
-   ```
-   build:  pnpm run build
-   deploy: pnpm run deploy
-   ```
+3. Give the build token **D1: Edit** at **My Profile → API Tokens**. The deploy command applies migrations before it deploys, and Workers Builds' default token cannot reach D1.
 
-   `pnpm run deploy` applies pending D1 migrations first, so the schema is never behind the Worker.
+4. Fill **Settings → Variables and Secrets**:
 
-3. Give the build token **D1: Edit** at **My Profile → API Tokens**. Workers Builds creates its token without D1 access, and the deploy command applies migrations before it deploys, so without this the build fails at `wrangler d1 migrations apply`.
+   | Name | Kind | Notes |
+   |---|---|---|
+   | `PUBLIC_URL` | variable | The address users open. `BETTER_AUTH_URL` and `WEB_URL` fall back to it. |
+   | `BETTER_AUTH_SECRET` | secret | `openssl rand -base64 32` |
+   | `HEPTADEC_SECRET_KEY` | secret | `openssl rand -base64 32`; never rotate |
+   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | secret | Required for browser image uploads |
+   | `RESEND_API_KEY` | secret | If using Resend for alerts |
+   | `RESEND_FROM` | variable | If using Resend |
+   | `BACHS_*` | secret / variable | Only when billing is on |
 
-4. Add the values listed under [The values](#the-values) to the Worker's **Settings → Variables & Secrets**. `keep_vars: true` in `wrangler.jsonc` keeps whatever is there, so a later deploy does not delete them. Cloudflare shows a secret's name but not its value; replace one from the same screen.
+   `R2_BUCKET_NAME` is not on this list: it is a `var` in `wrangler.jsonc` beside the `IMAGES` binding, so the bucket the API signs uploads for is the one it reads back.
 
-5. Allow browser uploads from the app's origin. A new bucket has no CORS rule, and the browser refuses the direct `PUT` without one. Use the same origin as `PUBLIC_URL`:
+5. Allow browser uploads from `PUBLIC_URL`. A new bucket has no CORS rule and refuses the direct `PUT`:
 
    ```bash
    cat >/tmp/cors.json <<'JSON'
@@ -265,1289 +200,98 @@ Deploys run in **Cloudflare Workers Builds**: connect the repository once in the
    pnpm exec wrangler r2 bucket cors set heptadec-images --file /tmp/cors.json --force
    ```
 
-#### The values
+### Manual deploy
 
-| Name | Kind | What it is |
-|---|---|---|
-| `PUBLIC_URL` | Variable | The address users open. `BETTER_AUTH_URL` and `WEB_URL` fall back to it. |
-| `CLOUDFLARE_ACCOUNT_ID` | Variable | The account the Worker and bucket live in; R2 URLs are signed against it. |
-| `R2_PUBLIC_ID` | Variable | The bucket's managed `r2.dev` domain, when images are read from it. |
-| `R2_CUSTOM_DOMAIN` | Variable | The bucket's own domain; wins over `R2_PUBLIC_ID`. |
-| `RESEND_FROM` | Variable | The sender address. |
-| `BETTER_AUTH_SECRET` | Secret | Signs sessions. Generate once with `openssl rand -base64 32`. |
-| `HEPTADEC_SECRET_KEY` | Secret | Encrypts stored data-source credentials. Generate once; rotating it makes every stored credential unreadable. |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Secrets | Sign browser uploads. Without them images read but cannot be replaced. |
-| `RESEND_API_KEY` | Secret | Sends invitation and alert email. |
-| `BACHS_*` | Secrets and variables | Billing; see [Billing](#billing-bachs). |
-
-`R2_BUCKET_NAME` is not in that list: it is a `var` in `wrangler.jsonc`, beside the `IMAGES` binding that points at the same bucket. One deploy cannot sign an upload for one bucket and read it back from another. Renaming the bucket means changing both lines.
-
-#### The configuration
-
-`wrangler.jsonc` is at the repository root and is committed. It names the account's resources by name only — no account id and no D1 database id — because the repository is public and a fork should not deploy into another account. Wrangler reads the account from the API token and looks up the database and bucket by name. Its `vars` block carries `R2_BUCKET_NAME`, so the bucket the API signs uploads for is the bucket the `IMAGES` binding reads.
-
-Rename `heptadec` and `heptadec-images` in `wrangler.jsonc` before connecting an account that already has them — including the `R2_BUCKET_NAME` var, which has to match the binding.
-
-The deploy is three ordered steps:
+`pnpm run deploy` is the same sequence Workers Builds runs:
 
 ```bash
-pnpm run build          # the SPA into apps/web/dist
+pnpm run build          # apps/web/dist
 pnpm run db:migrate:d1  # wrangler d1 migrations apply DB --remote
 pnpm run deploy:worker  # wrangler deploy
 ```
 
-`pnpm run deploy` runs all three in that order, so the schema always lands before the Worker that reads it. The migration command addresses the `DB` binding rather than the database name, so a deployment that renamed the database still migrates the right one.
+The migration command targets the `DB` binding, not the database name, so a renamed database still migrates the right one.
 
-#### From a laptop
-
-`pnpm deploy:cloudflare` provisions the same resources and deploys from your machine. It reads the names from `wrangler.jsonc`, creates the D1 database and the bucket when they are missing, allows browser uploads from `PUBLIC_URL`, applies migrations, and deploys.
-
-The values come from the gitignored `.env`. The plain ones are written to the Worker only on the first deploy; after that the dashboard is the source of truth, so editing `PUBLIC_URL` there is not undone by the next laptop deploy. `BETTER_AUTH_SECRET` and `HEPTADEC_SECRET_KEY` are used as they are when `.env` has them, and generated and saved back to `.env` when it does not — never rotated, because the second one encrypts every stored data-source credential. Re-running leaves what already exists alone.
+### Local Worker
 
 ```bash
-pnpm deploy:cloudflare
-```
-
-| Concern | How it runs on Workers |
-|---|---|
-| App database | D1 through `drizzle-orm/d1`, bound per request |
-| Scheduler | A Cron Trigger calls the same `runDueJobs` handler as the Node timer |
-| SQLite data sources | `@libsql/client`, so point them at `libsql://` URLs |
-| Postgres, MySQL, Redis | TCP through `cloudflare:sockets`; put Hyperdrive in front in production |
-| Web assets | Workers static assets, with `index.html` as the SPA fallback |
-
-Secrets can also be set from the command line, from the repository root:
-
-```bash
-pnpm exec wrangler secret put BETTER_AUTH_SECRET
-pnpm exec wrangler secret put HEPTADEC_SECRET_KEY
-pnpm exec wrangler secret put R2_ACCESS_KEY_ID
-pnpm exec wrangler secret put R2_SECRET_ACCESS_KEY
-pnpm exec wrangler secret put RESEND_API_KEY
-```
-
-The bucket's CORS rule allows the app's origin to PUT an upload. Without it the browser refuses the upload with "CORS not configured for this bucket", and the failure looks like a broken upload button rather than a missing bucket rule. `pnpm deploy:cloudflare` writes that rule and replaces whatever was there, so a second origin is added after the deploy with `pnpm exec wrangler r2 bucket cors set`.
-
-To develop against workerd with a local D1 database instead of Node:
-
-```bash
-cp .dev.vars.example .dev.vars   # fill the two secrets it names
+cp .dev.vars.example .dev.vars   # fill the two secrets
+pnpm exec wrangler d1 migrations apply DB --local
 pnpm exec wrangler dev
 ```
 
-Two things do not run on Workers: SMTP alert channels, because there is no port 25 (use Resend or Cloudflare Email Sending), and local-file SQLite data sources, because there is no filesystem (point them at a `libsql://` URL). Both surface as a delivery or connection error rather than a silent skip.
+That runs `worker.ts` in workerd with a local D1 database and the real static assets.
 
-### Billing (Bachs)
+### What does not run on Workers
 
-[Bachs](https://bachs.io) charges the card; this app stores only the state its webhooks report. Four values come from Bachs, and **all of them are needed** — with any one missing, billing reports itself unconfigured and the instance stays free.
+- **SMTP alert channels** — Workers cannot open port 25; use Resend or Cloudflare Email Sending.
+- **Local-file SQLite sources** — there is no filesystem; point the source at a `libsql://` URL.
 
-| Value | Where it goes | What it is |
-|---|---|---|
-| `BACHS_SECRET_KEY` | Worker secret | The API key from Bachs → Developers → API keys, `sk_live_…` |
-| `BACHS_WEBHOOK_SECRET` | Worker secret | The signing secret of the webhook endpoint, `whsec_…` |
-| `BACHS_PRICE_MONTHLY` | Worker var | What 30 days of access costs, in USD |
-| `BACHS_PRICE_YEARLY` | Worker var | What 365 days of access costs, in USD |
-| `BACHS_BASE_URL` | Worker var | `https://api.bachs.io` for live, `https://sandbox-api.bachs.io` for the sandbox |
+Both fail as a delivery or connection error, never as a silent skip.
 
-The two secrets are set on the Worker:
+## Deploy with Docker
+
+`docker-compose.app.yml` runs two containers: `api`, and `web` (nginx) serving the built client and proxying `/api`, `/health`, and `/mcp` to the API. The API applies pending migrations on start.
 
 ```bash
-pnpm exec wrangler secret put BACHS_SECRET_KEY
-pnpm exec wrangler secret put BACHS_WEBHOOK_SECRET
+cp .env.example .env
 ```
 
-The vars are set beside the rest of the Worker's values: in the dashboard under **Settings → Variables & Secrets**, or in `.env` on a laptop for `pnpm deploy:cloudflare`.
+Fill in:
 
-**A plan is a one-time charge that buys a period — there is no product and no subscription.** Nothing is created in the Bachs dashboard: the price travels with the checkout as `pricing: { currency: "USD", amount }`, and the app adds 30 or 365 days to the organization's access when the payment clears. The card is saved at checkout and charged again at the end of the period by the app, with the period's own id as both reference and idempotency key — a retried tick asks Bachs for the same charge rather than taking the money twice.
-
-**Prices are always USD, and the buyer can still pay in their own currency.** Bachs's adaptive pricing — a switch on the Bachs account, not a checkout parameter — shows the buyer the local equivalent at the checkout page, so a buyer in Ghana can pay cedis by mobile money while the app and the settlement stay in dollars. `pnpm deploy:cloudflare` warns when adaptive pricing is off; with it off the checkout still works, in dollars.
-
-**The webhook endpoint** is `https://your-host/api/webhooks/bachs`, and it must be subscribed to four events:
-
-- `checkout.completed` — the buyer finished the checkout; fulfilled only when `payment_status` is `paid`
-- `collection.succeeded` — the money was actually collected, which is also what a renewal charge reports
-- `collection.failed` — a renewal charge was refused; automatic renewal stops and the paywall asks for a new card
-- `payment_method.saved` — the card to charge at the end of the period
-
-The delivery carries the organization and the plan in `data.metadata`, and the app verifies it with the `x-bachs-signature-v2` header against the webhook secret. `checkout.completed` and `collection.succeeded` can describe the same payment and either can arrive first; the payment row is unique on the checkout id, so the second one is dropped rather than extending the period twice.
-
-**The checkout opens as an overlay.** The web app loads Bachs's browser SDK and opens the hosted checkout in a modal over the page, so the customer never leaves the app and never sees card data on it. The checkout session is still created on the server, so the amount and currency are the server's to decide.
-
-**The fee preference decides who pays the processing fee.** Under "I pay fees" the customer pays the plan's price and the fee comes out of the balance; under "Customer pays fees" Bachs adds it on top, and a plan advertised as $5.00 is charged as $5.65. The app advertises the amount it sends with the checkout, so the two have to agree.
-
-**A sandbox key against the live host is refused** rather than charged, so the base URL and the key have to be changed together.
-
-**Turning this on has a consequence.** The trial belongs to this app, not to Bachs: **seven days from the moment the organization was created**, with no card taken at sign-up. An organization older than that has already spent its trial, so enabling billing locks out every organization that is not already inside a paid period — they meet `402 payment_required` on the product's endpoints. On a fresh database there is nobody to lock out yet.
-
-## Continuous integration
-
-`.github/workflows/ci.yml` runs on every pull request and on every push to `dev` and `main`. What it does depends on the branch:
-
-| Event | Job | What runs |
-|---|---|---|
-| Pull request | `Checks` | Typecheck, web build, the integration suite against the test stack |
-| Push to `dev` | `Checks` | The same |
-| Push to `main` | `Checks`, then `Images` | The checks first; then the Docker images are pushed to `ghcr.io`. Cloudflare Workers Builds deploys the Worker from the same push, separately. |
-
-`dev` is where work lands: open a pull request against `dev`, and it is checked there. `main` is the release: merging `dev` into `main` builds the images, and the Workers Builds connection picks up the same commit and deploys the Worker.
-
-CI holds no Cloudflare credentials. The Worker is configured and deployed from the Cloudflare dashboard, where its variables and secrets are visible and editable.
-
-The integration suite needs the test stack — Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB and Quickwit — which CI starts with `pnpm compose:test:up` and fills with `pnpm seed:test`. The compose command uses `docker-compose.test.override.yml` when that local file exists, so developers can move test ports without requiring the ignored override in CI.
-
-## Environment Variables
-
-| Variable | Description | Example |
-|---|---|---|
-| `API_PORT` | Port for the API server | `8787` |
-| `DATABASE_URL` | Local app database connection string | `file:./data/heptadec.db` |
-| `BETTER_AUTH_SECRET` | Secret key used for signing session tokens | `random_secret_string` |
-| `BETTER_AUTH_URL` | Public base URL of the auth and API server | `http://localhost:8787` |
-| `WEB_URL` | Base URL of the web frontend application | `http://localhost:5173` |
-| `HEPTADEC_SECRET_KEY` | 32-byte Base64 key for AES-GCM encryption of stored secrets | `BASE64_32_BYTE_STRING` |
-| `EMAIL_TRANSPORT` | Active email transport provider (`resend` or `cloudflare`) | `resend` |
-| `RESEND_API_KEY` | API key for Resend email delivery | `re_123456789` |
-| `RESEND_FROM` | Sender email address for Resend | `Heptadec <alerts@example.com>` |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for R2 and email dispatch | `your_account_id` |
-| `CLOUDFLARE_EMAIL_TOKEN` | API token for Cloudflare email sending | `your_cf_email_token` |
-| `CLOUDFLARE_EMAIL_FROM` | Sender address for Cloudflare email | `notifications@example.com` |
-| `R2_BUCKET_NAME` | Bucket holding logos and avatars; on Workers it comes from `wrangler.jsonc` | `heptadec-images` |
-| `R2_ACCESS_KEY_ID` | R2 access key that signs an upload | `your_r2_access_key_id` |
-| `R2_SECRET_ACCESS_KEY` | R2 secret key that signs an upload | `your_r2_secret_access_key` |
-| `R2_SESSION_TOKEN` | Session token, only for temporary R2 credentials | `your_r2_session_token` |
-| `R2_PUBLIC_ID` | Bucket id behind the managed `r2.dev` domain, read from | `your_bucket_id` |
-| `R2_CUSTOM_DOMAIN` | Custom domain for the bucket; it wins over the managed one | `images.example.com` |
-| `BACHS_SECRET_KEY` | Bachs API key | `sk_live_…` |
-| `BACHS_WEBHOOK_SECRET` | Signing secret of the Bachs webhook endpoint | `whsec_…` |
-| `BACHS_BASE_URL` | The Bachs host; live and sandbox differ | `https://api.bachs.io` |
-| `BACHS_PRICE_MONTHLY` | What 30 days of access costs, in USD | `5.00` |
-| `BACHS_PRICE_YEARLY` | What 365 days of access costs, in USD | `50.00` |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `your_google_client_id` |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `your_google_client_secret` |
-| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | `your_github_client_id` |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Client Secret | `your_github_client_secret` |
-
-## API Documentation
-
-All routes except public health checks, share links, and public auth callbacks require an authenticated session cookie or appropriate authorization headers.
-
-### System & Health
-
-#### GET /health
-**Description**: Returns service health status.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "ok": true
-}
+```bash
+BETTER_AUTH_SECRET=...          # openssl rand -base64 32
+HEPTADEC_SECRET_KEY=...         # openssl rand -base64 32
+PUBLIC_URL=https://example.com
+DATABASE_URL=file:./data/heptadec.db
 ```
 
-**Errors**:
-- 500: Server unavailable
+`./data` is the `heptadec-appdata` volume. Then:
 
----
-
-### Authentication & Profiles
-
-#### GET /api/providers
-**Description**: Lists enabled social authentication providers.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "providers": [
-    {
-      "id": "github",
-      "label": "Sign in with GitHub"
-    }
-  ]
-}
+```bash
+docker compose -f docker-compose.app.yml up -d --build
 ```
 
-**Errors**:
-- 500: Failed to load auth providers
+The web container listens on `${WEB_PORT:-8080}`. Put Caddy, nginx, or a load balancer in front for TLS and pass the real hostname through. `pnpm app:up` and `pnpm app:down` wrap the same file.
 
-#### GET /api/me
-**Description**: Retrieves current user profile, membership details, and active organization.
+Back up everything in one command:
 
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "user": {
-    "id": "usr_123",
-    "name": "Jane Doe",
-    "email": "jane@example.com",
-    "image": null,
-    "hasPassword": true,
-    "onboardingCompleted": true
-  },
-  "displayName": "Jane",
-  "image": null
-}
+```bash
+docker run --rm -v heptadec-app_heptadec-appdata:/data -v "$PWD":/out alpine \
+  tar czf /out/heptadec-$(date +%F).db.tar.gz -C /data .
 ```
 
-**Errors**:
-- 401: Authentication required
+Prebuilt `api` and `web` images are published to `ghcr.io/<owner>/<repo>` on pushes to `main`; swap the `build:` blocks in the Compose file for `image:` lines to use them.
 
-#### POST /api/onboarding/complete
-**Description**: Marks user onboarding as completed.
+## Tests
 
-**Request**:
-None
+Tests run through the real app (`buildApp()`), real Better Auth, a real SQLite file, and real engines. They migrate their own `test.db`, so `pnpm test` works from a clean checkout.
 
-**Response**:
-```json
-{
-  "user": {
-    "id": "usr_123",
-    "onboardingCompleted": true
-  }
-}
+```bash
+pnpm compose:test:up   # Postgres, MySQL, MariaDB, Redis, ClickHouse, libSQL, MongoDB, Quickwit
+pnpm seed:test
+pnpm test
+pnpm test:billing
+pnpm compose:test:down
 ```
 
-**Errors**:
-- 401: Authentication required
+The suite refuses to run against `dev.db`. To point it at another app database, set `DATABASE_URL` explicitly.
 
----
+## CI
 
-### Organizations & Members
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`:
 
-#### GET /api/organization
-**Description**: Lists all organizations the authenticated user belongs to.
+| Event | What runs |
+|---|---|
+| Pull request | Typecheck, web build, the integration suite against the test stack |
+| Push to `main` | The same checks, then `api` and `web` images are pushed to `ghcr.io` |
 
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "organizations": [
-    {
-      "organization": {
-        "id": "org_abc",
-        "name": "Acme Analytics",
-        "slug": "acme-analytics",
-        "logo": null,
-        "logoUrl": null
-      },
-      "role": "owner",
-      "active": true
-    }
-  ],
-  "activeOrganizationId": "org_abc"
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
-#### POST /api/organization/switch
-**Description**: Switches the user active organization context.
-
-**Request**:
-```json
-{
-  "organizationId": "org_xyz"
-}
-```
-
-**Response**:
-```json
-{
-  "activeOrganizationId": "org_xyz"
-}
-```
-
-**Errors**:
-- 400: An organization id is required
-- 401: Authentication required
-- 403: You are not a member of that organization
-
-#### POST /api/organization/delete
-**Description**: Permanently deletes the active organization and all related scoped data.
-
-**Request**:
-```json
-{
-  "slug": "acme-analytics"
-}
-```
-
-**Response**:
-```json
-{
-  "deleted": true
-}
-```
-
-**Errors**:
-- 400: That slug is not this organization's
-- 401: Authentication required
-- 403: Only an owner can delete an organization
-
-#### GET /api/organization/members
-**Description**: Lists all members of the active organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "members": [
-    {
-      "id": "mem_1",
-      "userId": "usr_123",
-      "name": "Jane Doe",
-      "email": "jane@example.com",
-      "displayName": "Jane",
-      "image": null,
-      "role": "owner",
-      "isYou": true
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 403: You are not a member of that organization
-
-#### PATCH /api/organization/members/:id
-**Description**: Updates a member role within the organization.
-
-**Request**:
-```json
-{
-  "role": "editor"
-}
-```
-
-**Response**:
-```json
-{
-  "id": "mem_2",
-  "role": "editor"
-}
-```
-
-**Errors**:
-- 400: That role does not exist
-- 401: Authentication required
-- 403: Only an owner can change a role
-
-#### DELETE /api/organization/members/:id
-**Description**: Removes a member from the organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "removed": "mem_2"
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 403: Only an owner can remove a member
-
----
-
-### Invitations
-
-#### GET /api/organization/invitations
-**Description**: Lists all pending invitations for the current organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "invitations": [
-    {
-      "id": "inv_123",
-      "email": "teammate@example.com",
-      "role": "editor",
-      "status": "pending",
-      "expiresAt": "2026-04-01T00:00:00.000Z"
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 403: Only an owner can see invitations
-
-#### POST /api/organization/invitations
-**Description**: Sends an email invitation to join the organization.
-
-**Request**:
-```json
-{
-  "email": "teammate@example.com",
-  "role": "editor"
-}
-```
-
-**Response**:
-```json
-{
-  "invited": "teammate@example.com",
-  "role": "editor",
-  "organizationId": "org_abc"
-}
-```
-
-**Errors**:
-- 400: The email address is not valid
-- 401: Authentication required
-- 403: Only an owner can invite members
-
-#### GET /api/invitation/:id
-**Description**: Previews invitation details before accepting.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "id": "inv_123",
-  "organizationName": "Acme Analytics",
-  "organizationSlug": "acme-analytics",
-  "email": "teammate@example.com",
-  "role": "editor",
-  "status": "pending",
-  "expiresAt": "2026-04-01T00:00:00.000Z"
-}
-```
-
-**Errors**:
-- 404: That invitation does not exist or is no longer valid
-
-#### POST /api/invitation/:id/accept
-**Description**: Accepts a pending organization invitation.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "organizationId": "org_abc",
-  "organizationName": "Acme Analytics",
-  "role": "editor"
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 404: That invitation does not exist
-
----
-
-### Data Sources
-
-#### GET /api/data-sources
-**Description**: Lists all configured data sources in the active organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "dataSources": [
-    {
-      "id": "ds_123",
-      "organizationId": "org_abc",
-      "kind": "postgres",
-      "name": "Main Warehouse",
-      "host": "localhost",
-      "port": 5432,
-      "socketPath": null,
-      "connectionMode": "tcp",
-      "database": "heptadec_demo",
-      "schemaName": "public",
-      "options": null,
-      "username": "postgres",
-      "hasSecret": true,
-      "hasCaCert": false,
-      "hasClientCert": false,
-      "hasClientKey": false,
-      "hasToken": false,
-      "readOnly": true,
-      "sqlDialect": "postgres",
-      "queryLanguage": "sql",
-      "canExplain": true,
-      "tooling": true,
-      "createdAt": "2026-01-01T00:00:00.000Z",
-      "updatedAt": "2026-01-01T00:00:00.000Z"
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
-#### POST /api/data-sources
-**Description**: Registers a new data source connection.
-
-**Request**:
-```json
-{
-  "kind": "postgres",
-  "name": "Main Warehouse",
-  "host": "localhost",
-  "port": 5432,
-  "database": "heptadec_demo",
-  "username": "postgres",
-  "password": "Delta1force",
-  "readOnly": true
-}
-```
-
-**Response**:
-```json
-{
-  "dataSource": {
-    "id": "ds_123",
-    "name": "Main Warehouse",
-    "kind": "postgres",
-    "readOnly": true
-  }
-}
-```
-
-**Errors**:
-- 400: Missing or invalid connection parameter
-- 401: Authentication required
-- 403: Only owners and editors can add data sources
-
-#### PATCH /api/data-sources/:id
-**Description**: Updates connection parameters for an existing data source.
-
-**Request**:
-```json
-{
-  "name": "Primary PostgreSQL Warehouse",
-  "readOnly": true
-}
-```
-
-**Response**:
-```json
-{
-  "dataSource": {
-    "id": "ds_123",
-    "name": "Primary PostgreSQL Warehouse"
-  }
-}
-```
-
-**Errors**:
-- 400: Invalid payload
-- 401: Authentication required
-- 404: That data source does not exist
-
-#### DELETE /api/data-sources/:id
-**Description**: Deletes a data source connection.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "removed": "ds_123"
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 404: That data source does not exist
-
-#### POST /api/data-sources/test
-**Description**: Verifies database connectivity without persisting credentials.
-
-**Request**:
-```json
-{
-  "kind": "postgres",
-  "name": "Test Connection",
-  "host": "localhost",
-  "port": 5432,
-  "database": "heptadec_demo",
-  "username": "postgres",
-  "password": "Delta1force"
-}
-```
-
-**Response**:
-```json
-{
-  "ok": true,
-  "total": 8,
-  "sample": ["regions", "categories", "suppliers", "products"]
-}
-```
-
-**Errors**:
-- 400: Connection payload invalid
-- 502: The database could not be reached
-
-#### GET /api/data-sources/:id/objects
-**Description**: Lists queryable entities (tables, collections, or indexes) within a data source.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "objects": [
-    { "name": "public.products", "type": "table" },
-    { "name": "public.orders", "type": "table" }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 404: That data source does not exist
-- 502: The database could not be reached
-
-#### POST /api/data-sources/:id/preview
-**Description**: Previews initial records of a specific entity.
-
-**Request**:
-```json
-{
-  "object": "public.products",
-  "limit": 2
-}
-```
-
-**Response**:
-```json
-{
-  "columns": ["id", "name", "price", "in_stock"],
-  "rows": [
-    { "id": 1, "name": "Meridian 14", "price": "1299.00", "in_stock": true },
-    { "id": 2, "name": "Meridian 16", "price": "1899.00", "in_stock": true }
-  ],
-  "truncated": false
-}
-```
-
-**Errors**:
-- 400: Object or limit invalid
-- 404: That object does not exist
-
----
-
-### Query Execution & Schemas
-
-#### POST /api/data-sources/:id/query
-**Description**: Executes an engine-specific statement (SQL, Mongo pipeline, Redis command, or Quickwit search).
-
-**Request (SQL)**:
-```json
-{
-  "sql": "SELECT name, price FROM products WHERE in_stock = true LIMIT 5"
-}
-```
-
-**Response**:
-```json
-{
-  "columns": ["name", "price"],
-  "columnTypes": ["varchar", "numeric"],
-  "rows": [
-    { "name": "Meridian 14", "price": "1299.00" },
-    { "name": "Meridian 16", "price": "1899.00" }
-  ],
-  "rowCount": 2,
-  "truncated": false,
-  "durationMs": 14
-}
-```
-
-**Errors**:
-- 400: Query rejected (syntax error or write attempted on read-only source)
-- 401: Authentication required
-- 404: That data source does not exist
-
-#### POST /api/data-sources/:id/explain
-**Description**: Generates an execution plan for a SQL query on supported engines.
-
-**Request**:
-```json
-{
-  "sql": "SELECT * FROM orders WHERE total > 1000"
-}
-```
-
-**Response**:
-```json
-{
-  "plan": {
-    "nodeType": "Seq Scan",
-    "relationName": "orders",
-    "startupCost": 0.0,
-    "totalCost": 1.04,
-    "planRows": 2,
-    "planWidth": 52,
-    "children": []
-  }
-}
-```
-
-**Errors**:
-- 400: Statement could not be explained
-- 404: That data source does not exist
-
-#### GET /api/data-sources/:id/schema
-**Description**: Introspects full schema, returning tables, typed columns, and foreign key relationships.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "sourceId": "ds_123",
-  "database": "heptadec_demo",
-  "schemaName": "public",
-  "tables": [
-    {
-      "name": "products",
-      "columns": [
-        { "name": "id", "dataType": "integer", "nullable": false, "primaryKey": true },
-        { "name": "name", "dataType": "character varying", "nullable": false, "primaryKey": false }
-      ],
-      "indexedColumns": ["category_id"]
-    }
-  ],
-  "relationships": [
-    {
-      "id": "products_category_id_fkey:1",
-      "constraint": "products_category_id_fkey",
-      "fromTable": "products",
-      "fromColumn": "category_id",
-      "toTable": "categories",
-      "toColumn": "id"
-    }
-  ],
-  "introspectedAt": "2026-03-31T12:00:00.000Z"
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 404: That data source does not exist
-
----
-
-### Dashboards & Widgets
-
-#### GET /api/dashboards
-**Description**: Lists all dashboards in the organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "dashboards": [
-    {
-      "id": "dash_123",
-      "name": "Executive Overview",
-      "createdAt": "2026-01-01T00:00:00.000Z",
-      "updatedAt": "2026-01-01T00:00:00.000Z"
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
-#### POST /api/dashboards
-**Description**: Creates a new dashboard bound to one or more data sources.
-
-**Request**:
-```json
-{
-  "name": "Sales Metrics",
-  "dataSourceIds": ["ds_123"]
-}
-```
-
-**Response**:
-```json
-{
-  "dashboard": {
-    "id": "dash_123",
-    "name": "Sales Metrics",
-    "widgets": [],
-    "sources": [
-      {
-        "dataSourceId": "ds_123",
-        "name": "Main Warehouse",
-        "kind": "postgres",
-        "tooling": true
-      }
-    ]
-  }
-}
-```
-
-**Errors**:
-- 400: Connect at least one data source
-- 401: Authentication required
-- 403: Only owners and editors can create dashboards
-
-#### GET /api/dashboards/:id
-**Description**: Fetches dashboard details, connected sources, and configured widgets.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "dashboard": {
-    "id": "dash_123",
-    "name": "Sales Metrics",
-    "widgets": [],
-    "sources": []
-  }
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 404: That dashboard does not exist
-
-#### POST /api/dashboards/:id/widgets
-**Description**: Adds a chart widget to an existing dashboard based on a saved query.
-
-**Request**:
-```json
-{
-  "savedQueryId": "sq_456",
-  "chartType": "bar",
-  "title": "Revenue by Region",
-  "labelColumn": "region_name",
-  "valueColumn": "total_revenue"
-}
-```
-
-**Response**:
-```json
-{
-  "widget": {
-    "id": "wid_789",
-    "dashboardId": "dash_123",
-    "savedQueryId": "sq_456",
-    "chartType": "bar",
-    "title": "Revenue by Region",
-    "labelColumn": "region_name",
-    "valueColumn": "total_revenue"
-  }
-}
-```
-
-**Errors**:
-- 400: Chart parameters or column mapping invalid
-- 404: Dashboard or saved query does not exist
-
-#### GET /api/widgets/:id/data
-**Description**: Retrieves cached or materialized chart points for a specific widget.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "points": [
-    { "label": "Europe West", "value": 1299.0 },
-    { "label": "US East", "value": 549.5 }
-  ],
-  "rowCount": 2,
-  "truncated": false,
-  "durationMs": 8,
-  "ranAt": "2026-03-31T12:00:00.000Z",
-  "stale": false
-}
-```
-
-**Errors**:
-- 404: That chart does not exist
-
----
-
-### AI Query Generation & Assistant
-
-#### POST /api/ai/ask
-**Description**: Streams query generation for a natural language prompt via Server-Sent Events (SSE).
-
-**Request**:
-```json
-{
-  "question": "Show revenue grouped by supplier region",
-  "dataSourceIds": ["ds_123"]
-}
-```
-
-**Response** (SSE stream):
-```
-event: status
-data: {"message":"Reading the structure…"}
-
-event: delta
-data: {"text":"SELECT r.name AS region, SUM(o.total) AS total_revenue "}
-
-event: done
-data: {"chatId":"chat_1","language":"sql","answered":true,"durationMs":950}
-```
-
-**Errors**:
-- 400: Question missing or no AI provider configured
-- 401: Authentication required
-- 403: Only owners and editors can ask questions
-
-#### POST /api/dashboards/generate
-**Description**: Streams AI dashboard generation, creating charts and executing plan queries automatically.
-
-**Request**:
-```json
-{
-  "name": "Inventory Overview",
-  "dataSourceIds": ["ds_123"],
-  "brief": "Focus on high value products and stock levels"
-}
-```
-
-**Response** (SSE stream):
-```
-event: status
-data: {"message":"Reading Main Warehouse…"}
-
-event: status
-data: {"message":"Added Product Distribution"}
-
-event: done
-data: {"dashboard":{"id":"dash_999","name":"Inventory Overview","widgets":[]},"durationMs":3200}
-```
-
-**Errors**:
-- 400: Missing parameters
-- 403: Forbidden
-
----
-
-### Model Context Protocol (MCP)
-
-#### POST /api/mcp-tokens
-**Description**: Creates an API token for external MCP AI assistants with scoped capabilities.
-
-**Request**:
-```json
-{
-  "name": "Claude Desktop Agent",
-  "capabilities": ["list_data_sources", "describe_data_source", "run_query"]
-}
-```
-
-**Response**:
-```json
-{
-  "id": "key_123",
-  "name": "Claude Desktop Agent",
-  "token": "mcp_sec_abc123456789",
-  "enabled": true,
-  "capabilities": ["list_data_sources", "describe_data_source", "run_query"]
-}
-```
-
-**Errors**:
-- 400: Capability list invalid
-- 403: Only owners can create MCP tokens
-
-#### ALL /mcp
-**Description**: Web-standard Streamable HTTP MCP transport endpoint used by AI agents.
-
-**Request**:
-MCP JSON-RPC protocol with `Authorization: Bearer <MCP_TOKEN>`.
-
-**Response**:
-MCP JSON-RPC response.
-
-**Errors**:
-- 401: That MCP token is not valid
-- 429: Token rate limit exceeded
-
----
-
-### Scheduled Jobs & Alerts
-
-#### GET /api/scheduled-jobs
-**Description**: Lists all recurring query jobs.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "scheduledJobs": [
-    {
-      "id": "job_123",
-      "savedQueryId": "sq_456",
-      "savedQueryName": "Hourly Sales Check",
-      "name": "Hourly Sales",
-      "cron": "0 * * * *",
-      "timezone": "UTC",
-      "ttlSeconds": 3600,
-      "nextRunAt": "2026-03-31T13:00:00.000Z",
-      "lastRunAt": "2026-03-31T12:00:00.000Z"
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
-#### POST /api/scheduled-jobs
-**Description**: Schedules a saved query to run on a cron cadence.
-
-**Request**:
-```json
-{
-  "savedQueryId": "sq_456",
-  "name": "Hourly Sales Refresh",
-  "cron": "0 * * * *",
-  "timezone": "UTC",
-  "ttlSeconds": 3600
-}
-```
-
-**Response**:
-```json
-{
-  "scheduledJob": {
-    "id": "job_123",
-    "name": "Hourly Sales Refresh",
-    "nextRunAt": "2026-03-31T13:00:00.000Z"
-  }
-}
-```
-
-**Errors**:
-- 400: Invalid cron expression or IANA timezone
-- 404: That saved query does not exist
-
-#### POST /api/alert-rules
-**Description**: Defines an evaluation rule on a query column to trigger upon scheduled execution.
-
-**Request**:
-```json
-{
-  "savedQueryId": "sq_456",
-  "name": "High Volume Alert",
-  "column": "total",
-  "operator": ">=",
-  "threshold": 1000
-}
-```
-
-**Response**:
-```json
-{
-  "alertRule": {
-    "id": "alr_123",
-    "savedQueryId": "sq_456",
-    "name": "High Volume Alert",
-    "column": "total",
-    "operator": ">=",
-    "threshold": 1000,
-    "scheduled": true
-  }
-}
-```
-
-**Errors**:
-- 400: Operator must be one of >, >=, <, <=, or =
-- 404: That saved query does not exist
-
-#### GET /api/alert-deliveries
-**Description**: Returns delivery logs for triggered alert rules.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "alertDeliveries": [
-    {
-      "id": "del_123",
-      "alertRuleId": "alr_123",
-      "channel": "slack",
-      "status": "sent",
-      "message": "High Volume Alert: 2 rows do - total >= 1000 in the last run.",
-      "error": null,
-      "createdAt": "2026-03-31T12:00:05.000Z"
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
----
-
-### Notification Channels
-
-#### GET /api/notification-channels
-**Description**: Lists notification destinations configured for the organization.
-
-**Request**:
-None
-
-**Response**:
-```json
-{
-  "notificationChannels": [
-    {
-      "id": "nc_123",
-      "name": "DevOps Alerts",
-      "kind": "slack",
-      "recipients": [],
-      "config": {
-        "channel": "#alerts"
-      }
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-
-#### POST /api/notification-channels
-**Description**: Connects a new notification destination (Slack, Email, or Resend).
-
-**Request**:
-```json
-{
-  "name": "Engineering Slack",
-  "kind": "slack",
-  "webhookUrl": "https://hooks.slack.com/services/T00/B00/XXXXX",
-  "channel": "#db-alerts"
-}
-```
-
-**Response**:
-```json
-{
-  "notificationChannel": {
-    "id": "nc_123",
-    "name": "Engineering Slack",
-    "kind": "slack"
-  }
-}
-```
-
-**Errors**:
-- 400: Invalid webhook URL or channel parameters
-- 403: Only owners can manage notification channels
-
----
-
-### Audit Logs
-
-#### GET /api/audit-logs
-**Description**: Retrieves immutable organization audit records.
-
-**Request**:
-Query parameters: `event`, `target`, `since`, `until`, `q`
-
-**Response**:
-```json
-{
-  "auditLogs": [
-    {
-      "id": "aud_123",
-      "occurredAt": "2026-03-31T12:00:00.000Z",
-      "actorId": "usr_123",
-      "actorLabel": "Jane Doe",
-      "event": "data_source.created",
-      "targetKind": "data_source",
-      "targetId": "ds_123",
-      "targetLabel": "Main Warehouse",
-      "detail": null
-    }
-  ]
-}
-```
-
-**Errors**:
-- 401: Authentication required
-- 403: Only owners can see the audit log
+Workers Builds picks up the same `main` commit and deploys the Worker separately.
 
 ## Contributing
 
-Contributions are welcome. If you want to contribute, please follow these steps:
-
-1. Fork the repository.
-2. Create a branch for your feature or bug fix:
-```bash
-git checkout -b feature/your-feature-name
-```
-3. Ensure all tests and type checks pass:
-```bash
-pnpm typecheck
-pnpm test
-```
-4. Commit your changes and open a pull request against `dev`.
+Fork the repository, branch from `main` as `<type>/<short-description>`, keep Conventional Commit messages with a scope, and open a pull request. Run `pnpm typecheck` and `pnpm test` before pushing.
 
 ## Author
 
-- **Daniel Mbazu**
-- LinkedIn: https://linkedin.com/in/mbazudaniel
-- X: https://x.com/Mr_MicDaniel
-
-## Badges
-
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)](https://hono.dev/)
-[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-
-[![Readme was generated by Dokugen](https://img.shields.io/badge/Readme%20was%20generated%20by-Dokugen-brightgreen)](https://dokugen.samueltuoyo.com)
+Daniel Mbazu — [LinkedIn](https://linkedin.com/in/mbazudaniel) · [X](https://x.com/Mr_MicDaniel)

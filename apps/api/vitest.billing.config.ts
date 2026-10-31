@@ -9,6 +9,7 @@ export default defineConfig({
       "test/billing-charge.test.ts",
       "test/billing-reminder.test.ts",
     ],
+    globalSetup: ["test/global-setup.ts"],
     setupFiles: ["test/setup-billing.ts"],
     fileParallelism: false,
   },

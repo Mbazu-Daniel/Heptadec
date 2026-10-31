@@ -21,7 +21,6 @@ export function CommonServerInputs({
 
   const value = (field: ConnectionFieldKind): string => values[field] ?? "";
 
-  // A socket has no host to reach, so the two are never shown together.
   const viaSocket = mode === "socket" && socketPath !== null;
 
   return (

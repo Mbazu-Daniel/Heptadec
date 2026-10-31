@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { ANSWER_EVENTS } from "../src/modules/ai/contracts";
 import { authFor } from "../src/common/config/better-auth";
-import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
+import { db, request, signUp, syncedStructure, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { aiProvider, aiChat, dataSource } = schema;
 
@@ -113,7 +113,13 @@ async function startProvider(reply: string, chunks = 4): Promise<{
             object: "chat.completion.chunk",
             created: 1,
             model: "test",
-            choices: [{ index: 0, delta: { content }, finish_reason: null }],
+            choices: [
+              {
+                index: 0,
+                delta: { content },
+                finish_reason: index >= parts.length ? "stop" : null,
+              },
+            ],
           })}\n\n`,
         );
         setImmediate(push);
@@ -404,6 +410,57 @@ it("uses the provider the user marked as default", async () => {
   }
 });
 
+it("switches the provider in use with one patch, keeping the stored key", async () => {
+  const first = await startProvider("SELECT 'first'");
+  const second = await startProvider("SELECT 'second'");
+  try {
+    const { cookie, sourceId, organizationId } = await ownerWithSource();
+    const a = await addProvider(cookie, {
+      name: "a",
+      provider: "openai-compatible",
+      model: "m",
+      baseUrl: first.baseUrl,
+      apiKey: "sk-a",
+      isDefault: true,
+    });
+    const b = await addProvider(cookie, {
+      name: "b",
+      provider: "openai-compatible",
+      model: "m",
+      baseUrl: second.baseUrl,
+      apiKey: "sk-b",
+    });
+    const aId = ((await a.json()) as { id: string }).id;
+    const bId = ((await b.json()) as { id: string }).id;
+    const bKey = mineOf(await db.select().from(aiProvider), organizationId).find(
+      (row) => row.id === bId,
+    )!.apiKey;
+
+    const res = await request(`/api/ai/providers/${bId}`, {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "renamed", isDefault: true }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = mineOf(await db.select().from(aiProvider), organizationId);
+    const inUse = rows.filter((row) => row.isDefault);
+    expect(inUse).toHaveLength(1);
+    expect(inUse[0]!.id).toBe(bId);
+    expect(inUse[0]!.name).toBe("renamed");
+    expect(inUse[0]!.apiKey).toBe(bKey);
+    expect(rows.find((row) => row.id === aId)!.isDefault).toBe(false);
+
+    const { body } = await ask(cookie, sourceId, "pick one");
+    expect(body.sql).toContain("second");
+    expect(first.captured).toHaveLength(0);
+    expect(second.captured).toHaveLength(1);
+  } finally {
+    await first.close();
+    await second.close();
+  }
+});
+
 it("says so when the model declines to answer", async () => {
   const provider = await startProvider("UNANSWERABLE");
   try {
@@ -433,7 +490,7 @@ it("says so when the model declines to answer", async () => {
   }
 });
 
-it("logs the failure without echoing the key when the provider is down", { timeout: 30_000 }, async () => {
+it("names the provider that is not listening, without echoing its key", { timeout: 30_000 }, async () => {
   const { cookie, sourceId, organizationId } = await ownerWithSource();
   await addProvider(cookie, {
     name: "dead",
@@ -452,9 +509,9 @@ it("logs the failure without echoing the key when the provider is down", { timeo
 
   const rows = mineOf(await db.select().from(aiChat), organizationId);
   expect(rows).toHaveLength(1);
-  expect(rows[0]!.problem).toMatch(/key|reached/);
-  expect(rows[0]!.problem).not.toContain("could not be answered from this schema");
+  expect(rows[0]!.problem).toBe("Nothing is listening on that host and port");
   expect(rows[0]!.sql).toBeNull();
+  expect(rows[0]!.durationMs).toBeLessThan(20_000);
 });
 
 it("refuses a provider that is not in the catalog", async () => {
@@ -526,7 +583,7 @@ it("keeps providers away from anyone who is not an owner", async () => {
 
 it("lists the models the provider actually serves, not a shipped list", async () => {
   const provider = await startModelsProvider([
-    { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
+    { id: "openai/gpt-5-mini", name: "GPT 5 Mini" },
     { id: "qwen/qwen3.8-27b", name: "Qwen 3.8 27B" },
   ]);
   try {
@@ -534,7 +591,7 @@ it("lists the models the provider actually serves, not a shipped list", async ()
     const created = await addProvider(cookie, {
       name: "live",
       provider: "openai-compatible",
-      model: "openai/gpt-oss-120b",
+      model: "openai/gpt-5-mini",
       baseUrl: provider.baseUrl,
       apiKey: "sk-models",
     });
@@ -551,10 +608,10 @@ it("lists the models the provider actually serves, not a shipped list", async ()
     };
     expect(body.source).toBe("provider");
     expect(body.models.map((entry) => entry.id)).toEqual([
-      "openai/gpt-oss-120b",
+      "openai/gpt-5-mini",
       "qwen/qwen3.8-27b",
     ]);
-    expect(body.models[0]!.label).toBe("GPT OSS 120B");
+    expect(body.models[0]!.label).toBe("GPT 5 Mini");
     expect(provider.seenAuth).toBe("Bearer sk-models");
   } finally {
     await provider.close();
@@ -563,7 +620,7 @@ it("lists the models the provider actually serves, not a shipped list", async ()
 
 it("offers a provider's models before it is saved, and writes nothing", async () => {
   const provider = await startModelsProvider([
-    { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
+    { id: "openai/gpt-5-mini", name: "GPT 5 Mini" },
     { id: "qwen/qwen3.8-27b", name: "Qwen 3.8 27B" },
   ]);
   try {
@@ -584,7 +641,7 @@ it("offers a provider's models before it is saved, and writes nothing", async ()
     };
     expect(body.source).toBe("provider");
     expect(body.models.map((entry) => entry.id)).toEqual([
-      "openai/gpt-oss-120b",
+      "openai/gpt-5-mini",
       "qwen/qwen3.8-27b",
     ]);
     expect(provider.seenAuth).toBe("Bearer sk-draft");
@@ -680,7 +737,7 @@ it("keeps one organization's model list out of another's reach", async () => {
   }
 });
 
-it("prunes a huge schema to a budget instead of sending all of it", async () => {
+it("sends every table, so one late in the list is not hidden from the model", async () => {
   const provider = await startProvider("SELECT 1");
   try {
     const { cookie, sourceId } = await ownerWithSource();
@@ -692,14 +749,25 @@ it("prunes a huge schema to a budget instead of sending all of it", async () => 
       apiKey: "sk-x",
     });
 
+    await syncedStructure(sourceId);
+    const described = await request(`/api/data-sources/${sourceId}/structure`, {
+      headers: { cookie },
+    });
+    expect(described.status).toBe(200);
+    const { tables } = (await described.json()) as {
+      tables: Array<{ name: string }>;
+    };
+    expect(tables.length).toBeGreaterThan(0);
+
     await ask(cookie, sourceId, "anything");
 
     const sent = JSON.parse(provider.captured[0]!.body) as {
       messages: Array<{ content: string }>;
     };
     const prompt = sent.messages.at(-1)!.content;
-    expect(prompt.length).toBeLessThan(20_000);
-    expect(prompt).toContain("events");
+    for (const table of tables) {
+      expect(prompt).toContain(`${table.name}(`);
+    }
   } finally {
     await provider.close();
   }
@@ -743,7 +811,6 @@ it("names the source that answered when several are in scope", async () => {
   expect(body!.dataSourceId).toBe(sourceId);
   expect(body!.dataSourceName.length).toBeGreaterThan(0);
 
-  // The chat row remembers which source the answer came from.
   const rows = await db
     .select()
     .from(aiChat)
@@ -827,10 +894,8 @@ it("answers a redis question with a read-only command", async () => {
     expect(body!.dataSourceName).toBe("Cache");
     expect(body!.language).toBe("command");
     expect(body!.command).toBe("HGETALL event:1");
-    // A command is not SQL, and must not be offered as such.
     expect(body!.sql).toBeNull();
 
-    // The command it answered with is one the server will actually run.
     const ran = await request(`/api/data-sources/${cache.id}/query`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -898,7 +963,6 @@ it("answers a quickwit question with a search over one index", async () => {
     }
     expect(body).not.toBeNull();
     expect(body!.language).toBe("search");
-    // A search is neither SQL nor a Redis command.
     expect(body!.sql).toBeNull();
     expect(body!.command).toBeNull();
     expect(body!.search).toEqual({

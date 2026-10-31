@@ -10,8 +10,10 @@ import {
   openMongo,
   openMysql,
   quotePostgres,
+  toRows,
 } from "../data-source/clients";
 import { BadRequestException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import { structureFailure } from "../../common/driver-error";
 import { engineFrom } from "../data-source/engines";
 import type {
@@ -32,14 +34,6 @@ type SqlIntrospector = (
   connection: IStoredConnection,
 ) => Promise<ISchemaResponse>;
 
-/**
- * Which dialect reads a structure, not which engine asked for it: MariaDB
- * reports as MySQL and libsql as SQLite, so an engine inherits its reader by
- * naming a dialect in the catalog rather than by being listed here.
- *
- * Keyed by the dialect union, so a dialect added later stops compiling until
- * its reader exists, instead of reaching a throwing default at runtime.
- */
 const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
   postgres: (connection) => introspectPostgres(asRelational(connection)),
   mysql: introspectMysql,
@@ -57,12 +51,6 @@ export function readsStructure(engine: IEngineSpec): boolean {
   return engine.sqlDialect !== null || engine.queryLanguage === "pipeline";
 }
 
-// Reads the structure of whichever engine the source points at. Which reader to
-// use follows from the language and the dialect the catalog says the source
-// speaks, so an engine that names SQL and a dialect is read without this file
-// having heard of it. A pipeline source is MongoDB, which is where its
-// documents come from. Redis and Quickwit have no tables to read, so they are
-// refused.
 export async function introspectSchema(
   connection: IStoredConnection,
 ): Promise<ISchemaResponse> {
@@ -77,31 +65,16 @@ export async function introspectSchema(
     : SQL_INTROSPECTORS[engine.sqlDialect](connection);
 }
 
-// Every engine below reports its catalogue in the shape assemble() expects,
-// so the diagram the app draws is the same whichever engine it came from.
-interface IColumnRow {
-  table_name: string;
-  column_name: string;
-  data_type: string;
-  is_nullable: string;
-  column_key: string;
-  is_primary_key: number;
+type DriverRow = Record<string, unknown>;
+
+function textField(row: DriverRow, field: string): string {
+  const value = row[field];
+  return typeof value === "string" ? value : "";
 }
 
-interface IIndexRow {
-  table_name: string;
-  column_name: string;
-}
-
-// ------------------------------------------------------------------- mysql
-
-interface IKeyRow {
-  constraint_name: string;
-  from_table: string;
-  from_column: string;
-  to_table: string;
-  to_column: string;
-  ordinal_position: number;
+function numberField(row: DriverRow, field: string): number {
+  const value = row[field];
+  return typeof value === "number" ? value : 0;
 }
 
 const MYSQL_COLUMNS = `
@@ -143,9 +116,12 @@ async function introspectMysql(
   const database = databaseName(connection);
   const client = await openMysql(connection);
   try {
-    const columns = (await client.query(MYSQL_COLUMNS, [database]))[0] as IColumnRow[];
-    const keys = (await client.query(MYSQL_FOREIGN_KEYS, [database]))[0] as IKeyRow[];
-    const indexes = (await client.query(MYSQL_INDEXES, [database]))[0] as IIndexRow[];
+    const [columnRows] = await client.query(MYSQL_COLUMNS, [database]);
+    const [keyRows] = await client.query(MYSQL_FOREIGN_KEYS, [database]);
+    const [indexRows] = await client.query(MYSQL_INDEXES, [database]);
+    const columns = toRows(columnRows as DriverRow[]);
+    const keys = toRows(keyRows as DriverRow[]);
+    const indexes = toRows(indexRows as DriverRow[]);
 
     return {
       database,
@@ -160,7 +136,6 @@ async function introspectMysql(
   }
 }
 
-// -------------------------------------------------------------- clickhouse
 
 const CLICKHOUSE_COLUMNS = `
   SELECT table AS table_name,
@@ -182,11 +157,10 @@ async function introspectClickhouse(
       query: CLICKHOUSE_COLUMNS,
       format: "JSONEachRow",
     });
-    const rows = (await result.json()) as IColumnRow[];
+    const rows = toRows((await result.json()) as DriverRow[]);
     return {
       database: connection.database ?? "",
       schemaName: "default",
-      // MergeTree tables carry no foreign keys, so the diagram shows tables only.
       tables: assemble(rows, []),
       relationships: [],
     };
@@ -197,27 +171,6 @@ async function introspectClickhouse(
   }
 }
 
-// ------------------------------------------------------- sqlite and libsql
-
-interface ISqliteColumnRow {
-  name: string;
-  type: string;
-  notnull: number;
-  pk: number;
-}
-
-interface ISqliteKeyRow {
-  table: string;
-  from: string;
-  to: string;
-  id: number;
-  seq: number;
-}
-
-interface ISqliteIndexRow {
-  name: string;
-  origin: string;
-}
 
 async function introspectSqlite(
   connection: IStoredConnection,
@@ -232,7 +185,7 @@ async function introspectSqlite(
     const relationships: ISchemaRelationship[] = [];
 
     for (const row of names.rows.slice(0, MAX_TABLES)) {
-      const name = String((row as Record<string, unknown>).name ?? "");
+      const name = textField(row, "name");
       if (name.length === 0) {
         continue;
       }
@@ -242,22 +195,25 @@ async function introspectSqlite(
 
       tables.push({
         name,
-        columns: columns.rows.map((column) => toSqliteColumn(column as unknown as ISqliteColumnRow)),
+        columns: columns.rows.map(toSqliteColumn),
         indexedColumns: indexes.rows
-          .map((index) => index as unknown as ISqliteIndexRow)
-          .filter((index) => index.origin !== "pk")
-          .map((index) => index.name),
+          .filter((index) => textField(index, "origin") !== "pk")
+          .map((index) => textField(index, "name")),
       });
 
       relationships.push(
-        ...keys.rows.map((key) => key as unknown as ISqliteKeyRow).map((key) => ({
-          id: `${name}:${key.id}:${key.seq}`,
-          constraint: `${name}_fk_${key.id}`,
-          fromTable: name,
-          fromColumn: key.from,
-          toTable: key.table,
-          toColumn: key.to,
-        })),
+        ...keys.rows.map((key) => {
+          const id = numberField(key, "id");
+          const seq = numberField(key, "seq");
+          return {
+            id: `${name}:${id}:${seq}`,
+            constraint: `${name}_fk_${id}`,
+            fromTable: name,
+            fromColumn: textField(key, "from"),
+            toTable: textField(key, "table"),
+            toColumn: textField(key, "to"),
+          };
+        }),
       );
     }
 
@@ -274,21 +230,17 @@ async function introspectSqlite(
   }
 }
 
-function toSqliteColumn(row: ISqliteColumnRow): ISchemaColumn {
+function toSqliteColumn(row: DriverRow): ISchemaColumn {
+  const dataType = textField(row, "type");
   return {
-    name: row.name,
-    dataType: row.type.length === 0 ? "blob" : row.type,
-    nullable: row.notnull === 0,
-    primaryKey: row.pk > 0,
+    name: textField(row, "name"),
+    dataType: dataType.length === 0 ? "blob" : dataType,
+    nullable: numberField(row, "notnull") === 0,
+    primaryKey: numberField(row, "pk") > 0,
   };
 }
 
-// --------------------------------------------------------------- mongodb
 
-// MongoDB has no catalogue to read: a collection declares nothing until you
-// look at its documents. So the structure is inferred by sampling documents and
-// unioning the fields they happen to carry, and the reported types are what the
-// sample contained rather than a declared schema.
 const MAX_SAMPLED_DOCUMENTS = 200;
 
 const MAX_COLLECTION_FIELDS = 200;
@@ -373,42 +325,46 @@ function flattenDocument(
     const type = bsonTypeName(value);
     field.types.add(type);
     fields.set(name, field);
-    if (type === "object" && depth < MAX_FIELD_DEPTH) {
-      flattenDocument(value as Record<string, unknown>, name, depth + 1, fields);
+    if (type === "object" && isJsonObject(value) && depth < MAX_FIELD_DEPTH) {
+      flattenDocument(value, name, depth + 1, fields);
     }
   }
 }
 
-// ------------------------------------------------------------------ shared
 
 function assemble(
-  columnRows: IColumnRow[],
-  indexRows: IIndexRow[],
+  columnRows: DriverRow[],
+  indexRows: DriverRow[],
 ): ISchemaTable[] {
   const tables = new Map<string, ISchemaTable>();
   const indexed = new Map<string, string[]>();
 
   for (const row of columnRows) {
-    const table = tables.get(row.table_name) ?? {
-      name: row.table_name,
+    const tableName = textField(row, "table_name");
+    const table = tables.get(tableName) ?? {
+      name: tableName,
       columns: [],
       indexedColumns: [],
     };
     table.columns.push({
-      name: row.column_name,
-      dataType: row.data_type,
-      nullable: row.is_nullable === "YES",
-      primaryKey: row.column_key === "PRI" || row.is_primary_key === 1,
+      name: textField(row, "column_name"),
+      dataType: textField(row, "data_type"),
+      nullable: textField(row, "is_nullable") === "YES",
+      primaryKey:
+        textField(row, "column_key") === "PRI" ||
+        numberField(row, "is_primary_key") === 1,
     });
-    tables.set(row.table_name, table);
+    tables.set(tableName, table);
   }
 
   for (const row of indexRows) {
-    const columns = indexed.get(row.table_name);
+    const tableName = textField(row, "table_name");
+    const columnName = textField(row, "column_name");
+    const columns = indexed.get(tableName);
     if (columns) {
-      columns.push(row.column_name);
+      columns.push(columnName);
     } else {
-      indexed.set(row.table_name, [row.column_name]);
+      indexed.set(tableName, [columnName]);
     }
   }
 
@@ -418,13 +374,14 @@ function assemble(
   }));
 }
 
-function toKeyRelationship(row: IKeyRow): ISchemaRelationship {
+function toKeyRelationship(row: DriverRow): ISchemaRelationship {
+  const constraint = textField(row, "constraint_name");
   return {
-    id: `${row.constraint_name}:${row.ordinal_position}`,
-    constraint: row.constraint_name,
-    fromTable: row.from_table,
-    fromColumn: row.from_column,
-    toTable: row.to_table,
-    toColumn: row.to_column,
+    id: `${constraint}:${numberField(row, "ordinal_position")}`,
+    constraint,
+    fromTable: textField(row, "from_table"),
+    fromColumn: textField(row, "from_column"),
+    toTable: textField(row, "to_table"),
+    toColumn: textField(row, "to_column"),
   };
 }

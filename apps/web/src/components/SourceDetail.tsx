@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   IDataSource,
   IPreviewResponse,
@@ -12,6 +13,7 @@ import {
   runSearch,
 } from "../api";
 import { useStructure } from "../lib/use-structure";
+import { dataSourceKeys } from "../lib/queries";
 import { Alert, EmptyState } from "./ui/feedback";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -76,126 +78,77 @@ function ResultGrid({ grid, label }: { grid: IResultGrid; label: string }) {
 }
 
 export function SourceDetail({ source, onBack }: ISourceDetailProps) {
-  // What a source can be asked and run as, read off the wire rather than
-  // worked out here from its engine: the server already knows, and a second
-  // answer in the client can only disagree with the first.
   const language = source.queryLanguage;
   const speaksSearch = language === "search";
   const speaksCommand = language === "command";
   const speaksSqlOrPipeline = language === "sql" || language === "pipeline";
 
-  const { structure, problem } = useStructure(source.id);
+  const { structure, loading, problem } = useStructure(source.id);
   const objects = structure?.objects ?? null;
-  const [selected, setSelected] = useState<string | null>(null);
-  const [preview, setPreview] = useState<IPreviewResponse | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
+
+  const [picked, setPicked] = useState<string | null>(null);
+  const selected = picked ?? objects?.[0]?.name ?? null;
   const [search, setSearch] = useState("*");
   const [appliedSearch, setAppliedSearch] = useState("*");
   const [command, setCommand] = useState("");
-  const [commandResult, setCommandResult] = useState<IRedisQueryResponse | null>(null);
-  const [commandError, setCommandError] = useState<string | null>(null);
-  const [commandBusy, setCommandBusy] = useState(false);
-  const [asking, setAsking] = useState(false);
-  const [drafted, setDrafted] = useState(false);
   const [question, setQuestion] = useState("");
 
-  // The first object is the one worth showing, and it arrives whenever the app's
-  // read of this source lands — which is not necessarily while this mounts.
-  useEffect(() => {
-    if (selected === null) {
-      setSelected(objects?.[0]?.name ?? null);
-    }
-  }, [objects, selected]);
+  const queryClient = useQueryClient();
+  const previewQuery = useQuery({
+    queryKey: dataSourceKeys.preview(
+      source.id,
+      selected ?? "",
+      speaksSearch ? appliedSearch : "",
+    ),
+    queryFn: () =>
+      speaksSearch
+        ? runSearch(source.id, { index: selected ?? "", query: appliedSearch })
+        : previewSourceRows(source.id, selected ?? ""),
+    enabled: selected !== null,
+    staleTime: Infinity,
+  });
+  const preview: IPreviewResponse | null = previewQuery.data ?? null;
 
-  useEffect(() => {
-    if (selected === null) {
-      setPreview(null);
-      return;
-    }
-    const index = selected;
-    const query = appliedSearch;
-    let live = true;
-    setPreviewBusy(true);
-    setPreviewError(null);
-    // A search is a Run like any other: it goes through the same query seam as
-    // SQL and a command, rather than being smuggled in as a preview parameter
-    // because that was the only way the server would accept one.
-    const rows = speaksSearch
-      ? runSearch(source.id, { index, query })
-      : previewSourceRows(source.id, index);
-    rows
-      .then((result) => {
-        if (live) {
-          setPreview(result);
-        }
-      })
-      .catch((caught: unknown) => {
-        if (live) {
-          setPreviewError(messageFor(caught, "Rows could not load."));
-        }
-      })
-      .finally(() => {
-        if (live) {
-          setPreviewBusy(false);
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, [source.id, selected, appliedSearch, speaksSearch]);
+  const runCommand = useMutation({
+    mutationFn: (text: string) => runRedisCommand(source.id, text),
+  });
+  const ask = useMutation({
+    mutationFn: (text: string) => askQuestion([source.id], text, undefined, {}),
+    onSuccess: (answer) => {
+      if (answer.command !== null) {
+        setCommand(answer.command);
+        return;
+      }
+      if (answer.search !== null) {
+        setPicked(answer.search.index);
+        setSearch(answer.search.query);
+        setAppliedSearch(answer.search.query);
+      }
+    },
+  });
+
+  function pick(object: string): void {
+    setPicked(object);
+    queryClient.invalidateQueries({ queryKey: dataSourceKeys.preview(source.id, object) });
+  }
 
   function applySearch(event: FormEvent): void {
     event.preventDefault();
     setAppliedSearch(search.trim().length === 0 ? "*" : search.trim());
   }
-  async function runCommand(event: FormEvent): Promise<void> {
+
+  function submitCommand(event: FormEvent): void {
     event.preventDefault();
     const text = command.trim();
-    if (text.length === 0) {
-      return;
-    }
-    setCommandBusy(true);
-    setCommandError(null);
-    try {
-      setCommandResult(await runRedisCommand(source.id, text));
-    } catch (caught) {
-      setCommandResult(null);
-      setCommandError(messageFor(caught, "That command could not run."));
-    } finally {
-      setCommandBusy(false);
+    if (text.length > 0) {
+      runCommand.mutate(text);
     }
   }
 
-  async function askSource(): Promise<void> {
-    if (question.trim().length === 0) {
-      return;
-    }
-    setAsking(true);
-    setCommandError(null);
-    setPreviewError(null);
-    setDrafted(false);
-    try {
-      const answer = await askQuestion([source.id], question.trim(), undefined, {});
-      if (answer.command !== null) {
-        setCommand(answer.command);
-        setDrafted(true);
-        return;
-      }
-      if (answer.search !== null) {
-        setSelected(answer.search.index);
-        setSearch(answer.search.query);
-        setAppliedSearch(answer.search.query);
-        setDrafted(true);
-        return;
-      }
-      setCommandError("That question could not be answered from this source.");
-    } catch (caught) {
-      setCommandError(messageFor(caught, "That question could not be asked."));
-    } finally {
-      setAsking(false);
-    }
-  }
+  const answer = ask.data ?? null;
+  const drafted =
+    answer !== null && (answer.command !== null || answer.search !== null);
+  const commandResult: IRedisQueryResponse | null = runCommand.data ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -218,7 +171,10 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void askSource();
+            const text = question.trim();
+            if (text.length > 0) {
+              ask.mutate(text);
+            }
           }}
           className="flex flex-wrap items-center gap-2 border border-border px-4 py-2.5"
         >
@@ -236,10 +192,10 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
           />
           <Button
             type="submit"
-            disabled={asking || question.trim().length === 0}
+            disabled={ask.isPending || question.trim().length === 0}
             className={SMALL_BUTTON_CLASSNAME}
           >
-            {asking ? "Asking…" : "Ask"}
+            {ask.isPending ? "Asking…" : "Ask"}
           </Button>
           {drafted ? (
             <span className="text-[11px] text-green">
@@ -248,11 +204,17 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
                 : "A command is ready. It runs only when you run it."}
             </span>
           ) : null}
+          {ask.isError ? (
+            <Alert>{messageFor(ask.error, "That question could not be asked.")}</Alert>
+          ) : null}
+          {answer !== null && answer.command === null && answer.search === null ? (
+            <Alert>That question could not be answered from this source.</Alert>
+          ) : null}
         </form>
       ) : null}
 
       {speaksCommand ? (
-        <form onSubmit={runCommand} className="border border-border">
+        <form onSubmit={submitCommand} className="border border-border">
           <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
             <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Command
@@ -267,10 +229,10 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
             ) : null}
             <Button
               type="submit"
-              disabled={commandBusy || command.trim().length === 0}
+              disabled={runCommand.isPending || command.trim().length === 0}
               className={`ml-auto ${SMALL_BUTTON_CLASSNAME}`}
             >
-              {commandBusy ? "Running…" : "Run command"}
+              {runCommand.isPending ? "Running…" : "Run command"}
             </Button>
             <span className="text-[11px] font-normal text-muted-foreground">
               <span className="inline-flex items-center gap-1">
@@ -297,8 +259,10 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
                 A command is ready. It runs only when you run it.
               </Alert>
             ) : null}
-            {commandError ? (
-              <Alert className="mt-3">{commandError}</Alert>
+            {runCommand.isError ? (
+              <Alert className="mt-3">
+                {messageFor(runCommand.error, "That command could not run.")}
+              </Alert>
             ) : null}
             {commandResult !== null && commandResult.rows.length > 0 ? (
               <div className="mt-3">
@@ -319,7 +283,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
               {objects === null ? "—" : objects.length}
             </span>
           </div>
-          {objects === null ? (
+          {loading || objects === null ? (
             <p className="px-4 py-6 font-mono text-xs text-muted-foreground">
               Loading objects…
             </p>
@@ -333,7 +297,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
                 <li key={object.name}>
                   <button
                     type="button"
-                    onClick={() => setSelected(object.name)}
+                    onClick={() => pick(object.name)}
                     aria-current={selected === object.name ? "true" : undefined}
                     className={
                       selected === object.name
@@ -379,7 +343,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
               />
               <Button
                 type="submit"
-                disabled={previewBusy}
+                disabled={previewQuery.isPending}
                 className={SMALL_BUTTON_CLASSNAME}
               >
                 Search
@@ -393,17 +357,19 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
             </form>
           ) : null}
           <div className="p-4">
-            {previewError ? <Alert>{previewError}</Alert> : null}
-            {previewBusy && !preview ? (
-              <p className="font-mono text-xs text-muted-foreground">
-                Loading rows…
-              </p>
-            ) : preview === null ? (
+            {previewQuery.isError ? (
+              <Alert>{messageFor(previewQuery.error, "Rows could not load.")}</Alert>
+            ) : null}
+            {selected === null ? (
               <EmptyState
                 title="No object selected"
                 body="Pick a table, key, or index to preview its rows."
               />
-            ) : preview.rows.length === 0 ? (
+            ) : previewQuery.isPending ? (
+              <p className="font-mono text-xs text-muted-foreground">
+                Loading rows…
+              </p>
+            ) : preview === null || preview.rows.length === 0 ? (
               <EmptyState
                 title="No rows"
                 body="Nothing to show."

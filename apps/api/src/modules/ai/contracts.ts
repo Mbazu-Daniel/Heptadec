@@ -28,7 +28,6 @@ export interface IListModelsResponse {
   models: IAiModel[];
 }
 
-/** A provider that is not saved yet, so the form can offer its models first. */
 export interface IListProviderModelsRequest {
   provider: string;
   apiKey: string;
@@ -46,15 +45,23 @@ export interface ICreateAiProviderRequest {
 
 export interface ICreateAiProviderResponse extends IAiProvider {}
 
+export interface IUpdateAiProviderRequest {
+  id: string;
+  name?: string;
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  isDefault?: boolean;
+  baseUrl?: string;
+}
+
+export interface IUpdateAiProviderResponse extends IAiProvider {}
+
 export interface IDeleteAiProviderResponse {
   removed: string;
 }
 
 export interface IGenerateQueryRequest {
-  /**
-   * The sources to search. Leave it out, or send none, to search every source
-   * this organization can ask about.
-   */
   dataSourceIds?: string[];
   question: string;
   providerId?: string;
@@ -62,19 +69,12 @@ export interface IGenerateQueryRequest {
 
 export interface IGenerateQueryResponse {
   chatId: string;
-  /**
-   * Which source the answer came from, so a question spanning several sources
-   * never leaves which one answered in doubt.
-   */
   dataSourceId: string;
   dataSourceName: string;
-  /** The language the answer is written in, so the client knows how to run it. */
   language: QueryLanguage;
   sql: string | null;
   pipeline: IMongoPipeline | null;
-  /** Set for a command source, where the answer is a Redis command. */
   command: string | null;
-  /** Set for a search source, where the answer names an index and a query. */
   search: ISearchStatement | null;
   answered: boolean;
   providerName: string;
@@ -82,12 +82,6 @@ export interface IGenerateQueryResponse {
   durationMs: number;
 }
 
-/**
- * The Answer's stream: the phases it goes through, in the order they arrive.
- *
- * The server writes these names and the web client reads them back, so they
- * live here — the one place the two sides agree on.
- */
 export const ANSWER_EVENTS = {
   status: "status",
   delta: "delta",

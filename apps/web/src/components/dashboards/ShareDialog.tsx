@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconLink, IconRefresh, IconTrash } from "@tabler/icons-react";
 import type { IShareLink } from "@heptadec/api/share-link-contracts";
 import {
@@ -32,71 +33,55 @@ export function ShareDialog({
   dashboardId: string;
   onClose: () => void;
 }) {
-  const [links, setLinks] = useState<IShareLink[] | null>(null);
+  const queryClient = useQueryClient();
+  const linksKey = ["share-links", dashboardId] as const;
+  const links = useQuery({
+    queryKey: linksKey,
+    queryFn: () => listShareLinks(dashboardId),
+  });
   const [expiresInDays, setExpiresInDays] = useState<string>("");
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let live = true;
-    listShareLinks(dashboardId).then(
-      (found) => {
-        if (live) {
-          setLinks(found.shareLinks);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(messageFor(caught, "Share links could not be read."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [dashboardId]);
-
-  async function share(): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setStatus(null);
-    try {
-      const { shareLink, url } = await createShareLink(dashboardId, {
+  const share = useMutation({
+    mutationFn: async () => {
+      const { url } = await createShareLink(dashboardId, {
         ...(expiresInDays === "" ? {} : { expiresInDays: Number(expiresInDays) }),
       });
-      setLinks((current) => [shareLink, ...(current ?? [])]);
+      return url;
+    },
+    onSuccess: (url) => {
       setCreatedUrl(url);
-    } catch (caught) {
-      setProblem(messageFor(caught, "That link could not be created."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refresh(id: string): Promise<void> {
-    setProblem(null);
-    setStatus(null);
-    try {
-      await refreshShareLink(id);
+      setStatus(null);
+      queryClient.invalidateQueries({ queryKey: linksKey });
+    },
+  });
+  const refresh = useMutation({
+    mutationFn: (id: string) => refreshShareLink(id),
+    onSuccess: () => {
       setStatus("That link now shows the latest numbers.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That link could not be refreshed."));
-    }
-  }
-
-  async function revoke(link: IShareLink): Promise<void> {
-    setProblem(null);
-    setStatus(null);
-    try {
-      await deleteShareLink(link.id);
-      setLinks((current) => (current ?? []).filter((entry) => entry.id !== link.id));
+      queryClient.invalidateQueries({ queryKey: linksKey });
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: (link: IShareLink) => deleteShareLink(link.id),
+    onSuccess: () => {
       setStatus("That link no longer works.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That link could not be revoked."));
-    }
-  }
+      queryClient.invalidateQueries({ queryKey: linksKey });
+    },
+  });
+
+  const problem = links.isError
+    ? messageFor(links.error, "Share links could not be read.")
+    : share.isError
+      ? messageFor(share.error, "That link could not be created.")
+      : refresh.isError
+        ? messageFor(refresh.error, "That link could not be refreshed.")
+        : revoke.isError
+          ? messageFor(revoke.error, "That link could not be revoked.")
+          : null;
+
+  const shareLinks = links.data?.shareLinks ?? null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -130,12 +115,12 @@ export function ShareDialog({
             </select>
           </label>
           <Button
-            onClick={() => void share()}
-            disabled={busy}
+            onClick={() => share.mutate()}
+            disabled={share.isPending}
             className="h-7 gap-1.5 px-3 text-xs"
           >
             <IconLink size={14} />
-            {busy ? "Creating…" : "Create link"}
+            {share.isPending ? "Creating…" : "Create link"}
           </Button>
         </div>
 
@@ -166,9 +151,9 @@ export function ShareDialog({
           </div>
         ) : null}
 
-        {links !== null && links.length > 0 ? (
+        {shareLinks !== null && shareLinks.length > 0 ? (
           <ul className="divide-y divide-border rounded-md border border-border">
-            {links.map((link) => (
+            {shareLinks.map((link) => (
               <li
                 key={link.id}
                 className="flex items-center gap-3 px-3 py-2 text-xs"
@@ -185,7 +170,7 @@ export function ShareDialog({
                 </span>
                 <Button
                   variant="ghost"
-                  onClick={() => void refresh(link.id)}
+                  onClick={() => refresh.mutate(link.id)}
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-fg"
                   title="Refresh the frozen numbers"
                 >
@@ -193,7 +178,7 @@ export function ShareDialog({
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => void revoke(link)}
+                  onClick={() => revoke.mutate(link)}
                   className="h-7 w-7 p-0 text-red"
                   title="Revoke this link"
                 >
@@ -202,7 +187,7 @@ export function ShareDialog({
               </li>
             ))}
           </ul>
-        ) : links !== null ? (
+        ) : shareLinks !== null ? (
           <EmptyState
             className="py-4"
             title="No links yet"

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organization } from "./organization/organization";
 
 export const widget = sqliteTable(
   "widget",
@@ -7,7 +8,9 @@ export const widget = sqliteTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    organizationId: text("organization_id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     dashboardId: text("dashboard_id").notNull(),
     savedQueryId: text("saved_query_id").notNull(),
     chartType: text("chart_type").notNull(),

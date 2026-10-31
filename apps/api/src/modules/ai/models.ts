@@ -4,6 +4,7 @@ import {
   type HeptadecDatabase,
 } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
+import { isJsonObject } from "../../common/http/body";
 import { logDriverFailure } from "../../common/driver-error";
 import { providerEndpointFor } from "./transport";
 
@@ -33,8 +34,6 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
   try {
     baseUrl = providerEndpointFor(config.provider, config.baseUrl).baseUrl;
   } catch {
-    // An unknown provider or a missing address is a configuration refusal,
-    // the same kind of refusal a bad key produces here.
     return { kind: "refused" };
   }
 
@@ -46,8 +45,6 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (caught) {
-    // The listing answers with a status; the operator gets the driver's own
-    // words, which is the half this catch used to drop.
     logDriverFailure(caught, "reach that provider");
     return { kind: "unreachable" };
   }
@@ -63,24 +60,24 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
   }
 
   const payload: unknown = await response.json();
-  if (typeof payload !== "object" || payload === null) {
+  if (!isJsonObject(payload)) {
     return { kind: "unsupported" };
   }
-  const data = (payload as { data?: unknown }).data;
+  const data = payload.data;
   if (!Array.isArray(data)) {
     return { kind: "unsupported" };
   }
 
   const models: IModel[] = [];
   for (const entry of data) {
-    if (typeof entry !== "object" || entry === null) {
+    if (!isJsonObject(entry)) {
       continue;
     }
-    const id = (entry as { id?: unknown }).id;
+    const id = entry.id;
     if (typeof id !== "string" || id === "") {
       continue;
     }
-    const label = (entry as { name?: unknown }).name;
+    const label = entry.name;
     models.push({
       id,
       label: typeof label === "string" && label !== id ? label : null,

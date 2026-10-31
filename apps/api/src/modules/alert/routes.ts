@@ -278,12 +278,6 @@ export function alertRoutes(): Hono<IAuthVars> {
     return c.json(body);
   });
 
-  /**
-   * A check, on demand, of the alerts watching one saved query — the same
-   * operation a due job does about them, so a breach reaching every channel is
-   * something the app can be asked for rather than only something a tick can
-   * produce. Answers with the deliveries this run wrote.
-   */
   routes.post("/api/saved-queries/:id/alert-checks", requireSession, async (c) => {
     const organization = activeOrganization(c);
 

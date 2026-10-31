@@ -1,13 +1,3 @@
--- The shape from docker/initdb/01-schema.sql, spelled for SQLite and LibSQL.
---
--- The foreign keys are declared inline, which is all SQLite supports, and that
--- is what PRAGMA foreign_key_list reports back — enough for the diagram to draw
--- the same edges Postgres draws. SQLite only enforces them when
--- PRAGMA foreign_keys is on, and this fixture never violates them either way.
---
--- scripts/seed-test.sh posts this to the test-stack server. It owns the rows as
--- well as the DDL because a diagram of empty tables is not worth drawing.
-
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS product_suppliers;
 DROP TABLE IF EXISTS orders;
@@ -69,7 +59,6 @@ CREATE TABLE order_items (
   unit_price NUMERIC(10,2) NOT NULL
 );
 
--- The query runner's fixture, kept so a refused write has a row count to check.
 CREATE TABLE events (
   id         TEXT PRIMARY KEY,
   event_name TEXT NOT NULL,

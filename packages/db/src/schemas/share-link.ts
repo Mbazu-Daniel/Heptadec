@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organization } from "./organization/organization";
 
 export const shareLink = sqliteTable(
   "share_link",
@@ -7,7 +8,9 @@ export const shareLink = sqliteTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    organizationId: text("organization_id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     dashboardId: text("dashboard_id").notNull(),
     tokenHash: text("token_hash").notNull(),
     snapshot: text("snapshot").notNull(),

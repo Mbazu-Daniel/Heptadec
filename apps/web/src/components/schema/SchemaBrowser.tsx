@@ -1,5 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { IconLayoutGrid, IconRefresh, IconTerminal } from "@tabler/icons-react";
+import { useState, type ReactNode } from "react";
+import {
+  IconArrowLeft,
+  IconLayoutGrid,
+  IconRefresh,
+  IconTerminal,
+} from "@tabler/icons-react";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import { quoteIdentifier } from "../../lib/sql";
 import { useStructure } from "../../lib/use-structure";
@@ -16,7 +21,7 @@ import {
   ResizablePanelGroup,
 } from "../ui/resizable";
 import { SavedQueriesPanel } from "./SavedQueriesPanel";
-import type { ICrumb } from "../workspace";
+import { SMALL_BUTTON_CLASSNAME } from "../workspace";
 
 interface IRunRequest {
   sql: string;
@@ -32,13 +37,11 @@ type TabId = (typeof TABS)[number]["id"];
 
 export function SchemaBrowser({
   source,
-  onTrail,
   onBack,
   onRemove,
   onBrowseRows,
 }: {
   source: IDataSource;
-  onTrail?: (crumbs: ICrumb[]) => void;
   onBack: () => void;
   onRemove: (source: IDataSource) => void;
   onBrowseRows: (source: IDataSource, back: () => void) => ReactNode;
@@ -49,18 +52,15 @@ export function SchemaBrowser({
   );
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [browsingRows, setBrowsingRows] = useState(false);
   const [runRequest, setRunRequest] = useState<IRunRequest | null>(null);
-  const [queriesToken, setQueriesToken] = useState(0);
   const [editorSql, setEditorSql] = useState("");
   const pipelineSource = source.queryLanguage === "pipeline";
   const shown = loading || structure === null ? null : structure;
 
-  useEffect(() => {
-    const current = TABS.find((entry) => entry.id === tab);
-    onTrail?.([{ label: current?.label ?? tab }]);
-  }, [onTrail, tab]);
+  function selectTable(table: string): void {
+    setSelectedTable(table);
+  }
 
   if (browsingRows) {
     return (
@@ -69,19 +69,14 @@ export function SchemaBrowser({
       </div>
     );
   }
-  async function remove(): Promise<void> {
-    setRemoving(true);
-    try {
-      await onRemove(source);
-      onBack();
-    } finally {
-      setRemoving(false);
-    }
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="flex h-11 shrink-0 items-center gap-2 px-6">
+        <Button variant="ghost" onClick={onBack} className={SMALL_BUTTON_CLASSNAME}>
+          <IconArrowLeft size={14} />
+          Sources
+        </Button>
         <div className="ml-auto flex items-center gap-2">
           {confirmRemove ? (
             <>
@@ -90,11 +85,13 @@ export function SchemaBrowser({
               </span>
               <Button
                 variant="ghost"
-                disabled={removing}
-                onClick={() => void remove()}
+                onClick={() => {
+                  onRemove(source);
+                  onBack();
+                }}
                 className="h-7 px-2 text-xs text-red"
               >
-                {removing ? "Removing" : "Confirm"}
+                Remove
               </Button>
               <Button
                 variant="ghost"
@@ -178,7 +175,7 @@ export function SchemaBrowser({
               tables={shown.tables}
               relationships={shown.relationships}
               selected={selectedTable}
-              onSelect={setSelectedTable}
+              onSelect={selectTable}
             />
           </ResizablePanel>
           <ResizableHandle withHandle />
@@ -198,7 +195,6 @@ export function SchemaBrowser({
                     source={source}
                     focusTable={selectedTable}
                     runRequest={runRequest}
-                    onRan={() => setQueriesToken((count) => count + 1)}
                     onSqlChange={setEditorSql}
                     initialSql={
                       shown.tables[0]
@@ -215,7 +211,6 @@ export function SchemaBrowser({
                     <SavedQueriesPanel
                       sourceId={source.id}
                       activeSql={editorSql}
-                      reloadToken={queriesToken}
                       onLoad={(sql) => setRunRequest({ sql, nonce: Date.now() })}
                     />
                   </ResizablePanel>
@@ -228,7 +223,7 @@ export function SchemaBrowser({
                 tables={shown.tables}
                 relationships={shown.relationships}
                 selected={selectedTable}
-                onSelect={setSelectedTable}
+                onSelect={selectTable}
               />
             </ResizablePanel>
           )}

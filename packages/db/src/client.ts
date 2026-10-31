@@ -17,7 +17,6 @@ export function resolveDbUrl(): string {
   if (path.startsWith("/")) {
     return config.dbUrl;
   }
-  // Relative file: paths resolve from the repo root, three levels above src/client.ts.
   return "file:" + new URL(path, new URL("../../../", import.meta.url)).pathname;
 }
 

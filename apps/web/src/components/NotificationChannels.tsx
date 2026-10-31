@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconBrandSlack,
   IconCheck,
@@ -16,7 +17,7 @@ import {
   type IChannelSpec,
   type IChannelView,
   type INotificationChannel,
-  type INotificationChannelListResponse,
+  type ISaveNotificationChannelRequest,
   type NotificationKind,
 } from "@heptadec/api/notification-contracts";
 import {
@@ -52,31 +53,21 @@ function ChannelIcon({ kind }: { kind: NotificationKind }) {
 }
 
 export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
-  const [channels, setChannels] = useState<INotificationChannel[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const channelsQuery = useQuery({
+    queryKey: ["notification-channels"],
+    queryFn: listNotificationChannels,
+    enabled: isOwner,
+  });
+  const channels = channelsQuery.data?.notificationChannels;
+
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const [kind, setKind] = useState<NotificationKind>("email");
   const [editing, setEditing] = useState<INotificationChannel | null>(null);
   const [name, setName] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [recipients, setRecipients] = useState<string[]>([""]);
-
-  const reload = useCallback(async () => {
-    setProblem(null);
-    try {
-      const listed: INotificationChannelListResponse =
-        await listNotificationChannels();
-      setChannels(listed.notificationChannels);
-    } catch (caught) {
-      setProblem(messageFor(caught, "The channels could not be loaded."));
-    }
-  }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
 
   const spec = CHANNEL_SPECS[kind];
 
@@ -90,7 +81,6 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
   function choose(next: NotificationKind): void {
     setKind(next);
     reset();
-    setProblem(null);
     setNotice(null);
   }
 
@@ -102,56 +92,44 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
       channel.recipients.length === 0 ? [""] : [...channel.recipients, ""],
     );
     setValues(fromView(channel.config));
-    setProblem(null);
     setNotice(null);
   }
 
-  async function save(): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setNotice(null);
+  const saveChannel = useMutation({
+    mutationFn: (body: ISaveNotificationChannelRequest) =>
+      editing === null
+        ? createNotificationChannel(body)
+        : updateNotificationChannel(editing.id, body),
+    onSuccess: () => {
+      reset();
+      queryClient.invalidateQueries({ queryKey: ["notification-channels"] });
+      setNotice("That channel is saved.");
+    },
+  });
 
-    const body = {
+  const deleteChannel = useMutation({
+    mutationFn: (channel: INotificationChannel) =>
+      deleteNotificationChannel(channel.id),
+    onSuccess: (_result, channel) => {
+      if (editing?.id === channel.id) {
+        reset();
+      }
+      queryClient.invalidateQueries({ queryKey: ["notification-channels"] });
+      setNotice(`${channel.name} is removed.`);
+    },
+  });
+
+  const busy = saveChannel.isPending || deleteChannel.isPending;
+
+  function save(): void {
+    saveChannel.mutate({
       name: name.trim(),
       kind,
       ...values,
       ...(spec.recipients
         ? { recipients: recipients.map((entry) => entry.trim()).filter((entry) => entry !== "") }
         : {}),
-    };
-
-    try {
-      if (editing === null) {
-        await createNotificationChannel(body);
-      } else {
-        await updateNotificationChannel(editing.id, body);
-      }
-      reset();
-      await reload();
-      setNotice("That channel is saved.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That channel could not be saved."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(channel: INotificationChannel): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setNotice(null);
-    try {
-      await deleteNotificationChannel(channel.id);
-      if (editing?.id === channel.id) {
-        reset();
-      }
-      await reload();
-      setNotice(`${channel.name} is removed.`);
-    } catch (caught) {
-      setProblem(messageFor(caught, "That channel could not be removed."));
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   if (!isOwner) {
@@ -170,16 +148,24 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
 
   return (
     <div className={VIEW_CLASSNAME}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-          {channels === null ? "" : `${channels.length} connected`}
-        </span>
-      </div>
-
       <Workspace
         view={
           <div className="mx-auto max-w-3xl">
-            {problem !== null ? <Alert className="mb-4">{problem}</Alert> : null}
+            {channelsQuery.isError ? (
+              <Alert className="mb-4">
+                {messageFor(channelsQuery.error, "The channels could not be loaded.")}
+              </Alert>
+            ) : null}
+            {saveChannel.isError ? (
+              <Alert className="mb-4">
+                {messageFor(saveChannel.error, "That channel could not be saved.")}
+              </Alert>
+            ) : null}
+            {deleteChannel.isError ? (
+              <Alert className="mb-4">
+                {messageFor(deleteChannel.error, "That channel could not be removed.")}
+              </Alert>
+            ) : null}
             {notice !== null ? (
               <Alert tone="success" className="mb-4">
                 {notice}
@@ -251,7 +237,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
 
               <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => void save()}
+                  onClick={save}
                   disabled={busy || !isComplete(name, spec, values, recipients)}
                 >
                   <IconCheck size={16} strokeWidth={1.5} />
@@ -265,17 +251,10 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
               </div>
             </div>
 
-            <div className="mt-10 flex items-center justify-between">
-              <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Connected
-              </h2>
-              {channels !== null && channels.length > 0 ? (
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {channels.length}
-                </span>
-              ) : null}
-            </div>
-            {channels === null ? (
+            <h2 className="mt-10 text-[12px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Connected
+            </h2>
+            {channels === undefined ? (
               <p className="mt-2 text-xs text-muted-foreground">Loading</p>
             ) : channels.length === 0 ? (
               <EmptyState
@@ -324,7 +303,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
                           variant="ghost"
                           className={`${SMALL_BUTTON_CLASSNAME} text-red`}
                           disabled={busy}
-                          onClick={() => void remove(channel)}
+                          onClick={() => deleteChannel.mutate(channel)}
                         >
                           <IconTrash size={14} strokeWidth={1.5} />
                           Remove

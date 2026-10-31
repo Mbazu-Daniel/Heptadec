@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organization } from "./organization/organization";
 
 export const aiChat = sqliteTable("ai_chat", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => randomUUID()),
-  organizationId: text("organization_id").notNull(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
   dataSourceId: text("data_source_id").notNull(),
   providerName: text("provider_name").notNull(),
   model: text("model").notNull(),

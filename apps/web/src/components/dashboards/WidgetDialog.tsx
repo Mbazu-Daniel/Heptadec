@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   ChartType,
   ICreateWidgetRequest,
   IDashboardSource,
   IWidget,
 } from "@heptadec/api/dashboard-contracts";
-import type { ISavedQuery } from "@heptadec/api/saved-query-contracts";
 import {
   createWidget,
   listAllSavedQueries,
@@ -46,105 +46,72 @@ export function WidgetDialog({
   onClose: () => void;
   onSaved: (saved: IWidget) => void;
 }) {
-  const [queries, setQueries] = useState<ISavedQuery[] | null>(null);
+  const savedQueries = useQuery({
+    queryKey: ["saved-queries-all"],
+    queryFn: listAllSavedQueries,
+  });
   const [sourceFilter, setSourceFilter] = useState("");
   const [savedQueryId, setSavedQueryId] = useState(widget?.savedQueryId ?? "");
   const [chartType, setChartType] = useState<ChartType>(widget?.chartType ?? "bar");
   const [title, setTitle] = useState(widget?.title ?? "");
   const [labelColumn, setLabelColumn] = useState(widget?.labelColumn ?? "");
   const [valueColumn, setValueColumn] = useState(widget?.valueColumn ?? "");
-  const [columns, setColumns] = useState<string[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const visible = useMemo(() => {
     const connected = sources.map((source) => source.dataSourceId);
-    const scoped = (queries ?? []).filter((entry) =>
+    const scoped = (savedQueries.data?.savedQueries ?? []).filter((entry) =>
       connected.includes(entry.dataSourceId),
     );
     return sourceFilter === ""
       ? scoped
       : scoped.filter((entry) => entry.dataSourceId === sourceFilter);
-  }, [queries, sources, sourceFilter]);
+  }, [savedQueries.data, sources, sourceFilter]);
 
-  useEffect(() => {
-    let live = true;
-    listAllSavedQueries().then(
-      (found) => {
-        if (live) {
-          setQueries(found.savedQueries);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(messageFor(caught, "Saved queries could not be read."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-  useEffect(() => {
-    const query = visible.find((entry) => entry.id === savedQueryId);
-    if (query === undefined) {
-      return;
-    }
-    let live = true;
-    setColumns(null);
-    runQuery(query.dataSourceId, query.sql).then(
-      (result) => {
-        if (live) {
-          setColumns(result.columns);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setColumns([]);
-          setProblem(messageFor(caught, "That query could not run."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [visible, savedQueryId]);
+  const chosen = visible.find((entry) => entry.id === savedQueryId);
+  const columns = useQuery({
+    queryKey: ["widget-columns", chosen?.id ?? ""],
+    queryFn: () => runQuery(chosen!.dataSourceId, chosen!.sql),
+    enabled: chosen !== undefined,
+  });
+  const columnList = columns.data?.columns ?? (columns.isError ? [] : null);
+
+  const save = useMutation({
+    mutationFn: async () =>
+      widget === null
+        ? (
+            await createWidget(dashboardId, {
+              savedQueryId,
+              chartType,
+              title,
+              labelColumn,
+              valueColumn,
+            } satisfies ICreateWidgetRequest)
+          ).widget
+        : (
+            await updateWidget(widget.id, {
+              chartType,
+              title,
+              labelColumn,
+              valueColumn,
+            })
+          ).widget,
+    onSuccess: onSaved,
+  });
+
+  const problem = savedQueries.isError
+    ? messageFor(savedQueries.error, "Saved queries could not be read.")
+    : columns.isError
+      ? messageFor(columns.error, "That query could not run.")
+      : save.isError
+        ? messageFor(save.error, "That chart could not be saved.")
+        : null;
 
   function pickQuery(id: string): void {
     setSavedQueryId(id);
+    setLabelColumn("");
+    setValueColumn("");
     if (widget === null && title.trim().length === 0) {
       setTitle(visible.find((entry) => entry.id === id)?.name ?? "");
-    }
-  }
-
-  async function save(): Promise<void> {
-    setSaving(true);
-    setProblem(null);
-    try {
-      const saved =
-        widget === null
-          ? (
-              await createWidget(dashboardId, {
-                savedQueryId,
-                chartType,
-                title,
-                labelColumn,
-                valueColumn,
-              } satisfies ICreateWidgetRequest)
-            ).widget
-          : (
-              await updateWidget(widget.id, {
-                chartType,
-                title,
-                labelColumn,
-                valueColumn,
-              })
-            ).widget;
-      onSaved(saved);
-    } catch (caught) {
-      setProblem(messageFor(caught, "That chart could not be saved."));
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -207,7 +174,7 @@ export function WidgetDialog({
             )}
           </label>
 
-          {columns === null ? (
+          {columnList === null ? (
             savedQueryId === "" ? null : (
               <p className="font-mono text-[11px] text-muted-foreground">
                 Reading the query's columns…
@@ -223,7 +190,7 @@ export function WidgetDialog({
                   className={TOOLBAR_SELECT_CLASSNAME}
                 >
                   <option value="">Pick a column…</option>
-                  {columns.map((column) => (
+                  {columnList.map((column) => (
                     <option key={column} value={column}>
                       {column}
                     </option>
@@ -238,7 +205,7 @@ export function WidgetDialog({
                   className={TOOLBAR_SELECT_CLASSNAME}
                 >
                   <option value="">Pick a column…</option>
-                  {columns.map((column) => (
+                  {columnList.map((column) => (
                     <option key={column} value={column}>
                       {column}
                     </option>
@@ -284,11 +251,8 @@ export function WidgetDialog({
           <Button variant="ghost" onClick={onClose} className={SMALL_BUTTON_CLASSNAME}>
             Cancel
           </Button>
-          <Button
-            onClick={() => void save()}
-            disabled={saving || !ready}
-          >
-            {saving ? "Saving…" : widget === null ? "Add chart" : "Save chart"}
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !ready}>
+            {save.isPending ? "Saving…" : widget === null ? "Add chart" : "Save chart"}
           </Button>
         </DialogFooter>
       </DialogContent>

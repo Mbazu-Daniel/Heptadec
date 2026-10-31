@@ -12,9 +12,6 @@ export interface IOrganizationScope {
   where: (organizationIdColumn: Column) => SQL;
 }
 
-// The caller's own membership of the scoped organization. `requireSession` reads
-// it once, off the same query that proves the membership exists, and carries it
-// so no handler has to ask the member table a second time.
 export interface ICaller {
   readonly id: string;
   readonly role: string;
@@ -22,15 +19,10 @@ export interface ICaller {
   readonly image: string | null;
 }
 
-// A request's scope always carries the membership that proved it. A scope built
-// from an id alone — the scheduler's — is an IOrganizationScope and nothing more.
 export interface IRequestScope extends IOrganizationScope {
   readonly caller: ICaller;
 }
 
-// The one place a scope is composed from its two halves. A caller that holds an
-// id but no request — the scheduler tick, an MCP token — gets the clause here,
-// so the pair is never assembled by hand.
 export function organizationScope(
   db: HeptadecDatabase,
   organizationId: string,

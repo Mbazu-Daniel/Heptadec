@@ -1,3 +1,4 @@
+import { InternalServerException } from "../../common/exceptions";
 import { sendEmail } from "../../common/email";
 import { config } from "../../common/config/env";
 import type { IInvitationMail } from "./contracts";
@@ -27,8 +28,8 @@ export async function sendInvitationEmail(data: IInvitationMail): Promise<void> 
     return;
   }
   if (outcome.status === "skipped") {
-    console.log(`[api] no email transport, invitation not sent. link: ${link}`);
+    console.log("[api] no email transport: invitation email not sent");
     return;
   }
-  throw new Error(outcome.reason);
+  throw new InternalServerException(outcome.reason);
 }

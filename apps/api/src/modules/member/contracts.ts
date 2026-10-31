@@ -2,7 +2,6 @@ import type { Role } from "../rbac/permissions";
 
 export interface IMemberProfileResponse {
   displayName: string | null;
-  /** The avatar for this membership. Null when they have not set one. */
   image: string | null;
   role: Role;
   organizationId: string;

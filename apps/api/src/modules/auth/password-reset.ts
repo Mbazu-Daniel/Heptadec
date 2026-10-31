@@ -1,3 +1,4 @@
+import { InternalServerException } from "../../common/exceptions";
 import { sendEmail } from "../../common/email";
 import { config } from "../../common/config/env";
 
@@ -28,8 +29,8 @@ export async function sendPasswordResetEmail(data: {
     return;
   }
   if (outcome.status === "skipped") {
-    console.log(`[api] no email transport, password reset not sent. link: ${link}`);
+    console.log("[api] no email transport: password reset email not sent");
     return;
   }
-  throw new Error(outcome.reason);
+  throw new InternalServerException(outcome.reason);
 }

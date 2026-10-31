@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelInvitation,
   listInvitations,
@@ -8,7 +9,6 @@ import {
   setMemberRole,
 } from "../api";
 import { authClient } from "../auth";
-import type { IMembersResponse } from "@heptadec/api/member-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import { Button } from "./ui/button";
 import { Alert, Avatar, EmptyState } from "./ui/feedback";
@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
 import {
   FilterSummary,
   Inspector,
-  PageHeading,
   PropertyList,
   SMALL_BUTTON_CLASSNAME,
   TABLE_CELL_CLASSNAME,
@@ -45,15 +44,6 @@ interface ITeamPanelProps {
   role: Role;
 }
 
-type Member = IMembersResponse["members"][number];
-
-interface IPendingInvite {
-  id: string;
-  email: string;
-  role: Role;
-  expiresAt: string;
-}
-
 const ASSIGNABLE: Role[] = ["owner", "editor", "viewer"];
 
 const SELECT_CLASSNAME =
@@ -61,57 +51,83 @@ const SELECT_CLASSNAME =
 
 export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
   const isOwner = role === "owner";
-  const [members, setMembers] = useState<Member[] | null>(null);
-  const [pending, setPending] = useState<IPendingInvite[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
 
+  const membersQuery = useQuery({
+    queryKey: ["members", organizationId],
+    queryFn: listMembers,
+  });
+  const invitationsQuery = useQuery({
+    queryKey: ["invitations", organizationId],
+    queryFn: listInvitations,
+    enabled: isOwner,
+  });
+  const members = membersQuery.data?.members;
+  const pending =
+    invitationsQuery.data?.invitations.filter((row) => row.status === "pending") ??
+    [];
+
+  const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
 
-  const refresh = useCallback(async () => {
-    try {
-      const roster = await listMembers();
-      setMembers(roster.members);
-    } catch (caught) {
-      setError(messageFor(caught, "The team list could not be loaded."));
-      return;
-    }
-    if (!isOwner) {
-      return;
-    }
-    try {
-      const invites = await listInvitations();
-      setPending(invites.invitations.filter((row) => row.status === "pending"));
-    } catch (caught) {
-      setError(messageFor(caught, "Invitations could not be loaded."));
-    }
-  }, [isOwner, organizationId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  async function run(action: () => Promise<void>, success: string): Promise<void> {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await action();
-      await refresh();
-      setNotice(success);
-    } catch (caught) {
-      setError(messageFor(caught, "That change did not save."));
-    } finally {
-      setBusy(false);
-    }
+  function refreshTeam(): void {
+    queryClient.invalidateQueries({ queryKey: ["members", organizationId] });
+    queryClient.invalidateQueries({ queryKey: ["invitations", organizationId] });
   }
+
+  const changeRole = useMutation({
+    mutationFn: (next: { memberId: string; role: Role }) =>
+      setMemberRole(next.memberId, next.role),
+    onSuccess: (_result, { role: next }) => {
+      refreshTeam();
+      setNotice(`Role changed to ${next}.`);
+    },
+  });
+  const dropMember = useMutation({
+    mutationFn: removeMember,
+    onSuccess: () => {
+      refreshTeam();
+      setNotice("Member removed.");
+    },
+  });
+  const dropInvite = useMutation({
+    mutationFn: cancelInvitation,
+    onSuccess: () => {
+      refreshTeam();
+      setNotice("Invitation cancelled.");
+    },
+  });
+  const inviteMember = useMutation({
+    mutationFn: async (address: string) => {
+      const { error: inviteError } = await authClient.organization.inviteMember({
+        email: address,
+        role: "editor",
+        organizationId,
+      });
+      if (inviteError) {
+        throw new Error(inviteError.message ?? "The invitation was not sent.");
+      }
+    },
+    onSuccess: () => {
+      refreshTeam();
+      setInviteOpen(false);
+      setNotice("Invitation sent.");
+    },
+  });
+
+  const busy =
+    inviteMember.isPending ||
+    changeRole.isPending ||
+    dropMember.isPending ||
+    dropInvite.isPending;
+  const actionError =
+    inviteMember.error ?? changeRole.error ?? dropMember.error ?? dropInvite.error;
+
   const selected = members?.find((entry) => entry.id === selectedId) ?? null;
   function select(id: string | null): void {
     setSelectedId(id);
@@ -121,23 +137,12 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
 
   function openInvite(): void {
     setEmail("");
-    setError(null);
     setInviteOpen(true);
   }
 
   function invite(event: FormEvent): void {
     event.preventDefault();
-    setInviteOpen(false);
-    void run(async () => {
-      const { error: inviteError } = await authClient.organization.inviteMember({
-        email: email.trim(),
-        role: "editor",
-        organizationId,
-      });
-      if (inviteError) {
-        throw new Error(inviteError.message ?? "The invitation was not sent.");
-      }
-    }, "Invitation sent.");
+    inviteMember.mutate(email.trim());
   }
 
   const term = query.trim().toLowerCase();
@@ -154,15 +159,8 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
   });
   const filtering = term !== "" || roleFilter !== "";
 
-  const memberTotal =
-    members === null
-      ? "—"
-      : `${members.length} ${members.length === 1 ? "member" : "members"}`;
-
   return (
     <section className={VIEW_CLASSNAME}>
-      <PageHeading meta={<span>{memberTotal}</span>} />
-
       <Toolbar>
         <Input
           value={query}
@@ -207,14 +205,28 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
       <Workspace
         view={
           <>
-            {error ? <Alert className="mb-3">{error}</Alert> : null}
+            {membersQuery.isError ? (
+              <Alert className="mb-3">
+                {messageFor(membersQuery.error, "The team list could not be loaded.")}
+              </Alert>
+            ) : null}
+            {invitationsQuery.isError ? (
+              <Alert className="mb-3">
+                {messageFor(invitationsQuery.error, "Invitations could not be loaded.")}
+              </Alert>
+            ) : null}
+            {actionError !== null ? (
+              <Alert className="mb-3">
+                {messageFor(actionError, "That change did not save.")}
+              </Alert>
+            ) : null}
             {notice ? (
               <Alert tone="success" className="mb-3">
                 {notice}
               </Alert>
             ) : null}
 
-            {members === null ? (
+            {members === undefined ? (
               <p className="py-8 text-center font-mono text-xs text-muted-foreground">
                 Loading the team.
               </p>
@@ -308,12 +320,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                       <Button
                         variant="ghost"
                         disabled={busy}
-                        onClick={() =>
-                          void run(
-                            () => cancelInvitation(row.id),
-                            "Invitation cancelled.",
-                          )
-                        }
+                        onClick={() => dropInvite.mutate(row.id)}
                         className={SMALL_BUTTON_CLASSNAME}
                       >
                         Cancel
@@ -351,11 +358,10 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                       value={selected.role}
                       disabled={busy}
                       onChange={(event) => {
-                        const next = event.target.value as Role;
-                        void run(
-                          () => setMemberRole(selected.id, next),
-                          `Role changed to ${next}.`,
-                        );
+                        changeRole.mutate({
+                          memberId: selected.id,
+                          role: event.target.value as Role,
+                        });
                       }}
                       className={SELECT_CLASSNAME}
                     >
@@ -374,15 +380,10 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                       <Button
                         variant="ghost"
                         disabled={busy}
-                        onClick={() => {
-                          void run(
-                            () => removeMember(selected.id),
-                            "Member removed.",
-                          );
-                        }}
+                        onClick={() => dropMember.mutate(selected.id)}
                         className={cn(SMALL_BUTTON_CLASSNAME, "text-red")}
                       >
-                        {busy ? "Removing" : "Confirm"}
+                        {dropMember.isPending ? "Removing" : "Confirm"}
                       </Button>
                       <Button
                         variant="ghost"
@@ -411,20 +412,17 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
         }
       />
 
-      <WorkspaceFooter
-        legend={
-          <>
-            <span>{memberTotal}</span>
-            {isOwner ? (
-              <span>
-                {pending.length}{" "}
-                {pending.length === 1 ? "invitation" : "invitations"} awaiting
-                acceptance
-              </span>
-            ) : null}
-          </>
-        }
-      />
+      {isOwner ? (
+        <WorkspaceFooter
+          legend={
+            <span>
+              {pending.length}{" "}
+              {pending.length === 1 ? "invitation" : "invitations"} awaiting
+              acceptance
+            </span>
+          }
+        />
+      ) : null}
 
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-md gap-5 rounded-none border-border bg-card">
@@ -455,7 +453,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                 Cancel
               </Button>
               <Button type="submit" disabled={busy} className="rounded-none">
-                {busy ? "Sending" : "Send invitation"}
+                {inviteMember.isPending ? "Sending" : "Send invitation"}
               </Button>
             </DialogFooter>
           </form>

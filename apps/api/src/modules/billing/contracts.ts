@@ -3,7 +3,7 @@ export const BILLING_CADENCES = ["monthly", "yearly"] as const;
 export type BillingCadence = (typeof BILLING_CADENCES)[number];
 
 export function isBillingCadence(value: string): value is BillingCadence {
-  return (BILLING_CADENCES as readonly string[]).includes(value);
+  return BILLING_CADENCES.some((cadence) => cadence === value);
 }
 
 export interface IBillingPlan {

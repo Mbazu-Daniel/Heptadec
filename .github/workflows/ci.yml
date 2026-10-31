@@ -32,9 +32,6 @@ jobs:
 
       - run: pnpm --filter @heptadec/web run build
 
-      # The suite runs against the app's own SQLite file and against the eight
-      # engines in the test stack, so the file needs the schema and the stack
-      # needs its fixtures before a test means anything.
       - run: pnpm db:migrate
 
       - run: pnpm compose:test:up

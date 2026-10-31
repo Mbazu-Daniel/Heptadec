@@ -371,12 +371,6 @@ function readKind(body: Record<string, unknown>): DataSourceKind {
   return kindOf({ kind });
 }
 
-/**
- * The five columns held encrypted. The client is shown only that one exists, so
- * a blank one means keep what is stored; there is no way to send an empty one
- * back. Everything else a form leaves out is a field the caller no longer wants,
- * so it is cleared.
- */
 const SECRETS: readonly ConnectionFieldKind[] = [
   "password",
   "caCert",
@@ -414,7 +408,6 @@ export interface IConnectionPatch {
   schemaName: string | null;
   options: string | null;
   username: string | null;
-  /** Absent leaves the secret already sealed on the source. */
   password?: string;
   caCert?: string;
   clientCert?: string;
@@ -422,10 +415,6 @@ export interface IConnectionPatch {
   token?: string;
 }
 
-/**
- * The column a connection field already holds on a stored source, so a request
- * that leaves it out keeps the value rather than emptying it.
- */
 function storedColumn(
   column: ConnectionFieldKind,
   row: DataSourceRow,
@@ -450,21 +439,6 @@ function storedColumn(
   }
 }
 
-/**
- * A whole connection restated against a source that already exists, so the
- * engine is the one already stored and never the caller's to change.
- *
- * A field the request leaves out keeps what the source already holds; a field
- * it sends replaces it, and an empty one clears it. A secret is the exception:
- * it is held encrypted and never shown back, so a blank one means keep, and
- * there is no way to clear it short of removing the source.
- *
- * A mode also decides which fields are reachable at all — a socket has no host
- * and only TLS carries a certificate — so leaving a mode drops the plain fields
- * the new one cannot hold. A stored certificate is deliberately kept: it is
- * never shown back, so dropping it would strand the source with no warning the
- * user could act on, while keeping it means moving back to TLS simply works.
- */
 export function readConnectionUpdate(
   body: Record<string, unknown>,
   row: DataSourceRow,
@@ -481,9 +455,6 @@ export function readConnectionUpdate(
   const reachable = connectionFields(kind, connectionMode);
   rejectForeign(body, new Set(reachable.map((field) => field.kind)), kind);
 
-  // Only the fields this mode reaches get a value, so switching mode drops what
-  // the new one cannot hold: a socket has no host, and only TLS carries a
-  // certificate. A field the request does not name keeps what is already stored.
   const values: Partial<Record<ConnectionFieldKind, string | number | null>> =
     {};
   const secrets: Partial<Record<(typeof SECRETS)[number], string>> = {};
@@ -499,8 +470,6 @@ export function readConnectionUpdate(
       }
       continue;
     }
-    // An endpoint URL and a file path are stored in the host and database
-    // columns, so either spelling reaches the same place.
     const column: ConnectionFieldKind =
       field.kind === "endpoint"
         ? "host"
@@ -543,12 +512,6 @@ function storedMode(value: string | null): ConnectionMode | null {
 
 export interface IStoredConnection {
   kind: DataSourceKind;
-  /**
-   * The source's own read-only setting. A field rather than a parameter so that
-   * no caller can reach a driver without it: it used to be threaded positionally
-   * through the runner, the introspector and the relational view, and a caller
-   * that omitted it ran without the floor.
-   */
   readOnly: boolean;
   connectionMode: ConnectionMode | null;
   host: string | null;
@@ -654,13 +617,6 @@ export function databaseName(connection: IStoredConnection): string {
   return connection.database;
 }
 
-/**
- * A source as its driver needs it. `host`, `port` and `username` are nullable
- * because a source reached over a Unix socket has none of them — they used to
- * be defaulted to "", 0 and "" here, which made this type claim every source
- * has a host it can dial, and each of its three consumers either branched
- * anyway or papered over the lie in turn.
- */
 export interface ISavedConnection {
   connectionMode: ConnectionMode | null;
   host: string | null;

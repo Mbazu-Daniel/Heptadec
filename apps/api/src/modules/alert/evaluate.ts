@@ -12,16 +12,6 @@ import { deliverBreach } from "./deliver";
 import { gridNumber } from "../query/contracts";
 import type { IQueryResponse } from "../query/contracts";
 
-/**
- * The whole of what a run does about alerts: make the run — the query's grid,
- * cached like any other — and evaluate every rule watching the query.
- *
- * This is the app's own operation. A person asks for it through a route and the
- * scheduler's tick does it for a due job, so the path from a breach to every
- * channel is one the app can express rather than one only a backdated
- * `nextRunAt` could provoke. It answers with the deliveries it wrote, so a
- * caller can report what happened as well as the log recording it.
- */
 export async function checkRunAlerts(
   savedQueryId: string,
   organization: IOrganizationScope,
@@ -31,7 +21,6 @@ export async function checkRunAlerts(
   return checkAlerts(savedQueryId, organization, grid);
 }
 
-/** Evaluates every rule the grid breaches. Answers with what it delivered. */
 export async function checkAlerts(
   queryId: string,
   organization: IOrganizationScope,

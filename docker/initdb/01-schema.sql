@@ -1,15 +1,3 @@
--- The demo Postgres shape, and the same shape the integration tests introspect.
---
--- This file owns the DDL and nothing else: no rows. scripts/seed-test.sh applies
--- it to the test stack and then writes the data, so the demo database and the
--- test database are the same schema by construction rather than by convention.
---
--- The point of the shape is that it has real foreign keys in both directions and
--- a join table, so an entity-relationship diagram has something to draw:
--- `categories` and `regions` are roots, `products` and `suppliers` hang off them,
--- `product_suppliers` joins the two, and `orders` → `order_items` → `products`
--- is a three-hop chain.
-
 CREATE TABLE regions (
   id   SERIAL PRIMARY KEY,
   code VARCHAR(16) NOT NULL UNIQUE,
@@ -62,16 +50,12 @@ CREATE TABLE order_items (
   unit_price NUMERIC(10,2) NOT NULL
 );
 
--- The query runner's fixture. Kept so `apps/api/test/query.test.ts` has a table
--- to read and prove a refused write left the row count alone.
 CREATE TABLE events (
   id         TEXT PRIMARY KEY,
   event_name TEXT NOT NULL,
   region     TEXT NOT NULL
 );
 
--- Postgres does not index the referencing side of a foreign key on its own, and
--- an entity-relationship diagram that hides its indexes is hiding real schema.
 CREATE INDEX suppliers_region_idx  ON suppliers  (region_id);
 CREATE INDEX products_category_idx ON products   (category_id);
 CREATE INDEX orders_region_idx     ON orders     (region_id);

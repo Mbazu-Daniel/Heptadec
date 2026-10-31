@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   IconCaretDownFilled,
   IconCaretUpFilled,
@@ -23,6 +24,7 @@ import {
   runQuery,
 } from "../../api";
 import { exportCsv, exportJson } from "../../lib/export";
+import { dataSourceKeys } from "../../lib/queries";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -56,17 +58,16 @@ export function QueryRunner({
   initialSql,
   focusTable,
   runRequest,
-  onRan,
   onSqlChange,
 }: {
   source: IDataSource;
   initialSql: string;
   focusTable: string | null;
   runRequest: { sql: string; nonce: number } | null;
-  onRan: () => void;
   onSqlChange: (sql: string) => void;
 }) {
   const sourceId = source.id;
+  const queryClient = useQueryClient();
   const [sql, setSql] = useState(initialSql);
   const [result, setResult] = useState<IQueryResponse | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -80,7 +81,6 @@ export function QueryRunner({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [drafted, setDrafted] = useState(false);
   const latestRun = useRef(0);
 
   async function ask(): Promise<void> {
@@ -89,7 +89,6 @@ export function QueryRunner({
     }
     setAsking(true);
     setProblem(null);
-    setDrafted(false);
     let draft = "";
     try {
       const answer = await askQuestion([sourceId], question.trim(), undefined, {
@@ -103,17 +102,12 @@ export function QueryRunner({
         return;
       }
       setSql(answer.sql);
-      setDrafted(true);
+      void execute(answer.sql, true);
     } catch (caught) {
       setProblem(messageFor(caught, "That question could not be asked."));
     } finally {
       setAsking(false);
     }
-  }
-
-  function addToQuery(): void {
-    setDrafted(false);
-    void execute(sql, true);
   }
 
   useEffect(() => {
@@ -156,10 +150,13 @@ export function QueryRunner({
       }
       setResult(answer);
       setPlan(null);
-      void recordRun(sourceId, answer.statement ?? statement).then(
-        onRan,
-        () => undefined,
-      );
+      void recordRun(sourceId, answer.statement ?? statement)
+        .catch(() => undefined)
+        .then(() =>
+          queryClient.invalidateQueries({
+            queryKey: dataSourceKeys.savedQueries(sourceId),
+          }),
+        );
       if (resetRefine) {
         setFilterColumn(answer.columns[0] ?? "");
         setFilterOp("=");
@@ -279,7 +276,7 @@ export function QueryRunner({
             </Button>
             {source.canExplain ? (
               <Button
-                variant="ghost"
+                variant="secondary"
                 onClick={() => void explain()}
                 disabled={explaining || running || sql.trim().length === 0}
                 className="h-8 gap-1.5 text-xs"
@@ -307,10 +304,9 @@ export function QueryRunner({
           />
           <Button
             type="submit"
-            variant="ghost"
             disabled={asking || question.trim().length === 0}
-            className="h-8 shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-fg"
-            title="Draft a statement from this question"
+            className="h-8 shrink-0 gap-1.5 px-4 text-xs"
+            title="Draft a statement from this question and run it"
           >
             <IconRobot size={14} strokeWidth={1.5} />
             {asking ? "Asking…" : "Ask"}
@@ -332,9 +328,6 @@ export function QueryRunner({
           aria-label="SQL statement"
           className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:border-ring/50"
         />
-        <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-          ⌘/Ctrl + Enter runs it · clicking a table loads its full contents
-        </p>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -409,21 +402,6 @@ export function QueryRunner({
         ) : null}
         <div className="min-h-0 flex-1 overflow-auto p-3">
         {problem !== null ? <Alert>{problem}</Alert> : null}
-        {drafted ? (
-          <div className="flex items-center gap-2">
-            <Alert tone="success">
-              Ready to add.
-            </Alert>
-            <Button
-              onClick={addToQuery}
-              disabled={running || asking || sql.trim().length === 0}
-              className="h-7 shrink-0 gap-1.5 text-xs"
-            >
-              <IconRobot size={14} strokeWidth={1.5} />
-              Add to query
-            </Button>
-          </div>
-        ) : null}
         {plan !== null ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">

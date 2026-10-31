@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ApiError,
   acceptInvitation,
@@ -6,7 +6,6 @@ import {
   fetchInvitation,
   messageFor,
 } from "../api";
-import type { IInvitationPreviewResponse } from "@heptadec/api/invitation-contracts";
 import { Button } from "./ui/button";
 import { Alert } from "./ui/feedback";
 
@@ -25,46 +24,32 @@ export function AcceptInvitation({
   onDeclined,
   onSignIn,
 }: IAcceptInvitationProps) {
-  const [preview, setPreview] = useState<IInvitationPreviewResponse | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const found = useQuery({
+    queryKey: ["invitation", invitationId],
+    queryFn: () => fetchInvitation(invitationId),
+  });
+  const preview = found.data ?? null;
+  const loadProblem = found.isError
+    ? found.error instanceof ApiError && found.error.code === "not_found"
+      ? found.error.message
+      : "That invitation could not be loaded. Try again."
+    : null;
 
-  useEffect(() => {
-    let live = true;
-    setPreview(null);
-    setProblem(null);
-    fetchInvitation(invitationId)
-      .then((found) => {
-        if (live) {
-          setPreview(found);
-        }
-      })
-      .catch((caught: unknown) => {
-        if (live) {
-          setProblem(
-            caught instanceof ApiError && caught.code === "not_found"
-              ? caught.message
-              : "That invitation could not be loaded. Try again.",
-          );
-        }
-      });
-    return () => {
-      live = false;
-    };
-  }, [invitationId]);
+  const accept = useMutation({
+    mutationFn: () => acceptInvitation(invitationId),
+    onSuccess: onDone,
+  });
+  const decline = useMutation({
+    mutationFn: () => declineInvitation(invitationId),
+    onSuccess: onDeclined,
+  });
 
-  async function act(work: (id: string) => Promise<void>, done: () => void): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    try {
-      await work(invitationId);
-      done();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That did not go through."));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const busy = accept.isPending || decline.isPending;
+  const actionProblem = accept.isError
+    ? messageFor(accept.error, "That did not go through.")
+    : decline.isError
+      ? messageFor(decline.error, "That did not go through.")
+      : null;
 
   return (
     <div className="relative min-h-screen">
@@ -86,12 +71,12 @@ export function AcceptInvitation({
                 {preview.email}.
               </p>
             </>
-          ) : problem ? (
+          ) : loadProblem ? (
             <>
               <h1 className="grad mt-3 font-display text-2xl tracking-[-0.05em]">
                 Invitation unavailable
               </h1>
-              <p className="mt-2 text-muted-foreground">{problem}</p>
+              <p className="mt-2 text-muted-foreground">{loadProblem}</p>
             </>
           ) : (
             <>
@@ -102,7 +87,9 @@ export function AcceptInvitation({
             </>
           )}
 
-          {preview && problem ? <Alert className="mt-6">{problem}</Alert> : null}
+          {preview && actionProblem ? (
+            <Alert className="mt-6">{actionProblem}</Alert>
+          ) : null}
 
           {preview ? (
             <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -111,14 +98,14 @@ export function AcceptInvitation({
                   <Button
                     size="lg"
                     disabled={busy}
-                    onClick={() => void act(acceptInvitation, onDone)}
+                    onClick={() => accept.mutate()}
                   >
                     {busy ? "Joining" : "Accept invitation"}
                   </Button>
                   <Button
                     variant="ghost"
                     disabled={busy}
-                    onClick={() => void act(declineInvitation, onDeclined)}
+                    onClick={() => decline.mutate()}
                   >
                     Decline
                   </Button>
@@ -134,7 +121,7 @@ export function AcceptInvitation({
                 </>
               )}
             </div>
-          ) : problem ? (
+          ) : loadProblem ? (
             <div className="mt-8">
               <Button onClick={onDeclined}>Back to sign in</Button>
             </div>

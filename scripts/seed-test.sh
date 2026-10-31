@@ -128,10 +128,6 @@ ch_count=$($COMPOSE exec -T clickhouse-test clickhouse-client --user heptadec --
 libsql_count=$(curl -sf -X POST http://127.0.0.1:8081/ -H 'content-type: application/json' -d '{"statements":["SELECT COUNT(*) FROM events"]}' | grep -o '\[4\]' | head -1)
 qw_hits=$(curl -sf -X POST http://127.0.0.1:7282/api/v1/events/search -H 'content-type: application/json' -d '{"query":"*","max_hits":10}' | grep -o '"num_hits": [0-9]*')
 
-# Every SQL engine is seeded with the same shape as Postgres, because the
-# entity-relationship view is meant to look the same whichever engine it points
-# at. ClickHouse is the one honest exception: MergeTree declares no foreign keys,
-# so it is checked for the eight tables but not for edges.
 libsql_query() {
   curl -sf -X POST http://127.0.0.1:8081/ -H 'content-type: application/json' \
     -d "{\"statements\":[\"$1\"]}" \

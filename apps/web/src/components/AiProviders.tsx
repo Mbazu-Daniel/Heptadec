@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconTrash } from "@tabler/icons-react";
 import type {
   IAiModel,
@@ -8,7 +9,7 @@ import type {
 } from "@heptadec/api/ai-contracts";
 import {
   createAiProvider,
-  listAiProviderModels,
+  updateAiProvider,
   listAiProviders,
   listProviderModels,
   messageFor,
@@ -31,12 +32,19 @@ import {
 
 type Catalog = IAiProviderListResponse["catalog"];
 
+const NO_CATALOG: Catalog = [];
+
 export function AiProviders({ isOwner }: { isOwner: boolean }) {
-  const [providers, setProviders] = useState<IAiProvider[] | null>(null);
-  const [catalog, setCatalog] = useState<Catalog>([]);
-  const [problem, setProblem] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const listed = useQuery({
+    queryKey: ["ai-providers"],
+    queryFn: listAiProviders,
+    enabled: isOwner,
+  });
+  const providers = listed.data?.providers ?? [];
+  const catalog = listed.data?.catalog ?? NO_CATALOG;
+
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const [provider, setProvider] = useState("");
   const [name, setName] = useState("");
@@ -44,71 +52,25 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [isDefault, setIsDefault] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [models, setModels] = useState<IAiModel[] | null>(null);
   const [modelSource, setModelSource] = useState<
     "provider" | "suggestions" | null
   >(null);
   const [modelsNote, setModelsNote] = useState<string | null>(null);
-  const [loadingModels, setLoadingModels] = useState(false);
   const [loadingDraft, setLoadingDraft] = useState(false);
 
-  const reload = useCallback(async () => {
-    if (!isOwner) {
-      return;
-    }
-    setProblem(null);
-    try {
-      const listed = await listAiProviders();
-      setProviders(listed.providers);
-      setCatalog(listed.catalog);
-    } catch (caught) {
-      setProblem(messageFor(caught, "The AI providers could not be loaded."));
-    }
-  }, [isOwner]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  useEffect(() => {
-    if (provider === "") {
-      return;
-    }
-    const spec = catalog.find((entry) => entry.id === provider);
-    if (spec?.needsBaseUrl === true) {
-      setBaseUrl("");
-    }
-  }, [provider, catalog]);
-
-  function applyListing(listed: IListModelsResponse): void {
-    setModels(listed.models);
-    setModelSource(listed.source);
-    if (listed.source === "provider") {
-      setModel(listed.models[0]?.id ?? "");
-      setModelsNote(`${listed.models.length} models this key can reach`);
+  function applyListing(listedModels: IListModelsResponse): void {
+    setModels(listedModels.models);
+    setModelSource(listedModels.source);
+    if (listedModels.source === "provider") {
+      setModel(listedModels.models[0]?.id ?? "");
+      setModelsNote(`${listedModels.models.length} models this key can reach`);
       return;
     }
     setModelsNote("That provider does not publish a model list — type the model id");
   }
 
-  async function loadModels(target: IAiProvider): Promise<void> {
-    setLoadingModels(true);
-    setModelsNote(null);
-    try {
-      applyListing(await listAiProviderModels(target.id));
-    } catch (caught) {
-      setModels(null);
-      setModelSource("suggestions");
-      setModelsNote(messageFor(caught, "The model list could not be read."));
-    } finally {
-      setLoadingModels(false);
-    }
-  }
-
-  /**
-   * Lists a provider's models before it is saved, so the form can offer a
-   * dropdown instead of asking for a model id from memory.
-   */
   async function loadDraftModels(
     targetProvider: string,
     targetBaseUrl: string,
@@ -142,17 +104,21 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
 
   function chooseProvider(next: string): void {
     setProvider(next);
+    setBaseUrl("");
     setModels(null);
     setModelSource(null);
     setModelsNote(null);
     setModel("");
     const spec = catalog.find((entry) => entry.id === next);
     if (spec?.models && spec.models.length > 0) {
-      const listed = spec.models.map((id) => ({ id, label: null }));
-      setModels(listed);
+      const listedModels = spec.models.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+      }));
+      setModels(listedModels);
       setModelSource("provider");
-      setModel(listed[0]?.id ?? "");
-      setModelsNote(`${listed.length} models`);
+      setModel(listedModels[0]?.id ?? "");
+      setModelsNote(`${listedModels.length} models`);
       return;
     }
     if (spec !== undefined && !spec.needsBaseUrl && apiKey.trim() !== "") {
@@ -160,47 +126,97 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  async function save(): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setNotice(null);
-    try {
-      await createAiProvider({
-        name,
-        provider,
-        model,
-        apiKey,
-        isDefault,
-        ...(baseUrl === "" ? {} : { baseUrl }),
-      });
-      setName("");
-      setApiKey("");
-      setIsDefault(false);
-      await reload();
-      setNotice("That provider was saved.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That provider could not be saved."));
-    } finally {
-      setBusy(false);
-    }
+  function clearForm(): void {
+    setName("");
+    setProvider("");
+    setModel("");
+    setApiKey("");
+    setBaseUrl("");
+    setIsDefault(false);
+    setEditingId(null);
+    setModels(null);
+    setModelSource(null);
+    setModelsNote(null);
   }
 
-  async function remove(providerId: string): Promise<void> {
-    setBusy(true);
-    setProblem(null);
-    setNotice(null);
-    try {
-      await removeAiProvider(providerId);
-      await reload();
+  const save = useMutation({
+    mutationFn: () =>
+      editingId === null
+        ? createAiProvider({
+            name,
+            provider,
+            model,
+            apiKey,
+            isDefault,
+            ...(baseUrl === "" ? {} : { baseUrl }),
+          })
+        : updateAiProvider({
+            id: editingId,
+            name,
+            provider,
+            model,
+            apiKey,
+            isDefault,
+            ...(baseUrl === "" ? {} : { baseUrl }),
+          }),
+    onSuccess: () => {
+      setNotice(editingId === null ? "That provider was saved." : "That provider was updated.");
+      clearForm();
+      queryClient.invalidateQueries({ queryKey: ["ai-providers"] });
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (providerId: string) => removeAiProvider(providerId),
+    onSuccess: () => {
       setNotice("That provider was removed.");
-    } catch (caught) {
-      setProblem(messageFor(caught, "That provider could not be removed."));
-    } finally {
-      setBusy(false);
-    }
+      queryClient.invalidateQueries({ queryKey: ["ai-providers"] });
+    },
+  });
+
+  const makeCurrent = useMutation({
+    mutationFn: (providerId: string) =>
+      updateAiProvider({ id: providerId, isDefault: true }),
+    onSuccess: () => {
+      setNotice("That provider is now in use.");
+      queryClient.invalidateQueries({ queryKey: ["ai-providers"] });
+    },
+  });
+
+  function edit(target: IAiProvider): void {
+    setName(target.name);
+    setProvider(target.provider);
+    setModel(target.model);
+    setBaseUrl(target.baseUrl ?? "");
+    setApiKey("");
+    setIsDefault(target.isDefault);
+    setEditingId(target.id);
+    setModels(null);
+    setModelSource(null);
+    setModelsNote("Keep this model id, or type another");
   }
+
+  const loadProblem = listed.isError
+    ? messageFor(listed.error, "The AI providers could not be loaded.")
+    : null;
+  const saveProblem = save.isError
+    ? messageFor(save.error, "That provider could not be saved.")
+    : null;
+  const removeProblem = remove.isError
+    ? messageFor(remove.error, "That provider could not be removed.")
+    : null;
+  const currentProblem = makeCurrent.isError
+    ? messageFor(makeCurrent.error, "That provider could not be selected.")
+    : null;
 
   const chosenSpec = catalog.find((entry) => entry.id === provider);
+  const saveBlocked =
+    save.isPending ||
+    provider === "" ||
+    name.trim() === "" ||
+    model.trim() === "" ||
+    (editingId === null && apiKey.trim() === "") ||
+    (chosenSpec?.needsBaseUrl === true && baseUrl.trim() === "");
   const modelHint =
     provider === ""
       ? "Choose a provider first"
@@ -231,9 +247,24 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     <Workspace
       view={
         <div className="flex min-h-0 flex-1 flex-col pt-6">
-          {problem ? (
+          {loadProblem ? (
             <div className="px-6 pb-2">
-              <Alert>{problem}</Alert>
+              <Alert>{loadProblem}</Alert>
+            </div>
+          ) : null}
+          {saveProblem ? (
+            <div className="px-6 pb-2">
+              <Alert>{saveProblem}</Alert>
+            </div>
+          ) : null}
+          {removeProblem ? (
+            <div className="px-6 pb-2">
+              <Alert>{removeProblem}</Alert>
+            </div>
+          ) : null}
+          {currentProblem ? (
+            <div className="px-6 pb-2">
+              <Alert>{currentProblem}</Alert>
             </div>
           ) : null}
           {notice ? (
@@ -330,13 +361,13 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                 checked={isDefault}
                 onChange={(event) => setIsDefault(event.target.checked)}
               />
-              Use this one by default
+              Use this provider for questions
             </label>
 
             <div>
               <Button
-                disabled={busy || provider === "" || name.trim() === "" || model.trim() === "" || apiKey.trim() === ""}
-                onClick={() => void save()}
+                disabled={saveBlocked}
+                onClick={() => save.mutate()}
               >
                 Save provider
               </Button>
@@ -344,7 +375,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto px-6 py-3">
-            {providers === null ? (
+            {listed.isPending ? (
               <p className="text-xs text-muted-foreground">Loading</p>
             ) : providers.length === 0 ? (
               <EmptyState
@@ -358,7 +389,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                     <th className={TABLE_CELL_CLASSNAME}>Name</th>
                     <th className={TABLE_CELL_CLASSNAME}>Provider</th>
                     <th className={TABLE_CELL_CLASSNAME}>Model</th>
-                    <th className={TABLE_CELL_CLASSNAME}>Default</th>
+                    <th className={TABLE_CELL_CLASSNAME}>In use</th>
                     <th className={TABLE_CELL_CLASSNAME} />
                   </tr>
                 </thead>
@@ -371,22 +402,32 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
                       </td>
                       <td className={TABLE_CELL_CLASSNAME}>{entry.model}</td>
                       <td className={TABLE_CELL_CLASSNAME}>
-                        {entry.isDefault ? "yes" : ""}
+                        {entry.isDefault ? "Yes" : ""}
                       </td>
                       <td className={`${TABLE_CELL_CLASSNAME} text-right`}>
+                        {entry.isDefault ? null : (
+                          <Button
+                            variant="ghost"
+                            className={SMALL_BUTTON_CLASSNAME}
+                            disabled={makeCurrent.isPending}
+                            onClick={() => makeCurrent.mutate(entry.id)}
+                          >
+                            Use
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           className={SMALL_BUTTON_CLASSNAME}
-                          disabled={busy || loadingModels}
-                          onClick={() => void loadModels(entry)}
+                          disabled={remove.isPending}
+                          onClick={() => edit(entry)}
                         >
-                          {loadingModels ? "Reading…" : "Models"}
+                          Edit
                         </Button>
                         <Button
                           variant="ghost"
                           className={`${SMALL_BUTTON_CLASSNAME} text-red`}
-                          disabled={busy}
-                          onClick={() => void remove(entry.id)}
+                          disabled={remove.isPending}
+                          onClick={() => remove.mutate(entry.id)}
                         >
                           <IconTrash size={14} strokeWidth={1.5} />
                           Remove

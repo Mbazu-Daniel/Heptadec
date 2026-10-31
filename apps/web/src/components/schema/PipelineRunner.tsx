@@ -17,8 +17,6 @@ import {
 
 const DEFAULT_STAGES = '[\n  {\n    "$limit": 100\n  }\n]';
 
-// MongoDB has no SQL, so this is the runner a pipeline source gets instead of
-// QueryRunner: the collection is picked and the stages are written as JSON.
 export function PipelineRunner({
   source,
   tables,
@@ -254,10 +252,21 @@ export function PipelineRunner({
   );
 }
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function parseStages(text: string): Record<string, unknown>[] {
   const parsed: unknown = JSON.parse(text);
   if (!Array.isArray(parsed)) {
     throw new Error("A pipeline is a list of stages.");
   }
-  return parsed as Record<string, unknown>[];
+  const stages: Record<string, unknown>[] = [];
+  for (const stage of parsed) {
+    if (!isJsonObject(stage)) {
+      throw new Error("A pipeline is a list of stages.");
+    }
+    stages.push(stage);
+  }
+  return stages;
 }

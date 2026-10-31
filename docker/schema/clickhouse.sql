@@ -1,13 +1,3 @@
--- The shape from docker/initdb/01-schema.sql, spelled for ClickHouse.
---
--- MergeTree has no foreign keys, so this is the same eight tables with the same
--- columns and the same ordering keys but no declared relationships: the diagram
--- draws the tables and the app reports zero edges, which is the truth about the
--- engine rather than a reduced view of it.
---
--- scripts/seed-test.sh pipes this into the test-stack server. It owns the rows
--- as well as the DDL because a diagram of empty tables is not worth drawing.
-
 DROP TABLE IF EXISTS order_items, product_suppliers, orders, products, suppliers, categories, regions, events;
 
 CREATE TABLE regions (
@@ -61,7 +51,6 @@ CREATE TABLE order_items (
   unit_price Decimal(10,2)
 ) ENGINE = MergeTree() ORDER BY id;
 
--- The query runner's fixture, kept so a refused write has a row count to check.
 CREATE TABLE events (
   id         String,
   event_name String,

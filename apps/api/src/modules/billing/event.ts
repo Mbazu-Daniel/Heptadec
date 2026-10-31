@@ -1,4 +1,5 @@
 import { BadRequestException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import { type BillingCadence, isBillingCadence } from "./contracts";
 
 export type BillingEvent = IPaidEvent | IFailedEvent | ICardSavedEvent;
@@ -85,7 +86,7 @@ function readCollection(
 ): IPaidEvent | IFailedEvent | null {
   const data = record(event.data, "data");
   const status = text(data.status, "data.status");
-  if (kind === "paid" && !(PAID_STATUSES as readonly string[]).includes(status)) {
+  if (kind === "paid" && !PAID_STATUSES.some((paid) => paid === status)) {
     return null;
   }
   const customer = optionalRecord(data.customer);
@@ -142,17 +143,14 @@ function fromMetadata(metadata: Record<string, unknown> | null): {
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isJsonObject(value)) {
     throw new BadRequestException(`The delivery has no ${path}`);
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 function optionalRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
+  return isJsonObject(value) ? value : null;
 }
 
 function text(value: unknown, path: string): string {

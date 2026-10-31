@@ -71,6 +71,13 @@
       "when": 1793272127239,
       "tag": "0009_lonely_dreaming_celestial",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793430249431,
+      "tag": "0010_sloppy_professor_monster",
+      "breakpoints": true
     }
   ]
 }

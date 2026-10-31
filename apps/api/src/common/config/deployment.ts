@@ -1,11 +1,5 @@
 import type { HeptadecDatabase } from "@heptadec/db";
 
-/**
- * What a deployment passes to the app by name: the image bucket's coordinates
- * and credentials, and the account the bucket lives in. Everything here is
- * optional — a deployment without image storage leaves the fields unset, and
- * the routes that need them report that instead of failing.
- */
 export interface IDeploymentVars {
   R2_BUCKET_NAME?: string;
   R2_PUBLIC_ID?: string;
@@ -36,10 +30,6 @@ export interface IDeploymentBindings extends IDeploymentVars {
   waitUntil: (task: Promise<unknown>) => void;
 }
 
-/**
- * The raw environment the Worker runtime hands the entry point: its own
- * bindings by name, the static assets fetcher, and the variables above.
- */
 export interface IWorkerEnv extends IDeploymentVars {
   DB: D1Database;
   ASSETS: Fetcher;

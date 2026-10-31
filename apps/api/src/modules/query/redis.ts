@@ -3,11 +3,10 @@ import { BadGatewayException, BadRequestException } from "../../common/exception
 import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import { redisAddress, type IStoredConnection } from "../data-source/connection";
+import { STATEMENT_TIMEOUT_MS } from "../data-source/clients";
 import type { IRedisQueryResponse } from "./contracts";
 import { applyBudget } from "./budget";
 import { assertRedisReads } from "./read-policy";
-
-const STATEMENT_TIMEOUT_MS = 15_000;
 
 const MAX_COMMAND_CHARS = 1_000;
 

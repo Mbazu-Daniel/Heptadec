@@ -30,26 +30,8 @@ export interface IConnectionField {
   modes?: readonly ConnectionMode[];
 }
 
-// A pipeline source is MongoDB: it has collections and documents rather than
-// tables and columns, and it is asked for an aggregation pipeline, not SQL.
-// A search source is Quickwit: it holds indexes of documents and answers a query
-// string rather than a statement.
 export type QueryLanguage = "sql" | "command" | "pipeline" | "search";
 
-/**
- * What the app knows about speaking one language.
- *
- * A language, not an engine, is what a request, a Saved Query and a Schedule
- * actually carry, so the questions callers kept re-asking of the catalog are
- * answered here once, per language, and an engine inherits them by naming one.
- *
- * `savable` is whether a Saved Query can hold a statement of this language. A
- * Schedule is a saved query on a timer and an Alert Rule is a threshold over a
- * saved query's result, so this one fact settles all three; it belongs to the
- * language because the row that carries it holds SQL text whatever the source
- * underneath speaks. Keyed by the union, so a language added later is refused
- * here until someone says which side of that line it falls on.
- */
 export const LANGUAGES = {
   sql: { savable: true },
   command: { savable: false },
@@ -65,30 +47,11 @@ export interface IEngineSpec {
   readonly fields: readonly IConnectionField[];
   readonly acceptsConnectionUrl: boolean;
   readonly schemes: readonly string[];
-  /** Whether this engine is a preview feature: still fully queryable, but
-   * shown as experimental in the UI rather than a first-class provider.
-   */
   preview?: boolean;
-  /** Whether a pasted connection URL's query string is kept as the source's
-   * options instead of being dropped. Only engines that carry their settings
-   * that way set it.
-   */
   readonly carriesUrlQuery?: boolean;
   readonly queryLanguage: QueryLanguage | null;
   readonly sqlDialect: SqlDialect | null;
   readonly supportsExplain: boolean;
-  /**
-   * Whether the app's own tooling is implemented for this engine: reading its
-   * structure as tables and typed fields, running EXPLAIN against it, and
-   * previewing rows through the app rather than the driver.
-   *
-   * Everything built on top of that reads this one entry — dashboards are
-   * charts over the columns it describes, and the MCP tools expose the same
-   * three operations to an external agent — so which engines those features
-   * cover is said once rather than a comparison of the engine's name repeated
-   * in each of them. Postgres and nothing else today, because the readers are
-   * Postgres ones; a new engine flips this when its own exist.
-   */
   readonly supportsTooling: boolean;
 }
 
@@ -167,14 +130,6 @@ const TLS = [
 
 const TCP_AND_TLS = ["tcp", "tls"] as const;
 
-/**
- * Every engine the catalog may hold, named before the catalog is written.
- *
- * The union is written here rather than derived from `ENGINE_SPECS` so that the
- * catalog can be checked against it: with the union as the key type, an engine
- * that is declared in the type but missing from the map — or added to the map
- * but missing from the union — stops compiling instead of quietly working.
- */
 export type DataSourceKind =
   | "postgres"
   | "mysql"
@@ -439,31 +394,27 @@ export const ENGINE_SPECS = {
   },
   } as const satisfies Record<DataSourceKind, IEngineSpec>;
 
-/**
- * The engine a pasted connection URL belongs to, read from its scheme — the
- * same word the server accepts a pasted URL by, so an engine that guesses
- * right here never has its URL refused there. `null` when the URL does not
- * name exactly one importable engine, and the caller keeps asking rather
- * than guessing: an `https:` URL whose port is no engine's own, or a scheme
- * none of them accepts.
- */
+export function isDataSourceKind(value: string): value is DataSourceKind {
+  return Object.hasOwn(ENGINE_SPECS, value);
+}
+
 export function kindFromConnectionUrl(url: string): DataSourceKind | null {
   const scheme = url
     .trim()
     .match(/^[A-Za-z][A-Za-z0-9+.-]*:/)?.[0]
     ?.toLowerCase();
   if (scheme === undefined) {
-    // A bare path is not a URL — a SQLite file, which no import covers.
     return null;
   }
-  for (const kind of Object.keys(ENGINE_SPECS) as DataSourceKind[]) {
+  for (const kind of Object.keys(ENGINE_SPECS)) {
+    if (!isDataSourceKind(kind)) {
+      continue;
+    }
     const spec: IEngineSpec = ENGINE_SPECS[kind];
     if (!spec.acceptsConnectionUrl || !spec.schemes.includes(scheme)) {
       continue;
     }
     if (kind === "clickhouse") {
-      // ClickHouse shares https: with Quickwit, which cannot be imported at
-      // all, so only its own port reads as ClickHouse.
       let port: number;
       try {
         port = Number(new URL(url.trim()).port);
@@ -474,17 +425,11 @@ export function kindFromConnectionUrl(url: string): DataSourceKind | null {
         return null;
       }
     }
-    // MariaDB speaks MySQL's protocol and shares its scheme; MySQL comes
-    // first, so a mysql: URL reads as MySQL and covers both.
     return kind;
   }
   return null;
 }
 
-/**
- * The mode a source connects with when the body does not name one. An engine
- * with no mode-dependent fields has no mode at all.
- */
 export function defaultConnectionMode(
   kind: DataSourceKind,
 ): ConnectionMode | null {
@@ -493,11 +438,6 @@ export function defaultConnectionMode(
   return modes.length === 0 ? null : "tcp";
 }
 
-/**
- * The fields a connection mode makes reachable. A socket has no host and a TLS
- * connection is the only one that carries certificates, so the rest are not
- * just hidden but refused.
- */
 export function connectionFields(
   kind: DataSourceKind,
   mode: ConnectionMode | null,
@@ -510,11 +450,6 @@ export function connectionFields(
   );
 }
 
-/**
- * Whether an engine is still a preview feature. Read through a helper because
- * only some engines carry the flag, so the spec union cannot be indexed for it
- * directly.
- */
 export function isPreviewEngine(kind: DataSourceKind): boolean {
   const spec: IEngineSpec = ENGINE_SPECS[kind];
   return spec.preview === true;
@@ -546,15 +481,6 @@ export interface ICreateDataSourceRequest {
   token?: string;
 }
 
-/**
- * A restatement of the whole source, exactly as it was sent when it was created
- * but without an engine: a source that points somewhere else is a different
- * source, so the engine stays the one already stored.
- *
- * A secret is the one exception. The client is never shown a stored password,
- * certificate, key, or token, only that one exists, so leaving it out of this
- * body keeps the value already on the source rather than clearing it.
- */
 export type IUpdateDataSourceRequest = Omit<ICreateDataSourceRequest, "kind">;
 
 export interface IUpdateDataSourceResponse {

@@ -23,11 +23,7 @@ import { OrganizationSettings } from "./OrganizationSettings";
 import { TeamPanel } from "./TeamPanel";
 import { AuditLog } from "./AuditLog";
 import { Billing } from "./Billing";
-import type { ICrumb } from "./workspace";
 
-/** The workspace's sections, in sidebar order. One row per section says
- * everything there is to know about it: its view word, its URL slug, its
- * label, its icon and the panel it renders. Every new section is one row. */
 export type WorkspaceView =
   | "sources"
   | "dashboards"
@@ -46,14 +42,12 @@ export interface ISectionIconProps {
   className?: string;
 }
 
-/** What the Dashboard hands a section's panel: the active membership, the
- * state a panel shares with the workspace shell, and the navigation verbs. */
 export interface ISectionPanelContext {
   active: IMembership | undefined;
-  resetToken: number;
   openDashboard: string | null;
-  setTrail: (trail: ICrumb[]) => void;
+  openSource: string | null;
   setOpenDashboard: (id: string | null) => void;
+  setOpenSource: (id: string | null) => void;
   openDashboards: () => void;
   goToSection: (view: WorkspaceView) => void;
   onOrganizationChanged: () => void;
@@ -77,7 +71,7 @@ export const WORKSPACE_SECTIONS: readonly IWorkspaceSection[] = [
     inMenu: true,
     render: (context) =>
       context.openDashboard === null ? (
-        <Dashboards onOpen={context.setOpenDashboard} onTrail={context.setTrail} />
+        <Dashboards onOpen={context.setOpenDashboard} />
       ) : (
         <DashboardDetail
           dashboardId={context.openDashboard}
@@ -92,7 +86,10 @@ export const WORKSPACE_SECTIONS: readonly IWorkspaceSection[] = [
     icon: IconDatabase,
     inMenu: true,
     render: (context) => (
-      <DataSources resetToken={context.resetToken} onTrail={context.setTrail} />
+      <DataSources
+        openSourceId={context.openSource}
+        onOpenSource={context.setOpenSource}
+      />
     ),
   },
   {

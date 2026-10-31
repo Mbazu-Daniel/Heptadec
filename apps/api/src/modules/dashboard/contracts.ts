@@ -1,6 +1,12 @@
 import type { DataSourceKind } from "../data-source/contracts";
 
-export type ChartType = "bar" | "line" | "pie";
+const CHART_TYPES = ["bar", "line", "pie"] as const;
+
+export type ChartType = (typeof CHART_TYPES)[number];
+
+export function isChartType(value: string): value is ChartType {
+  return CHART_TYPES.some((chartType) => chartType === value);
+}
 
 export interface IDashboard {
   id: string;
@@ -13,9 +19,6 @@ export interface IDashboardSource {
   dataSourceId: string;
   name: string;
   kind: DataSourceKind;
-  /** Whether the app's tooling covers this source, which is what a dashboard
-   * needs to be described from. Said here by the server rather than worked out
-   * by the client from the kind, which is how the offer and the gate drift. */
   tooling: boolean;
 }
 

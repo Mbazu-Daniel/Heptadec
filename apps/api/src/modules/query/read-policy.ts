@@ -25,9 +25,6 @@ export const READ_ONLY_REDIS_COMMANDS = new Set([
   "ping", "echo", "wait",
 ]);
 
-// The commands the model is told about. They are the read-only ones, minus the
-// two that block: a blocking read would hold the connection until the
-// statement times out.
 const BLOCKING_REDIS_COMMANDS = new Set(["xread", "wait"]);
 
 export const REDIS_COMMANDS_FOR_THE_MODEL = [...READ_ONLY_REDIS_COMMANDS]

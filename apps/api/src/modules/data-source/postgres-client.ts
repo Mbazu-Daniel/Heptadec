@@ -2,16 +2,13 @@ import pg from "pg";
 import { BadRequestException } from "../../common/exceptions";
 import type { ConnectionOptions } from "node:tls";
 import type { ISavedConnection } from "./connection";
-
-export const STATEMENT_TIMEOUT_MS = 30_000;
+import { STATEMENT_TIMEOUT_MS } from "./clients";
 
 export function postgresClient(
   source: ISavedConnection,
   applicationName: string,
 ): pg.Client {
   const overSocket = source.connectionMode === "socket";
-  // A socket source has no host to dial and a TCP one has no socket, so each
-  // branch carries only what it will actually use rather than both, defaulted.
   const dial: { socketPath: string } | { host: string; port: number } = overSocket
     ? source.socketPath === null
       ? notConnectable()
@@ -46,7 +43,6 @@ function tls(source: ISavedConnection): ConnectionOptions {
   };
 }
 
-/** A source that names neither a host nor a socket cannot be dialled. */
 function notConnectable(): never {
   throw new BadRequestException("That source is missing connection details");
 }

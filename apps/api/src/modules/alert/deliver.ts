@@ -12,8 +12,6 @@ import type {
   IAlertDelivery,
 } from "./contracts";
 
-/** The row as the app hands it over. One owner, so the check that wrote a
- * delivery and the route that reports it cannot describe it differently. */
 export function toAlertDelivery(
   row: typeof alertDelivery.$inferSelect,
 ): IAlertDelivery {
@@ -28,11 +26,6 @@ export function toAlertDelivery(
   };
 }
 
-/**
- * One breach goes to every connected channel; one channel failing never
- * stops the others, and any outcome — sent, failed, skipped — is logged as
- * its own delivery.
- */
 export async function deliverBreach(
   db: HeptadecDatabase,
   rule: AlertRuleRow,
@@ -56,13 +49,14 @@ export async function deliverBreach(
     ];
   }
 
+  const sent = await Promise.all(
+    channels.map((channel) =>
+      sendToChannel(channel, `Heptadec alert: ${rule.name}`, message),
+    ),
+  );
+
   const delivered: IAlertDelivery[] = [];
-  for (const channel of channels) {
-    const result = await sendToChannel(
-      channel,
-      `Heptadec alert: ${rule.name}`,
-      message,
-    );
+  for (const result of sent) {
     delivered.push(
       await log(db, rule, result.channel, result.status, message, result.error),
     );

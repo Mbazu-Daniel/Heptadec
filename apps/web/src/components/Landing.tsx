@@ -2,15 +2,12 @@ import { useEffect, useState } from "react";
 import { ThemeSwitch } from "./ui/theme-switch";
 import {
   ENGINE_SPECS,
-  type DataSourceKind,
+  isDataSourceKind,
 } from "@heptadec/api/data-source-contracts";
 import { EngineIcon } from "../lib/engine-icon";
+import { REPO, REPO_URL } from "../lib/repo";
 
-const REPO = "Mbazu-Daniel/Heptadec";
-
-export const REPO_URL = `https://github.com/${REPO}`;
-
-const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
+const ENGINE_KINDS = Object.keys(ENGINE_SPECS).filter(isDataSourceKind);
 
 function scrollToSection(id: string): void {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -132,7 +129,6 @@ function GitHubStars({ label }: { label?: string }) {
         }
       })
       .catch(() => undefined);
-    // Timeout after 5 seconds to avoid blocking the page if GitHub API is slow
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     return () => {
       clearTimeout(timeoutId);
@@ -815,7 +811,7 @@ function DeploySection() {
                 box.
               </p>
               <pre className="mt-3 overflow-x-auto rounded-[12px] border border-(--mk-hairline) bg-(--mk-bg-surface) p-3 font-mono text-[13px] leading-[20px] text-(--mk-fg-primary)">
-{`git clone https://github.com/${REPO}.git
+{`git clone ${REPO_URL}.git
 cd Heptadec && pnpm install
 cp .env.example .env
 pnpm db:migrate && pnpm dev`}

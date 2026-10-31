@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organization } from "./organization/organization";
 
 export const savedQuery = sqliteTable(
   "saved_query",
@@ -7,7 +8,9 @@ export const savedQuery = sqliteTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    organizationId: text("organization_id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     dataSourceId: text("data_source_id").notNull(),
     name: text("name").notNull(),
     sql: text("sql").notNull(),

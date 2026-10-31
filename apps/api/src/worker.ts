@@ -3,11 +3,8 @@ import { buildApp } from "./app";
 import type { IWorkerEnv } from "./common/config/deployment";
 import { runDueJobs } from "./modules/scheduler";
 
-const app = buildApp({ compressResponses: false });
+const app = buildApp({ compressResponses: true });
 
-// Paths the Worker answers itself. Anything else is a client route and must
-// fall through to the static assets, which serve index.html so a deep link or
-// a page refresh does not 404.
 const WORKER_PREFIXES = ["/api/", "/health", "/mcp"];
 
 function isWorkerPath(pathname: string): boolean {

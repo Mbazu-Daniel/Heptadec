@@ -94,6 +94,8 @@ export function AuthScreen({
         return;
       }
       onAuthed();
+    } catch {
+      setError("That could not be saved. Try again in a moment.");
     } finally {
       setBusy(false);
     }

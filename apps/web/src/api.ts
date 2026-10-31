@@ -22,10 +22,6 @@ import type {
 } from "@heptadec/api/billing-contracts";
 import type { Role } from "@heptadec/api/rbac";
 import type {
-  ApiErrorCode,
-  IErrorEnvelope,
-} from "@heptadec/api/http-contracts";
-import type {
   IAcceptInvitationResponse,
   IInvitationListResponse,
   IInvitationPreviewResponse,
@@ -55,6 +51,8 @@ import {
   type IAnswerStatus,
   type ICreateAiProviderRequest,
   type ICreateAiProviderResponse,
+  type IUpdateAiProviderRequest,
+  type IUpdateAiProviderResponse,
   type IAiProviderListResponse,
   type IGenerateQueryResponse,
   type IListModelsResponse,
@@ -119,7 +117,7 @@ import type {
   ISharedDashboardResponse,
 } from "@heptadec/api/share-link-contracts";
 
-function decodeError(payload: unknown): IErrorEnvelope | null {
+function decodeError(payload: unknown): { code: string; message: string } | null {
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
@@ -132,13 +130,13 @@ function decodeError(payload: unknown): IErrorEnvelope | null {
   if (typeof code !== "string" || typeof message !== "string") {
     return null;
   }
-  return { error: { code: code as ApiErrorCode, message } };
+  return { code, message };
 }
 
 export class ApiError extends Error {
-  readonly code: ApiErrorCode;
+  readonly code: string;
 
-  constructor(code: ApiErrorCode, message: string) {
+  constructor(code: string, message: string) {
     super(message);
     this.name = "ApiError";
     this.code = code;
@@ -164,8 +162,8 @@ async function request<T>(
   if (!res.ok) {
     const envelope = decodeError(payload);
     throw new ApiError(
-      envelope?.error.code ?? "request_failed",
-      envelope?.error.message ?? res.statusText,
+      envelope?.code ?? "request_failed",
+      envelope?.message ?? res.statusText,
     );
   }
   return payload as T;
@@ -180,12 +178,8 @@ export async function completeOnboarding(): Promise<void> {
 }
 
 export async function listProviders(): Promise<IProvider[]> {
-  const res = await fetch("/api/providers");
-  if (!res.ok) {
-    return [];
-  }
-  const body = (await res.json()) as IProvidersResponse;
-  return Array.isArray(body.providers) ? body.providers : [];
+  const body = await request<IProvidersResponse>("/api/providers");
+  return body.providers;
 }
 
 export function fetchOrganizations(): Promise<IOrganizationsResponse> {
@@ -286,12 +280,6 @@ export function createAiProvider(
   return request<ICreateAiProviderResponse>("/api/ai/providers", "POST", input);
 }
 
-export function listAiProviderModels(
-  providerId: string,
-): Promise<IListModelsResponse> {
-  return request<IListModelsResponse>(`/api/ai/providers/${providerId}/models`);
-}
-
 export function listProviderModels(
   input: IListProviderModelsRequest,
 ): Promise<IListModelsResponse> {
@@ -300,6 +288,16 @@ export function listProviderModels(
 
 export async function removeAiProvider(providerId: string): Promise<void> {
   await request(`/api/ai/providers/${providerId}`, "DELETE");
+}
+
+export function updateAiProvider(
+  input: IUpdateAiProviderRequest,
+): Promise<IUpdateAiProviderResponse> {
+  return request<IUpdateAiProviderResponse>(
+    "/api/ai/providers/" + input.id,
+    "PATCH",
+    input,
+  );
 }
 
 export interface IStreamHandlers<T> {
@@ -324,8 +322,8 @@ async function streamRequest<T>(
   if (!response.ok) {
     const envelope = decodeError(await response.json());
     throw new ApiError(
-      envelope?.error.code ?? "request_failed",
-      envelope?.error.message ?? response.statusText,
+      envelope?.code ?? "request_failed",
+      envelope?.message ?? response.statusText,
     );
   }
   if (response.body === null) {

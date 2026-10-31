@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { IconHistory } from "@tabler/icons-react";
 import type { IQueryVersion } from "@heptadec/api/saved-query-contracts";
 import { listQueryVersions, messageFor, restoreQueryVersion } from "../../api";
@@ -21,42 +21,27 @@ export function VersionHistory({
   onRestored: () => void;
   onClose: () => void;
 }) {
-  const [versions, setVersions] = useState<IQueryVersion[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [restoring, setRestoring] = useState<string | null>(null);
+  const versionsQuery = useQuery({
+    queryKey: ["query-versions", savedQueryId],
+    queryFn: () => listQueryVersions(savedQueryId),
+  });
+  const versions = versionsQuery.data?.versions ?? null;
 
-  useEffect(() => {
-    let live = true;
-    listQueryVersions(savedQueryId).then(
-      (found) => {
-        if (live) {
-          setVersions(found.versions);
-        }
-      },
-      (caught: unknown) => {
-        if (live) {
-          setProblem(messageFor(caught, "Versions could not be read."));
-        }
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [savedQueryId]);
-
-  async function restore(version: IQueryVersion): Promise<void> {
-    setRestoring(version.id);
-    setProblem(null);
-    try {
-      await restoreQueryVersion(savedQueryId, version.id);
+  const restore = useMutation({
+    mutationFn: (version: IQueryVersion) =>
+      restoreQueryVersion(savedQueryId, version.id),
+    onSuccess: () => {
       onRestored();
       onClose();
-    } catch (caught) {
-      setProblem(messageFor(caught, "That version could not be restored."));
-    } finally {
-      setRestoring(null);
-    }
-  }
+    },
+  });
+
+  const problem =
+    versionsQuery.isError
+      ? messageFor(versionsQuery.error, "Versions could not be read.")
+      : restore.isError
+        ? messageFor(restore.error, "That version could not be restored.")
+        : null;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -93,11 +78,13 @@ export function VersionHistory({
                   </span>
                   <Button
                     variant="ghost"
-                    onClick={() => void restore(version)}
-                    disabled={restoring !== null}
+                    onClick={() => restore.mutate(version)}
+                    disabled={restore.isPending}
                     className={`${SMALL_BUTTON_CLASSNAME} shrink-0`}
                   >
-                    {restoring === version.id ? "Restoring…" : "Restore"}
+                    {restore.isPending && restore.variables === version
+                      ? "Restoring…"
+                      : "Restore"}
                   </Button>
                 </div>
                 <pre className="max-h-32 overflow-auto rounded bg-muted px-2.5 py-2 font-mono text-[12px] leading-4 text-muted-foreground">

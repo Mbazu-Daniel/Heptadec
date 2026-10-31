@@ -1,21 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AUDIT_EVENTS,
   AUDIT_TARGET_KINDS,
   type AuditEvent,
-  type IAuditLog,
 } from "@heptadec/api/audit-contracts";
-import {
-  listAuditLogs,
-  messageFor,
-  type IAuditLogFilters,
-} from "../api";
+import { listAuditLogs, messageFor } from "../api";
 import { Input } from "./ui/input";
 import { Alert, EmptyState } from "./ui/feedback";
 import { cn } from "@/lib/utils";
 import {
   FilterSummary,
-  PageHeading,
   TABLE_CELL_CLASSNAME,
   TABLE_CLASSNAME,
   TABLE_HEAD_CLASSNAME,
@@ -58,54 +53,25 @@ function groupEvents(): Array<{ kind: string; events: readonly AuditEvent[] }> {
 const EVENT_GROUPS = groupEvents();
 
 export function AuditLog({ isOwner }: { isOwner: boolean }) {
-  const [logs, setLogs] = useState<IAuditLog[] | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [event, setEvent] = useState("");
   const [target, setTarget] = useState("");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
-  const sequence = useRef(0);
 
-  const reload = useCallback(
-    async (filters: IAuditLogFilters) => {
-      if (!isOwner) {
-        return;
-      }
-      const ticket = ++sequence.current;
-      setProblem(null);
-      try {
-        const listed = await listAuditLogs(filters);
-        if (ticket !== sequence.current) {
-          return;
-        }
-        setLogs(listed.auditLogs);
-      } catch (caught) {
-        if (ticket !== sequence.current) {
-          return;
-        }
-        setProblem(messageFor(caught, "The audit log could not be loaded."));
-      }
-    },
-    [isOwner],
-  );
-
-  useEffect(() => {
-    void reload({ q, event, target, since, until });
-  }, [reload, q, event, target, since, until]);
+  const filters = { q, event, target, since, until };
+  const auditQuery = useQuery({
+    queryKey: ["audit-logs", filters],
+    queryFn: () => listAuditLogs(filters),
+    enabled: isOwner,
+  });
+  const logs = auditQuery.data?.auditLogs;
 
   const filtering =
     q !== "" || event !== "" || target !== "" || since !== "" || until !== "";
 
-  const total =
-    logs === null
-      ? "—"
-      : `${logs.length} ${logs.length === 1 ? "event" : "events"}`;
-
   return (
     <section className={VIEW_CLASSNAME}>
-      <PageHeading meta={<span>{total}</span>} />
-
       <Toolbar>
         <Input
           value={q}
@@ -160,7 +126,7 @@ export function AuditLog({ isOwner }: { isOwner: boolean }) {
         />
       </Toolbar>
 
-      {filtering && logs !== null ? (
+      {filtering && logs !== undefined ? (
         <FilterSummary
           count={logs.length}
           onClear={() => {
@@ -176,13 +142,17 @@ export function AuditLog({ isOwner }: { isOwner: boolean }) {
       <Workspace
         view={
           <>
-            {problem !== null ? <Alert className="mb-3">{problem}</Alert> : null}
+            {auditQuery.isError ? (
+              <Alert className="mb-3">
+                {messageFor(auditQuery.error, "The audit log could not be loaded.")}
+              </Alert>
+            ) : null}
 
             {!isOwner ? (
               <EmptyState
                 title="Owners only"
               />
-            ) : logs === null ? (
+            ) : logs === undefined ? (
               <p className="py-8 text-center font-mono text-xs text-muted-foreground">
                 Reading the audit log.
               </p>

@@ -1,4 +1,5 @@
 import { BadRequestException } from "../../common/exceptions";
+import { isJsonObject } from "../../common/http/body";
 import type { SqlDialect } from "../data-source/contracts";
 import { quoteIdentifier } from "../data-source/sql-quoting";
 import type { IStoredConnection } from "../data-source/connection";
@@ -25,10 +26,10 @@ export function readQueryRefine(body: Record<string, unknown>): IQueryRefine | n
   if (raw === undefined || raw === null) {
     return null;
   }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isJsonObject(raw)) {
     throw new BadRequestException("That result refinement is not readable");
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
   const filter = readFilter(entry.filter);
   const sort = readSort(entry.sort);
   return filter === null && sort === null ? null : { filter, sort };
@@ -38,10 +39,10 @@ function readFilter(raw: unknown): IQueryFilter | null {
   if (raw === undefined || raw === null) {
     return null;
   }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isJsonObject(raw)) {
     throw new BadRequestException("That filter is not readable");
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
   const column = typeof entry.column === "string" ? entry.column.trim() : "";
   if (column.length === 0 || column.length > MAX_COLUMN) {
     throw new BadRequestException("That filter needs one column");
@@ -61,10 +62,10 @@ function readSort(raw: unknown): IQuerySort | null {
   if (raw === undefined || raw === null) {
     return null;
   }
-  if (typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isJsonObject(raw)) {
     throw new BadRequestException("That sort is not readable");
   }
-  const entry = raw as Record<string, unknown>;
+  const entry = raw;
   const column = typeof entry.column === "string" ? entry.column.trim() : "";
   if (column.length === 0 || column.length > MAX_COLUMN) {
     throw new BadRequestException("That sort needs one column");

@@ -1,14 +1,3 @@
--- The shape from docker/initdb/01-schema.sql, spelled for MySQL and MariaDB.
---
--- 01-schema.sql spells it once for Postgres and says why the shape exists: real
--- foreign keys in both directions, a join table, and a three-hop chain, so an
--- entity-relationship diagram has something to draw. Without the same shape on
--- these engines their diagram is one lonely table, which is a different product
--- rather than the same one pointed somewhere else.
---
--- scripts/seed-test.sh pipes this into both test-stack servers. It owns the rows
--- as well as the DDL because a diagram of empty tables is not worth drawing.
-
 DROP TABLE IF EXISTS order_items, product_suppliers, orders, products, suppliers, categories, regions, events;
 
 CREATE TABLE regions (
@@ -70,7 +59,6 @@ CREATE TABLE order_items (
   CONSTRAINT fk_order_items_product FOREIGN KEY (product_id) REFERENCES products (id)
 ) ENGINE=InnoDB;
 
--- The query runner's fixture, kept so a refused write has a row count to check.
 CREATE TABLE events (
   id         VARCHAR(16) PRIMARY KEY,
   event_name VARCHAR(64) NOT NULL,

@@ -3,7 +3,7 @@ import { afterAll, expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
-import { runDueJobs, startScheduler } from "../src/modules/scheduler";
+import { runSchedulerTick, startScheduler } from "../src/modules/scheduler";
 
 const { alertDelivery, dataSource, queryResult, savedQuery, scheduledJob } = schema;
 
@@ -228,7 +228,7 @@ it("evaluates the alert rules watching a query when its job runs", async () => {
     .set({ nextRunAt: new Date(Date.now() - 60_000) })
     .where(eq(scheduledJob.id, id));
 
-  await runDueJobs(db, new Date());
+  await runSchedulerTick(db, new Date());
 
   // Nothing is connected to receive it, so the breach is recorded rather than
   // sent — which is the whole of what a run does about alerts.
@@ -253,14 +253,14 @@ it("skips a job another runner holds, and runs it once the lease is clear", asyn
     })
     .where(eq(scheduledJob.id, id));
 
-  await runDueJobs(db, now);
+  await runSchedulerTick(db, now);
   expect(await cacheRows(savedQueryId)).toHaveLength(0);
   await db
     .update(scheduledJob)
     .set({ leaseUntil: new Date(now.getTime() - 1_000) })
     .where(eq(scheduledJob.id, id));
 
-  await runDueJobs(db, new Date());
+  await runSchedulerTick(db, new Date());
   expect(await cacheRows(savedQueryId)).toHaveLength(1);
 });
 
@@ -279,7 +279,7 @@ it("keeps ticking when a stored schedule cannot be read", async () => {
     .set({ nextRunAt: new Date(now - 60_000) })
     .where(eq(scheduledJob.id, healthy));
 
-  await runDueJobs(db, new Date());
+  await runSchedulerTick(db, new Date());
 
   const rows = await db
     .select()

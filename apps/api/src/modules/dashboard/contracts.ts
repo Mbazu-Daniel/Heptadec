@@ -1,6 +1,12 @@
 import type { DataSourceKind } from "../data-source/contracts";
 
-export type ChartType = "bar" | "line" | "pie";
+export const CHART_TYPES = ["bar", "line", "pie"] as const;
+
+export type ChartType = (typeof CHART_TYPES)[number];
+
+export function isChartType(value: string): value is ChartType {
+  return (CHART_TYPES as readonly string[]).includes(value);
+}
 
 export interface IDashboard {
   id: string;

@@ -18,6 +18,8 @@ export * from "./share-link";
 
 export * from "./scheduled-job";
 
+export * from "./scheduler-lease";
+
 export * from "./query-result";
 
 export * from "./alert-rule";

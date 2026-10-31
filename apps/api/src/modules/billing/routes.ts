@@ -22,7 +22,7 @@ import {
 } from "../../common/exceptions";
 import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
-import { billingConfigured, billingPlans, daysFor, priceFor } from "./catalog";
+import { billingConfigured, billingPlans, priceFor } from "./catalog";
 import { createCheckoutSession, createCustomer } from "./client";
 import { entitlementFor } from "./entitlement";
 import {
@@ -31,11 +31,10 @@ import {
   type IFailedEvent,
   type IPaidEvent,
 } from "./event";
+import { extendedPeriod, paymentMetadata } from "./period";
 import { stopAutoRenew } from "./renewal";
 import { isBillingCadence, type IBillingSummary, type ISetAutoRenewResponse, type IStartCheckoutResponse } from "./contracts";
 import { isSignedDelivery } from "./signature";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function billingRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
@@ -99,10 +98,7 @@ export function billingRoutes(): Hono<IAuthVars> {
     const checkoutUrl = await createCheckoutSession({
       customerId,
       amount: priceFor(cadence),
-      metadata: {
-        organization_id: organization.organizationId,
-        cadence,
-      },
+      metadata: paymentMetadata(organization.organizationId, cadence),
     });
     await recordAudit(c, {
       organizationId: organization.organizationId,
@@ -300,13 +296,7 @@ async function storePayment(
       .limit(1);
     const now = new Date();
     const previousEnd = latest[0]?.periodEndsAt ?? null;
-    const startsAt =
-      previousEnd !== null && previousEnd.getTime() > now.getTime()
-        ? previousEnd
-        : now;
-    const periodEndsAt = new Date(
-      startsAt.getTime() + daysFor(cadence) * DAY_MS,
-    );
+    const periodEndsAt = extendedPeriod(previousEnd, now, cadence);
 
     await tx.insert(billingPayment).values({
       organizationId,

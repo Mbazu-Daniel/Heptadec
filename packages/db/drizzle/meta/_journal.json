@@ -57,6 +57,13 @@
       "when": 1793021087636,
       "tag": "0007_stiff_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793370764155,
+      "tag": "0008_chunky_toxin",
+      "breakpoints": true
     }
   ]
 }

@@ -13,22 +13,13 @@ import type { IOrganizationScope } from "../../common/session/current-organizati
 import {
   ENGINE_SPECS,
 } from "../data-source/contracts";
-import { canUseTooling, kindOf } from "../data-source/engines";
+import { canUseTooling, engineOf, kindOf } from "../data-source/engines";
 import { quoteIdentifier } from "../data-source/sql-quoting";
-import {
-  savedConnection,
-} from "../data-source/connection";
-import {
-  introspectPostgres,
-} from "../schema/postgres";
-import {
-  runPostgresQuery,
-} from "../query/postgres";
+import { readStructure, runReadOnly } from "../data-source/tooling";
 import {
   MCP_PERMISSION_RESOURCE,
 } from "./capabilities";
 import { applyBudget, MAX_BYTES } from "../query/budget";
-import { assertSqlReads } from "../query/read-policy";
 
 const MCP_MAX_ROWS = 1_000;
 
@@ -78,7 +69,7 @@ export function registerTools(
         if (!canUseTooling(source)) {
           return refused(`Reading structure is not available for ${kindOf(source)} yet`);
         }
-        const described = await introspectPostgres(await savedConnection(source));
+        const described = await readStructure(source);
         return answered(described);
       },
     );
@@ -109,8 +100,7 @@ export function registerTools(
             "That data source is writable, so this token will not query it",
           );
         }
-        assertSqlReads(sql, "run");
-        const grid = await runPostgresQuery(await savedConnection(source), sql);
+        const grid = await runReadOnly(source, sql, "run");
         const budgeted = applyBudget(grid.rows, {
           maxRows: MCP_MAX_ROWS,
           maxBytes: MAX_BYTES,
@@ -152,9 +142,14 @@ export function registerTools(
             "That data source is writable, so this token will not read it",
           );
         }
-        const grid = await runPostgresQuery(
-          await savedConnection(source),
-          `SELECT * FROM ${quoteIdentifier("postgres", table)} LIMIT ${limit}`,
+        const dialect = engineOf(source).sqlDialect;
+        if (dialect === null) {
+          return refused(`Previewing is not available for ${kindOf(source)} yet`);
+        }
+        const grid = await runReadOnly(
+          source,
+          `SELECT * FROM ${quoteIdentifier(dialect, table)} LIMIT ${limit}`,
+          "run",
         );
         return answered({
           columns: grid.columns,

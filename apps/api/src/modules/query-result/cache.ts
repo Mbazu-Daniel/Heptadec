@@ -19,15 +19,10 @@ import {
   type IOrganizationScope,
 } from "../../common/session/current-organization";
 import {
-  storedFromRow,
-} from "../data-source/connection";
-import {
   canBeSaved,
   engineOf,
 } from "../data-source/engines";
-import {
-  runSqlQuery,
-} from "../query/sql";
+import { runReadOnly } from "../data-source/tooling";
 import type { IQueryResponse } from "../query/contracts";
 import type { ICachedResult } from "./contracts";
 
@@ -54,7 +49,7 @@ export async function materializeResult(
     );
   }
 
-  const grid = await runSqlQuery(await storedFromRow(source), query.sql);
+  const grid = await runReadOnly(source, query.sql, "run");
 
   await cacheResult(organization.db, query.organizationId, query.id, grid, ttlSeconds);
 

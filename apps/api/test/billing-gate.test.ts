@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { MCP_TOOLS } from "../src/modules/mcp/contracts";
-import { TRIAL_DAYS } from "../src/modules/billing/entitlement";
+import { TRIAL_DAYS } from "../src/modules/billing/period";
 import { db, request, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
 const { billingPayment, dataSource, organization, shareLink } = schema;

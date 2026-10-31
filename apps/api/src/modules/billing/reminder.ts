@@ -7,6 +7,7 @@ import {
 } from "@heptadec/db";
 import { config as configApp } from "../../common/config/env";
 import { sendToChannel } from "../notification/send";
+import { billingConfigured } from "./catalog";
 import { entitlementFor } from "./entitlement";
 
 const REMINDER_COOLDOWN_HOURS = 24;
@@ -15,7 +16,7 @@ export async function checkBillingReminders(
   db: HeptadecDatabase,
   now: Date,
 ): Promise<number> {
-  if (configApp.bachs.secretKey === "") {
+  if (!billingConfigured()) {
     return 0;
   }
 

@@ -20,7 +20,6 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "../../common/exceptions";
-import { driverFailure } from "../../common/driver-error";
 import { readBody, readString } from "../../common/http/body";
 import { can } from "../rbac/authorize";
 import { requireOwner } from "../rbac/owner";
@@ -28,10 +27,11 @@ import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import { canBeAsked, engineOf } from "../data-source/engines";
+import { failureMessage, queryPrompt, streamAnswer } from "./answer";
 import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
 import { baseUrlFor, speaksProtocol } from "./transport";
 import { askStyleOf } from "./ask";
-import { streamQuery } from "./generate";
+import { streamModel } from "./generate";
 import { routeInstructions } from "./instructions";
 import { chosenProvider } from "./provider";
 import {
@@ -309,16 +309,21 @@ export function aiRoutes(): Hono<IAuthVars> {
           const stored = await storedFromRow(source);
           const context = await style.context(source.id, stored);
 
-          await turn.status(`Asking ${chosen.name} (${chosen.model})…`);
-
-          for await (const chunk of streamQuery(chosen, question, context, style.instructions)) {
-            answer += chunk;
-            await turn.delta(chunk);
-          }
+          answer = await streamAnswer(
+            turn,
+            {
+              provider: chosen,
+              instructions: style.instructions,
+              prompt: queryPrompt(context, question),
+            },
+            (chunk) => turn.delta(chunk),
+          );
         } catch (caught) {
-          problem =
-            driverFailure(caught, "answer that question") ??
-            "That source could not be read, or the provider could not be reached. Check the source and the key.";
+          problem = failureMessage(
+            caught,
+            "answer that question",
+            "That source could not be read, or the provider could not be reached. Check the source and the key.",
+          );
         }
 
         const finished = style.readAnswer(answer);
@@ -453,11 +458,10 @@ async function routeToSource(
     .join("\n");
 
   let answer = "";
-  for await (const chunk of streamQuery(
+  for await (const chunk of streamModel(
     provider,
-    question,
-    `${routeInstructions}${catalogue}\n`,
     routeInstructions,
+    `Schema:\n${routeInstructions}${catalogue}\n\nQuestion: ${question}`,
   )) {
     answer += chunk;
   }

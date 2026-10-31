@@ -4,6 +4,7 @@ import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import type { IQueryResponse } from "@heptadec/api/query-contracts";
 import type { ISchemaTable } from "@heptadec/api/schema-contracts";
 import { askQuestion, messageFor, runPipeline } from "../../api";
+import { draftOf } from "../../lib/answer";
 import { exportCsv, exportJson } from "../../lib/export";
 import { EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
@@ -44,12 +45,13 @@ export function PipelineRunner({
     setProblem(null);
     try {
       const answer = await askQuestion([source.id], question.trim(), undefined, {});
-      if (answer.pipeline === null) {
+      const draft = draftOf(answer);
+      if (draft.kind !== "pipeline") {
         setProblem("That question could not be answered from this schema.");
         return;
       }
-      setCollection(answer.pipeline.collection);
-      setStages(JSON.stringify(answer.pipeline.pipeline, null, 2));
+      setCollection(draft.pipeline.collection);
+      setStages(JSON.stringify(draft.pipeline.pipeline, null, 2));
     } catch (caught) {
       setProblem(messageFor(caught, "That question could not be asked."));
     } finally {

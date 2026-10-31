@@ -23,6 +23,7 @@ import {
   runQuery,
 } from "../../api";
 import { exportCsv, exportJson } from "../../lib/export";
+import { draftOf } from "../../lib/answer";
 import { Alert, EmptyState } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -98,11 +99,12 @@ export function QueryRunner({
           setSql(draft);
         },
       });
-      if (answer.sql === null) {
+      const reply = draftOf(answer);
+      if (reply.kind !== "sql") {
         setProblem("That question could not be answered from this schema.");
         return;
       }
-      setSql(answer.sql);
+      setSql(reply.sql);
       setDrafted(true);
     } catch (caught) {
       setProblem(messageFor(caught, "That question could not be asked."));

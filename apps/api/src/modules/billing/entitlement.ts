@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import {
   billingPayment,
   member,
@@ -25,6 +25,29 @@ export interface IAccountPayment {
   cadence: BillingCadence | null;
 }
 
+// The account owner of an organization is the member who holds the owner role
+// and joined before every other owner of that organization. Better Auth makes
+// the creator the first owner, so this is the single person whose free
+// allowance and paid plan cover the organization. A later co-owner is
+// deliberately excluded: without it, promoting someone would push their own
+// oldest organization out of their free allowance and let them create
+// organizations on another account's payment.
+function soleOwner(owner: typeof member, userId: string) {
+  return and(
+    eq(owner.role, "owner"),
+    eq(owner.userId, userId),
+    sql`not exists (
+      select 1 from member earlier
+      where earlier.organization_id = ${owner.organizationId}
+        and earlier.role = 'owner'
+        and (
+          earlier.created_at < ${owner.createdAt}
+          or (earlier.created_at = ${owner.createdAt} and earlier.id < ${owner.id})
+        )
+    )`,
+  );
+}
+
 export async function organizationsOwned(
   db: HeptadecDatabase,
   userId: string,
@@ -32,11 +55,12 @@ export async function organizationsOwned(
   const rows = await db
     .select({ id: member.organizationId })
     .from(member)
-    .where(and(eq(member.userId, userId), eq(member.role, "owner")));
+    .where(soleOwner(member, userId));
   return rows.length;
 }
 
-// The account pays whenever any organization the user owns has a live period.
+// The account pays whenever an organization the user owns as its sole owner has
+// a live period.
 export async function accountPayment(
   db: HeptadecDatabase,
   userId: string,
@@ -48,13 +72,7 @@ export async function accountPayment(
     })
     .from(billingPayment)
     .innerJoin(member, eq(member.organizationId, billingPayment.organizationId))
-    .where(
-      and(
-        eq(member.userId, userId),
-        eq(member.role, "owner"),
-        gt(billingPayment.periodEndsAt, new Date()),
-      ),
-    )
+    .where(and(soleOwner(member, userId), gt(billingPayment.periodEndsAt, new Date())))
     .orderBy(desc(billingPayment.periodEndsAt))
     .limit(1);
   const found = rows[0];
@@ -69,8 +87,12 @@ export async function accountPayment(
 // "create another organization" submits can both read an under-limit owned count
 // before either insert lands and overshoot the one-free-organization allowance.
 // Exactly one wins the per-user slot, and the winner releases it from
-// afterCreateOrganization; a short TTL bounds a release lost to a failed create.
-const ORG_CREATE_LEASE_MS = 30_000;
+// afterCreateOrganization. Better Auth runs organizationLimit before its own
+// duplicate-slug check, so a create can claim the slot and then fail without
+// reaching the hook; the TTL is the cleanup for that path, kept just wide
+// enough to outlast a real create (a few D1 round-trips) so a retry is not
+// wrongly told it has hit the organization limit.
+const ORG_CREATE_LEASE_MS = 10_000;
 
 function organizationCreateSlot(userId: string): string {
   return `org-create:${userId}`;
@@ -181,20 +203,14 @@ export async function entitlementFor(
       .select({ organizationId: member.organizationId })
       .from(member)
       .innerJoin(organization, eq(organization.id, member.organizationId))
-      .where(and(eq(member.userId, owner), eq(member.role, "owner")))
+      .where(soleOwner(member, owner))
       .orderBy(asc(organization.createdAt))
       .limit(FREE_TIER_ORG_LIMIT),
     db
       .select({ id: billingPayment.id })
       .from(billingPayment)
       .innerJoin(member, eq(member.organizationId, billingPayment.organizationId))
-      .where(
-        and(
-          eq(member.userId, owner),
-          eq(member.role, "owner"),
-          gt(billingPayment.periodEndsAt, now),
-        ),
-      )
+      .where(and(soleOwner(member, owner), gt(billingPayment.periodEndsAt, now)))
       .limit(1),
   ]);
 

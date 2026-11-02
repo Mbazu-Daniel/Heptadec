@@ -56,7 +56,7 @@ export async function checkBillingReminders(
       continue;
     }
 
-    const message = `"${org.name}" is beyond your one free organization and its paid period has run out. Buy a plan to open it again: ${configApp.webUrl}`;
+    const message = `"${org.name}" is beyond your one free organization and your account no longer has a paid plan. Buy a plan to open it again: ${configApp.webUrl}`;
     for (const channel of channels) {
       const result = await sendToChannel(channel, subject, message);
       if (result.status === "sent") {

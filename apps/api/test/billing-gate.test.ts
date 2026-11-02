@@ -151,6 +151,62 @@ it("serializes two concurrent first organizations into one for an unpaid owner",
   expect(await ownedOrganizationIds(user.id)).toHaveLength(1);
 });
 
+it("keeps a promoted co-owner's own organization free", async () => {
+  const first = await ownerWithOrganization(); // owner A, org A (older)
+  const second = await ownerWithOrganization(); // owner B, org B (newer)
+
+  // Promote B to owner of A's organization, joined after A.
+  await db.insert(member).values({
+    organizationId: first.organizationId,
+    userId: second.userId,
+    role: "owner",
+    createdAt: new Date(Date.now() + DAY_MS),
+  });
+
+  await switchOrganization(second.cookie, second.organizationId);
+  const res = await createSource(second.cookie, "B own source");
+  expect(res.status).toBe(200);
+  expect(await sourcesOf(second.organizationId)).toHaveLength(1);
+});
+
+it("does not let another account's payment unlock a co-owner", async () => {
+  const first = await ownerWithOrganization(); // owner A, org A
+  const second = await ownerWithOrganization(); // owner B, org B
+  await db.insert(member).values({
+    organizationId: first.organizationId,
+    userId: second.userId,
+    role: "owner",
+    createdAt: new Date(Date.now() + DAY_MS),
+  });
+
+  // A buys a plan for their own account.
+  await boughtPeriod(first.organizationId, 30);
+
+  // B's account is still unpaid and owns only their own organization.
+  await switchOrganization(second.cookie, second.organizationId);
+  const billing = await request("/api/billing", { headers: { cookie: second.cookie } });
+  expect(billing.status).toBe(200);
+  expect(await billing.json()).toMatchObject({
+    configured: true,
+    accountPaid: false,
+    organizationsOwned: 1,
+  });
+
+  // B cannot create a second organization on A's payment.
+  let refused = false;
+  try {
+    await authFor(db).api.createOrganization({
+      body: { name: "B second", slug: uniqueSlug() },
+      headers: { cookie: second.cookie },
+    });
+  } catch {
+    refused = true;
+  }
+  expect(refused).toBe(true);
+  const after = await request("/api/billing", { headers: { cookie: second.cookie } });
+  expect(await after.json()).toMatchObject({ organizationsOwned: 1 });
+});
+
 it("lets an owner add organizations once the account pays", async () => {
   const { cookie, userId, organizationId } = await ownerWithOrganization();
   await boughtPeriod(organizationId, 30);

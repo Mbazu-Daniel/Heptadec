@@ -20,9 +20,8 @@ export async function checkBillingReminders(
     return 0;
   }
 
-  const subject = "Your Heptadec access has ended";
-  const message = `Access to your Heptadec organization has ended. Buy a plan to open it again: ${configApp.webUrl}`;
   const orgs = await db.select().from(organization);
+  const subject = "One of your organizations needs a plan";
   const inFlight = await db
     .select({ organizationId: billingCustomer.organizationId })
     .from(billingCustomer)
@@ -57,6 +56,7 @@ export async function checkBillingReminders(
       continue;
     }
 
+    const message = `"${org.name}" is beyond your one free organization and your account no longer has a paid plan. Buy a plan to open it again: ${configApp.webUrl}`;
     for (const channel of channels) {
       const result = await sendToChannel(channel, subject, message);
       if (result.status === "sent") {

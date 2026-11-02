@@ -17,12 +17,14 @@ export interface IBillingPlan {
 export interface IBillingSummary {
   configured: boolean;
   entitled: boolean;
-  trialEndsAt: string;
+  accountPaid: boolean;
   paidUntil: string | null;
   cadence: BillingCadence | null;
   autoRenew: boolean;
   hasCard: boolean;
   cardLast4: string | null;
+  organizationsOwned: number;
+  freeOrgLimit: number;
   plans: IBillingPlan[];
 }
 

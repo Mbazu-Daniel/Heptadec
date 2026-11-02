@@ -24,6 +24,7 @@ services:
   postgres-test:
     image: postgres:16-alpine
     container_name: heptadec-test-postgres
+    init: true
     environment:
       POSTGRES_USER: heptadec
       POSTGRES_PASSWORD: heptadec
@@ -41,6 +42,7 @@ services:
   mysql-test:
     image: mysql:8.0
     container_name: heptadec-test-mysql
+    init: true
     environment:
       MYSQL_ROOT_PASSWORD: Delta1force
       MYSQL_USER: heptadec
@@ -59,6 +61,7 @@ services:
   redis-test:
     image: redis:7-alpine
     container_name: heptadec-test-redis
+    init: true
     ports:
       - "6381:6379"
     healthcheck:
@@ -70,6 +73,7 @@ services:
   mariadb-test:
     image: mariadb:lts
     container_name: heptadec-test-mariadb
+    init: true
     environment:
       MARIADB_ROOT_PASSWORD: Delta1force
       MARIADB_USER: heptadec
@@ -88,6 +92,8 @@ services:
   clickhouse-test:
     image: clickhouse/clickhouse-server:24-alpine
     container_name: heptadec-test-clickhouse
+    init: true
+    cpus: "0.5"
     environment:
       CLICKHOUSE_USER: heptadec
       CLICKHOUSE_PASSWORD: Delta1force
@@ -106,6 +112,7 @@ services:
   libsql-test:
     image: ghcr.io/tursodatabase/libsql-server:latest
     container_name: heptadec-test-libsql
+    init: true
     command: ["sqld", "-d", "/var/lib/sqld/data.sqld", "--http-listen-addr", "0.0.0.0:8080"]
     ports:
       - "8081:8080"
@@ -117,6 +124,7 @@ services:
   mongo-test:
     image: mongo:7
     container_name: heptadec-test-mongo
+    init: true
     environment:
       MONGO_INITDB_ROOT_USERNAME: heptadec
       MONGO_INITDB_ROOT_PASSWORD: Delta1force
@@ -133,6 +141,7 @@ services:
   quickwit-test:
     image: quickwit/quickwit:0.8.0
     container_name: heptadec-test-quickwit
+    init: true
     command: ["run"]
     ports:
       - "7282:7280"

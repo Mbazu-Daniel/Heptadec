@@ -5,8 +5,6 @@ import type { BillingCadence } from "./contracts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const TRIAL_DAYS = 7;
-
 export const ORGANIZATION_METADATA_KEY = "organization_id";
 
 export const CADENCE_METADATA_KEY = "cadence";
@@ -15,10 +13,6 @@ export interface IPaidPeriod {
   paymentId: string;
   cadence: BillingCadence;
   endsAt: Date;
-}
-
-export function trialEndsAt(createdAt: Date): Date {
-  return new Date(createdAt.getTime() + TRIAL_DAYS * DAY_MS);
 }
 
 export function extendedPeriod(

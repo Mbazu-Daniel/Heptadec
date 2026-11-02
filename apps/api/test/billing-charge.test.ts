@@ -80,7 +80,7 @@ async function signedInOwner(): Promise<{
   return { cookie, organizationId: created.id };
 }
 
-async function organizationInTrial(
+async function bareOrganization(
   createdDaysAgo = 0,
 ): Promise<string> {
   const inserted = await db
@@ -192,7 +192,7 @@ describe("starting a checkout", () => {
 
 describe("charging the saved card for the next period", () => {
   async function lapsedWithCard(cadence: "monthly" | "yearly" = "monthly") {
-    const organizationId = await organizationInTrial(40);
+    const organizationId = await bareOrganization(40);
     const now = new Date();
     const paymentId = `pay_${organizationId}`;
     await db.insert(billingPayment).values({
@@ -311,8 +311,8 @@ describe("charging the saved card for the next period", () => {
     expect(stored[0]?.pendingChargeId).toBeNull();
   });
 
-  it("leaves a customer whose trial is still running alone", async () => {
-    const organizationId = await organizationInTrial();
+  it("leaves an organization with no prior payment alone", async () => {
+    const organizationId = await bareOrganization();
     await db.insert(billingCustomer).values({
       organizationId,
       customerId: `cust_${organizationId}`,

@@ -31,10 +31,10 @@ async function bachsFor(origin: string): Promise<Bachs> {
   return loaded.bachs;
 }
 
-async function waitForEntitlement(): Promise<void> {
+async function waitForAccountPaid(): Promise<void> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     const summary = await fetchBilling();
-    if (summary.entitled) {
+    if (summary.accountPaid) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -68,7 +68,7 @@ export function useBilling(): IBilling {
       if (event.type === "checkout.completed") {
         setBusy(false);
         setPaid(true);
-        await waitForEntitlement();
+        await waitForAccountPaid();
         await reload();
         return;
       }

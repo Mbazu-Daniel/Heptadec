@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { authClient } from "../auth";
+import { useBilling } from "../checkout";
 import { Input } from "./ui/input";
+import { Alert } from "./ui/feedback";
+import { PlanCard } from "./workspace";
 import {
   AUTH_ERROR_CLASSNAME,
   AUTH_INPUT_CLASSNAME,
@@ -32,6 +35,8 @@ export function OrganizationForm({
   const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsPlan, setNeedsPlan] = useState(false);
+  const billing = useBilling();
 
   const shownSlug = slugEdited ? slug : slugFrom(name);
 
@@ -45,6 +50,13 @@ export function OrganizationForm({
         slug: shownSlug,
       });
       if (createError) {
+        if (
+          createError.code ===
+          "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS"
+        ) {
+          setNeedsPlan(true);
+          return;
+        }
         setError(createError.message ?? "The organization was not created.");
         return;
       }
@@ -96,6 +108,39 @@ export function OrganizationForm({
       {error ? (
         <div role="alert" className={AUTH_ERROR_CLASSNAME}>
           {error}
+        </div>
+      ) : null}
+
+      {needsPlan ? (
+        <div className="flex flex-col gap-3">
+          {billing.summary?.accountPaid ? (
+            <Alert className="w-full">
+              Your plan is active. Choose {submitLabel.toLowerCase()} again to
+              create this organization.
+            </Alert>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Heptadec gives you one organization free. Add a plan to create
+                more.
+              </p>
+              {billing.checkoutProblem !== null ? (
+                <Alert className="w-full">{billing.checkoutProblem}</Alert>
+              ) : null}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(billing.summary?.plans ?? []).map((plan) => (
+                  <PlanCard
+                    key={plan.cadence}
+                    plan={plan}
+                    action={{
+                      disabled: billing.busy || billing.summary?.configured !== true,
+                      onClick: () => void billing.open({ cadence: plan.cadence }),
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       ) : null}
 

@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { billingCustomer, type HeptadecDatabase } from "@heptadec/db";
 import { billingConfigured, priceFor } from "./catalog";
 import { createRenewalCharge } from "./client";
-import { entitlementFor } from "./entitlement";
 import { currentPeriod, paymentMetadata } from "./period";
 
 const PENDING_CHARGE_TTL_MS = 60 * 60 * 1000;
@@ -32,13 +31,8 @@ export async function checkBillingRenewals(
       continue;
     }
 
-    const entitlement = await entitlementFor(db, customer.organizationId);
-    if (entitlement.entitled) {
-      continue;
-    }
-
     const period = await currentPeriod(db, customer.organizationId);
-    if (period === null) {
+    if (period === null || period.endsAt.getTime() > now.getTime()) {
       continue;
     }
 

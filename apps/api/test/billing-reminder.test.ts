@@ -6,7 +6,7 @@ import { schema, type HeptadecDatabase } from "@heptadec/db";
 import { config } from "../src/common/config/env";
 import { encryptSecret } from "../src/modules/data-source/secret";
 import { checkBillingReminders } from "../src/modules/billing/reminder";
-import { db, uniqueSlug } from "./helpers";
+import { db, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -15,8 +15,14 @@ let webhookUrl = "";
 
 const createdOrgIds: string[] = [];
 
-async function createOrg(
+async function newOwner(): Promise<string> {
+  const { user } = await signUp(uniqueEmail());
+  return user.id;
+}
+
+async function ownedOrganization(
   database: HeptadecDatabase,
+  userId: string,
   createdAtMs: number,
 ): Promise<string> {
   const inserted = await database
@@ -28,6 +34,14 @@ async function createOrg(
     })
     .returning({ id: schema.organization.id });
   const organizationId = inserted[0]!.id;
+  await database
+    .insert(schema.member)
+    .values({
+      organizationId,
+      userId,
+      role: "owner",
+      createdAt: new Date(createdAtMs),
+    });
   createdOrgIds.push(organizationId);
   return organizationId;
 }
@@ -72,6 +86,9 @@ afterAll(async () => {
       .delete(schema.notificationChannel)
       .where(eq(schema.notificationChannel.organizationId, organizationId));
     await db
+      .delete(schema.member)
+      .where(eq(schema.member.organizationId, organizationId));
+    await db
       .delete(schema.organization)
       .where(eq(schema.organization.id, organizationId));
   }
@@ -92,8 +109,9 @@ describe("checkBillingReminders", () => {
     expect(sent).toBe(0);
   });
 
-  it("sends nothing for an organization still in its trial", async () => {
-    const organizationId = await createOrg(db, Date.now());
+  it("sends nothing for a lone organization kept long past the old trial window", async () => {
+    const userId = await newOwner();
+    const organizationId = await ownedOrganization(db, userId, Date.now());
     await createChannel(db, organizationId);
 
     const sent = await checkBillingReminders(db, new Date());
@@ -101,7 +119,8 @@ describe("checkBillingReminders", () => {
   }, 60_000);
 
   it("sends nothing for an organization whose paid period is still running", async () => {
-    const organizationId = await createOrg(db, Date.now() - 40 * DAY_MS);
+    const userId = await newOwner();
+    const organizationId = await ownedOrganization(db, userId, Date.now() - 40 * DAY_MS);
     await createChannel(db, organizationId);
     await db.insert(schema.billingPayment).values({
       organizationId,
@@ -119,23 +138,27 @@ describe("checkBillingReminders", () => {
     expect(sent).toBe(0);
   }, 60_000);
 
-  it("sends a reminder for a lapsed organization with channels", async () => {
-    const organizationId = await createOrg(db, Date.now() - 8 * DAY_MS);
-    await createChannel(db, organizationId);
+  it("sends a reminder for a lapsed extra organization", async () => {
+    const userId = await newOwner();
+    await ownedOrganization(db, userId, Date.now() - 40 * DAY_MS);
+    const extra = await ownedOrganization(db, userId, Date.now() - 10 * DAY_MS);
+    await createChannel(db, extra);
 
     const sent = await checkBillingReminders(db, new Date());
     expect(sent).toBe(1);
   }, 30_000);
 
-  it("does not remind again within the cooldown", async () => {
-    const organizationId = await createOrg(db, Date.now() - 8 * DAY_MS);
-    await createChannel(db, organizationId);
+  it("does not remind the extra organization again within the cooldown", async () => {
+    const userId = await newOwner();
+    await ownedOrganization(db, userId, Date.now() - 40 * DAY_MS);
+    const extra = await ownedOrganization(db, userId, Date.now() - 10 * DAY_MS);
+    await createChannel(db, extra);
 
     await checkBillingReminders(db, new Date());
     const afterFirst = await db
       .select()
       .from(schema.organization)
-      .where(eq(schema.organization.id, organizationId));
+      .where(eq(schema.organization.id, extra));
     expect(afterFirst[0]?.lastBillingReminderAt).not.toBeNull();
 
     const sent = await checkBillingReminders(db, new Date());

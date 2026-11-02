@@ -16,6 +16,10 @@ import {
 } from "../../modules/audit/record";
 import { nameFromEmail } from "../helpers/name";
 import { hashPassword, verifyPassword } from "../helpers/password";
+import {
+  authorizeOrganizationCreate,
+  releaseOrganizationCreateSlot,
+} from "../../modules/billing/entitlement";
 
 type SocialCredentials = { clientId: string; clientSecret: string };
 
@@ -96,8 +100,11 @@ function buildAuth(db: HeptadecDatabase) {
         ac,
         roles,
         sendInvitationEmail,
+        organizationLimit: (user) =>
+          authorizeOrganizationCreate(db, user.id).then((allowed) => !allowed),
         organizationHooks: {
           afterCreateOrganization: async ({ organization, user }) => {
+            await releaseOrganizationCreateSlot(db, user.id);
             await recordAuditFor(user, db, {
               organizationId: organization.id,
               event: "organization.created",

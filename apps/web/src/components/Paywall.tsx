@@ -72,7 +72,6 @@ function Paywall({
   others: Array<{ name: string; slug: string }>;
   onSignOut: () => void;
 }) {
-  const lapsed = summary.paidUntil;
   const paid = billing.paid;
   const busy = billing.busy;
   const problem = billing.problem;
@@ -83,14 +82,12 @@ function Paywall({
         <LockedResult />
 
         <h1 className="mt-8 text-xl font-semibold tracking-[-0.02em] text-fg">
-          {lapsed === null
-            ? "Your free trial has ended"
-            : "Your access period has ended"}
+          This organization is beyond the free plan
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {lapsed === null
-            ? `It ended on ${new Date(summary.trialEndsAt).toLocaleDateString()}. Choose a plan and the product opens again as soon as the payment clears.`
-            : `It ran out on ${new Date(lapsed).toLocaleDateString()}. Choose a plan and the product opens again as soon as the payment clears.`}
+          Heptadec gives you one organization free, forever. This one is past
+          that and its paid period has run out. Choose a plan and it opens
+          again as soon as the payment clears.
         </p>
         {isOwner ? null : (
           <p className="mt-2 text-sm text-muted-foreground">

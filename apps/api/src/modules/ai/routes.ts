@@ -109,28 +109,33 @@ export function aiRoutes(): Hono<IAuthVars> {
     const baseUrl = providerBaseUrl(spec, payload);
 
     const now = new Date();
-    const [row] = await organization.db.transaction(async (tx) => {
-      if (isDefault) {
-        await tx
-          .update(aiProvider)
-          .set({ isDefault: false, updatedAt: now })
-          .where(organization.where(aiProvider.organizationId));
-      }
-      return tx
-        .insert(aiProvider)
-        .values({
-          organizationId: organization.organizationId,
-          name,
-          provider,
-          model,
-          baseUrl,
-          apiKey: await encryptSecret(apiKey),
-          isDefault,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning();
-    });
+    const values = {
+      organizationId: organization.organizationId,
+      name,
+      provider,
+      model,
+      baseUrl,
+      apiKey: await encryptSecret(apiKey),
+      isDefault,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const inserted = organization.db.insert(aiProvider).values(values).returning();
+
+    // The demotion only happens when this provider is the default, and it has to
+    // land in the same atomic write as the insert: split across two round-trips,
+    // a concurrent request could find an organization with two defaults, or none.
+    const [row] = isDefault
+      ? (
+          await organization.db.batch([
+            organization.db
+              .update(aiProvider)
+              .set({ isDefault: false, updatedAt: now })
+              .where(organization.where(aiProvider.organizationId)),
+            inserted,
+          ])
+        )[1]
+      : (await organization.db.batch([inserted]))[0];
 
     if (row === undefined) {
       throw new NotFoundException("That provider could not be saved");

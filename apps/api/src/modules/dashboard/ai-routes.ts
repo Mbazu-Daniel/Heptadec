@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { dashboard, dashboardDataSource } from "@heptadec/db";
 import {
@@ -86,29 +87,31 @@ function dashboardAiRoutes() {
     }
 
     const now = new Date();
-    const created = await organization.db.transaction(async (tx) => {
-      const [row] = await tx
+    // The links name the dashboard they hang off, so its id is minted here
+    // rather than left to the column default: one batch cannot read what an
+    // earlier statement in the same batch generated.
+    const dashboardId = randomUUID();
+    const [rows] = await organization.db.batch([
+      organization.db
         .insert(dashboard)
         .values({
+          id: dashboardId,
           organizationId: organization.organizationId,
           name: request.name,
           createdAt: now,
           updatedAt: now,
         })
-        .returning();
-      if (row === undefined) {
-        return undefined;
-      }
-      await tx.insert(dashboardDataSource).values(
+        .returning(),
+      organization.db.insert(dashboardDataSource).values(
         sources.map((source) => ({
           organizationId: organization.organizationId,
-          dashboardId: row.id,
+          dashboardId,
           dataSourceId: source.id,
           createdAt: now,
         })),
-      );
-      return row;
-    });
+      ),
+    ]);
+    const created = rows[0];
     if (created === undefined) {
       throw new NotFoundException("That dashboard could not be created");
     }

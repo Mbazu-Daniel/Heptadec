@@ -21,3 +21,14 @@ process.env.HEPTADEC_SECRET_KEY ??= Buffer.from(
 ).toString("base64");
 
 loadDotEnv();
+
+// Billing belongs to the billing suite alone (vitest.billing.config.ts arms it
+// through setup-billing.ts). This suite must run as an *unconfigured* instance no
+// matter what a developer's .env holds — a live BACHS key here would arm the
+// free-tier organization limit and refuse any test that creates a second
+// organization. Cleared after loadDotEnv so .env cannot win.
+delete process.env.BACHS_SECRET_KEY;
+delete process.env.BACHS_WEBHOOK_SECRET;
+delete process.env.BACHS_BASE_URL;
+delete process.env.BACHS_PRICE_MONTHLY;
+delete process.env.BACHS_PRICE_YEARLY;

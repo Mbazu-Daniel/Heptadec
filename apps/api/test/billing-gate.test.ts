@@ -1,26 +1,26 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { authFor } from "../src/common/config/better-auth";
 import { MCP_TOOLS } from "../src/modules/mcp/contracts";
-import { TRIAL_DAYS } from "../src/modules/billing/period";
 import { db, request, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
-const { billingPayment, dataSource, organization, shareLink } = schema;
+const { billingPayment, dataSource, member, organization, shareLink } = schema;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function ownerWithOrganization(): Promise<{
   cookie: string;
+  userId: string;
   organizationId: string;
 }> {
-  const { cookie } = await signUp(uniqueEmail());
+  const { user, cookie } = await signUp(uniqueEmail());
   const created = await authFor(db).api.createOrganization({
     body: { name: "Gate Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  return { cookie, organizationId: created.id };
+  return { cookie, userId: user.id, organizationId: created.id };
 }
 
 function postgresInput(name: string) {
@@ -47,11 +47,38 @@ function sourcesOf(organizationId: string) {
   return db.select().from(dataSource).where(eq(dataSource.organizationId, organizationId));
 }
 
-async function spendTrial(organizationId: string): Promise<void> {
+async function ownedOrganizationIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: member.organizationId })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.role, "owner")));
+  return rows.map((row) => row.id);
+}
+
+async function backdate(organizationId: string, days: number): Promise<void> {
   await db
     .update(organization)
-    .set({ createdAt: new Date(Date.now() - (TRIAL_DAYS + 1) * DAY_MS) })
+    .set({ createdAt: new Date(Date.now() - days * DAY_MS) })
     .where(eq(organization.id, organizationId));
+}
+
+async function lapsePeriod(organizationId: string): Promise<void> {
+  await db
+    .update(billingPayment)
+    .set({ periodEndsAt: new Date(Date.now() - DAY_MS) })
+    .where(eq(billingPayment.organizationId, organizationId));
+}
+
+async function switchOrganization(
+  cookie: string,
+  organizationId: string,
+): Promise<void> {
+  const res = await request("/api/organization/switch", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ organizationId }),
+  });
+  expect(res.status).toBe(200);
 }
 
 let checkoutSequence = 0;
@@ -75,63 +102,92 @@ async function boughtPeriod(
   });
 }
 
-it("lets a new organization use the product for its trial", async () => {
+it("keeps a lone organization usable forever, long past the old trial window", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
+  await backdate(organizationId, 400);
 
-  const res = await createSource(cookie, "Trial source");
-
+  const res = await createSource(cookie, "Eternal source");
   expect(res.status).toBe(200);
   expect(await sourcesOf(organizationId)).toHaveLength(1);
-});
-
-it("refuses the product once the trial has run out, and writes nothing", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
-
-  const res = await createSource(cookie, "Locked out");
-  expect(res.status).toBe(402);
-  expect(await sourcesOf(organizationId)).toHaveLength(0);
 
   const listed = await request("/api/data-sources", { headers: { cookie } });
-  expect(listed.status).toBe(402);
+  expect(listed.status).toBe(200);
 });
 
-it("lets an organization in on a period it bought after the trial", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
+it("refuses a second organization for an unpaid owner and writes nothing", async () => {
+  const { cookie, userId, organizationId } = await ownerWithOrganization();
+  await backdate(organizationId, 400);
+
+  let refused = false;
+  try {
+    await authFor(db).api.createOrganization({
+      body: { name: "Second Org", slug: uniqueSlug() },
+      headers: { cookie },
+    });
+  } catch {
+    refused = true;
+  }
+
+  expect(refused).toBe(true);
+  expect(await ownedOrganizationIds(userId)).toHaveLength(1);
+});
+
+it("serializes two concurrent first organizations into one for an unpaid owner", async () => {
+  const { user, cookie } = await signUp(uniqueEmail());
+
+  const attempts = await Promise.allSettled([
+    authFor(db).api.createOrganization({
+      body: { name: "Race A", slug: uniqueSlug() },
+      headers: { cookie },
+    }),
+    authFor(db).api.createOrganization({
+      body: { name: "Race B", slug: uniqueSlug() },
+      headers: { cookie },
+    }),
+  ]);
+
+  const succeeded = attempts.filter((attempt) => attempt.status === "fulfilled");
+  expect(succeeded).toHaveLength(1);
+  expect(await ownedOrganizationIds(user.id)).toHaveLength(1);
+});
+
+it("lets an owner add organizations once the account pays", async () => {
+  const { cookie, userId, organizationId } = await ownerWithOrganization();
   await boughtPeriod(organizationId, 30);
 
-  const res = await createSource(cookie, "Paid source");
+  const second = await authFor(db).api.createOrganization({
+    body: { name: "Second Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
 
-  expect(res.status).toBe(200);
-  expect(await sourcesOf(organizationId)).toHaveLength(1);
+  const owned = await ownedOrganizationIds(userId);
+  expect(owned).toHaveLength(2);
+  expect(owned).toContain(second.id);
 });
 
-it("lets an organization in while its paid period is still running", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
-  await boughtPeriod(organizationId, 1);
+it("keeps the oldest organization free while a lapsed extra one is locked", async () => {
+  const { cookie, organizationId: first } = await ownerWithOrganization();
+  await boughtPeriod(first, 30);
+  const second = await authFor(db).api.createOrganization({
+    body: { name: "Second Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
+  await lapsePeriod(first);
 
-  const res = await createSource(cookie, "Running source");
+  await switchOrganization(cookie, second.id);
+  const refused = await createSource(cookie, "Locked extra");
+  expect(refused.status).toBe(402);
+  expect(await sourcesOf(second.id)).toHaveLength(0);
 
-  expect(res.status).toBe(200);
-  expect(await sourcesOf(organizationId)).toHaveLength(1);
+  await switchOrganization(cookie, first);
+  const kept = await createSource(cookie, "Free oldest");
+  expect(kept.status).toBe(200);
+  expect(await sourcesOf(first)).toHaveLength(1);
 });
 
-it("refuses an organization whose paid period has run out, and does not revive the trial", async () => {
+it("reports the free plan through the routes an owner needs to pay", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
-  await boughtPeriod(organizationId, -10);
-
-  const res = await createSource(cookie, "Lapsed source");
-
-  expect(res.status).toBe(402);
-  expect(await sourcesOf(organizationId)).toHaveLength(0);
-});
-
-it("still answers the routes an organization needs in order to pay", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  await spendTrial(organizationId);
+  await backdate(organizationId, 400);
 
   const me = await request("/api/me", { headers: { cookie } });
   expect(me.status).toBe(200);
@@ -141,19 +197,15 @@ it("still answers the routes an organization needs in order to pay", async () =>
 
   const billing = await request("/api/billing", { headers: { cookie } });
   expect(billing.status).toBe(200);
-  const summary = (await billing.json()) as {
-    configured: boolean;
-    entitled: boolean;
-    trialEndsAt: string;
-    paidUntil: string | null;
-  };
+  const summary = (await billing.json()) as Record<string, unknown>;
   expect(summary).toMatchObject({
     configured: true,
-    entitled: false,
+    entitled: true,
+    accountPaid: false,
     paidUntil: null,
+    organizationsOwned: 1,
+    freeOrgLimit: 1,
   });
-  expect(new Date(summary.trialEndsAt).getTime()).toBeLessThan(Date.now());
-  expect(await sourcesOf(organizationId)).toHaveLength(0);
 });
 
 function mcp(token: string): Promise<Response> {
@@ -179,28 +231,37 @@ async function issueToken(cookie: string): Promise<string> {
   return (JSON.parse(text) as { token: string }).token;
 }
 
-it("refuses an MCP token belonging to a lapsed organization", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  const token = await issueToken(cookie);
+it("serves a lone organization's MCP token forever, but locks a lapsed extra one", async () => {
+  const { cookie, organizationId: first } = await ownerWithOrganization();
+  const loneToken = await issueToken(cookie);
+  await backdate(first, 400);
+  expect((await mcp(loneToken)).status).not.toBe(402);
 
-  const whileTrialing = await mcp(token);
-  expect(whileTrialing.status).not.toBe(402);
+  await boughtPeriod(first, 30);
+  const second = await authFor(db).api.createOrganization({
+    body: { name: "Second Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
+  await switchOrganization(cookie, second.id);
+  const extraToken = await issueToken(cookie);
+  await lapsePeriod(first);
 
-  await spendTrial(organizationId);
-
-  const lapsed = await mcp(token);
-  expect(lapsed.status).toBe(402);
+  expect((await mcp(extraToken)).status).toBe(402);
+  expect((await mcp(loneToken)).status).not.toBe(402);
 });
 
-it("stops serving a lapsed organization's share link", async () => {
-  const { cookie, organizationId } = await ownerWithOrganization();
-  const created = await createSource(cookie, "Shared source");
-  expect(created.status).toBe(200);
+it("keeps serving a lone organization's share link, but stops a lapsed extra one", async () => {
+  const { cookie, organizationId: first } = await ownerWithOrganization();
+  await boughtPeriod(first, 30);
+  const second = await authFor(db).api.createOrganization({
+    body: { name: "Second Org", slug: uniqueSlug() },
+    headers: { cookie },
+  });
 
-  const token = `sgl_gate_${organizationId}`;
+  const token = `sgl_gate_${second.id}`;
   const now = new Date();
   await db.insert(shareLink).values({
-    organizationId,
+    organizationId: second.id,
     dashboardId: "dash_gate",
     tokenHash: createHash("sha256").update(token).digest("hex"),
     snapshot: JSON.stringify({ name: "Ops", widgets: [] }),
@@ -209,15 +270,21 @@ it("stops serving a lapsed organization's share link", async () => {
     updatedAt: now,
   });
 
-  const served = await request(`/api/share/${token}`, {
-    headers: { "x-forwarded-for": "10.9.9.9" },
-  });
-  expect(served.status).toBe(200);
+  expect(
+    (
+      await request(`/api/share/${token}`, {
+        headers: { "x-forwarded-for": "10.9.9.9" },
+      })
+    ).status,
+  ).toBe(200);
 
-  await spendTrial(organizationId);
+  await lapsePeriod(first);
 
-  const after = await request(`/api/share/${token}`, {
-    headers: { "x-forwarded-for": "10.9.9.10" },
-  });
-  expect(after.status).toBe(404);
+  expect(
+    (
+      await request(`/api/share/${token}`, {
+        headers: { "x-forwarded-for": "10.9.9.10" },
+      })
+    ).status,
+  ).toBe(404);
 });

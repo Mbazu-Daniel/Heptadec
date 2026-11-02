@@ -24,7 +24,12 @@ import { requireOwner } from "../rbac/owner";
 import { recordAudit } from "../audit";
 import { billingConfigured, billingPlans, priceFor } from "./catalog";
 import { createCheckoutSession, createCustomer } from "./client";
-import { entitlementFor } from "./entitlement";
+import {
+  FREE_TIER_ORG_LIMIT,
+  accountPayment,
+  entitlementFor,
+  organizationsOwned,
+} from "./entitlement";
 import {
   readBillingEvent,
   type ICardSavedEvent,
@@ -41,10 +46,16 @@ export function billingRoutes(): Hono<IAuthVars> {
 
   routes.get("/api/billing", requireSession, async (c) => {
     const organization = activeOrganization(c);
+    const session = c.get("session");
+    if (session === null) {
+      throw new UnauthorizedException();
+    }
+    const userId = session.user.id;
     const entitlement = await entitlementFor(
       organization.db,
       organization.organizationId,
     );
+    const account = await accountPayment(organization.db, userId);
     const rows = await organization.db
       .select()
       .from(billingCustomer)
@@ -55,18 +66,21 @@ export function billingRoutes(): Hono<IAuthVars> {
     const body: IBillingSummary = {
       configured: billingConfigured(),
       entitled: entitlement.entitled,
-      trialEndsAt: entitlement.trialEndsAt.toISOString(),
+      accountPaid: account.paid,
       paidUntil:
-        entitlement.paidUntil === null
-          ? null
-          : entitlement.paidUntil.toISOString(),
-      cadence: entitlement.cadence,
+        account.paidUntil === null ? null : account.paidUntil.toISOString(),
+      cadence: account.cadence,
       autoRenew:
         customer !== undefined &&
         customer.autoRenew &&
         customer.paymentMethodId !== null,
       hasCard: customer !== undefined && customer.paymentMethodId !== null,
       cardLast4: customer?.cardLast4 ?? null,
+      organizationsOwned: await organizationsOwned(
+        organization.db,
+        userId,
+      ),
+      freeOrgLimit: FREE_TIER_ORG_LIMIT,
       plans: billingPlans(),
     };
     return c.json(body);
@@ -274,31 +288,37 @@ async function storePayment(
     return;
   }
 
-  await db.transaction(async (tx) => {
-    const existing = await tx
+  const dedup =
+    paidWith.kind === "checkout"
+      ? eq(billingPayment.checkoutId, paidWith.id)
+      : eq(billingPayment.chargeId, paidWith.id);
+
+  const [existing, latest] = await db.batch([
+    db
       .select({ id: billingPayment.id })
       .from(billingPayment)
-      .where(
-        paidWith.kind === "checkout"
-          ? eq(billingPayment.checkoutId, paidWith.id)
-          : eq(billingPayment.chargeId, paidWith.id),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      return;
-    }
-
-    const latest = await tx
+      .where(dedup)
+      .limit(1),
+    db
       .select({ periodEndsAt: billingPayment.periodEndsAt })
       .from(billingPayment)
       .where(eq(billingPayment.organizationId, organizationId))
       .orderBy(desc(billingPayment.periodEndsAt))
-      .limit(1);
-    const now = new Date();
-    const previousEnd = latest[0]?.periodEndsAt ?? null;
-    const periodEndsAt = extendedPeriod(previousEnd, now, cadence);
+      .limit(1),
+  ]);
+  if (existing.length > 0) {
+    return;
+  }
 
-    await tx.insert(billingPayment).values({
+  const now = new Date();
+  const periodEndsAt = extendedPeriod(latest[0]?.periodEndsAt ?? null, now, cadence);
+
+  // One atomic batch replaces the interactive transaction the D1 driver would
+  // otherwise run as separate BEGIN/…/COMMIT round-trips. A racing duplicate
+  // delivery loses on the unique checkout_id/charge_id index and rolls back, so
+  // the payment is recorded exactly once.
+  await db.batch([
+    db.insert(billingPayment).values({
       organizationId,
       customerId: event.customerId,
       checkoutId,
@@ -309,12 +329,12 @@ async function storePayment(
       status: event.status,
       periodEndsAt,
       createdAt: now,
-    });
-    await tx
+    }),
+    db
       .update(billingCustomer)
       .set({ pendingChargeId: null, updatedAt: now })
-      .where(eq(billingCustomer.organizationId, organizationId));
-  });
+      .where(eq(billingCustomer.organizationId, organizationId)),
+  ]);
 }
 
 async function storeFailure(

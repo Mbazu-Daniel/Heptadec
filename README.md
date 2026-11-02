@@ -110,7 +110,7 @@ Optional integrations:
 
 ### Billing (optional)
 
-Payments run through [Bachs](https://bachs.io). With none of these set, the instance is free and self-hosted. With the key, the webhook secret, and both prices set, every organization must be inside its seven-day trial or a paid period, or the product endpoints answer `402 payment_required`.
+Payments run through [Bachs](https://bachs.io). With none of these set, the instance is free and self-hosted. With the key, the webhook secret, and both prices set, each owner gets one organization free forever and is asked to buy a plan when creating a second; any organization outside that free tier with no paid period answers `402 payment_required` on the product endpoints.
 
 | Variable | Purpose |
 |---|---|

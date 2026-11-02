@@ -64,8 +64,7 @@ export function Billing({ isOwner }: { isOwner: boolean }) {
                     key={plan.cadence}
                     plan={plan}
                     action={{
-                      disabled:
-                        billing.busy || !summary.configured || summary.entitled,
+                      disabled: billing.busy || !summary.configured,
                       onClick: () => void billing.open({ cadence: plan.cadence }),
                     }}
                   />
@@ -92,11 +91,11 @@ function CurrentPlan({
   busy: boolean;
   onRenew: (enabled: boolean) => Promise<void>;
 }) {
+  const paidUntil = summary.paidUntil;
+  const bought = summary.accountPaid;
   const label =
     summary.plans.find((candidate) => candidate.cadence === summary.cadence)
-      ?.label ?? "Free trial";
-  const bought = summary.paidUntil !== null;
-  const endsAt = summary.paidUntil ?? summary.trialEndsAt;
+      ?.label ?? "Free plan";
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
@@ -114,14 +113,21 @@ function CurrentPlan({
         </span>
       </div>
       <dl className="grid gap-2 text-xs">
-        <div className="flex justify-between gap-4">
-          <dt className="text-muted-foreground">
-            {bought ? "Paid until" : "Trial ends"}
-          </dt>
-          <dd className="tabular-nums">
-            {new Date(endsAt).toLocaleDateString()}
-          </dd>
-        </div>
+        {bought && paidUntil !== null ? (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Paid until</dt>
+            <dd className="tabular-nums">
+              {new Date(paidUntil).toLocaleDateString()}
+            </dd>
+          </div>
+        ) : (
+          <div className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">Organizations</dt>
+            <dd className="tabular-nums">
+              {summary.organizationsOwned} of {summary.freeOrgLimit} free
+            </dd>
+          </div>
+        )}
         {bought ? (
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Renews automatically</dt>

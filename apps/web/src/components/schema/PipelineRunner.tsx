@@ -18,8 +18,6 @@ import {
 
 const DEFAULT_STAGES = '[\n  {\n    "$limit": 100\n  }\n]';
 
-// MongoDB has no SQL, so this is the runner a pipeline source gets instead of
-// QueryRunner: the collection is picked and the stages are written as JSON.
 export function PipelineRunner({
   source,
   tables,
@@ -47,7 +45,7 @@ export function PipelineRunner({
       const answer = await askQuestion([source.id], question.trim(), undefined, {});
       const draft = draftOf(answer);
       if (draft.kind !== "pipeline") {
-        setProblem("That question could not be answered from this schema.");
+        setProblem("That answer did not come back as a pipeline this view can run.");
         return;
       }
       setCollection(draft.pipeline.collection);

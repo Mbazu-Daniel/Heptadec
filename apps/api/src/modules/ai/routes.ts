@@ -27,10 +27,15 @@ import { recordAudit } from "../audit";
 import { encryptSecret, decryptSecret } from "../data-source/secret";
 import { storedFromRow } from "../data-source/connection";
 import { canBeAsked, engineOf } from "../data-source/engines";
-import { failureMessage, queryPrompt, streamAnswer } from "./answer";
+import {
+  failureMessage,
+  providerStatusSentence,
+  queryPrompt,
+  streamAnswer,
+} from "./answer";
 import { AI_PROVIDERS, providerSpec, type IAiProviderSpec } from "./catalog";
 import { baseUrlFor, speaksProtocol } from "./transport";
-import { askStyleOf } from "./ask";
+import { askStyleOf, type IGeneratedQuery } from "./ask";
 import { streamModel } from "./generate";
 import { routeInstructions } from "./instructions";
 import { chosenProvider } from "./provider";
@@ -56,6 +61,13 @@ const MAX_NAME = 60;
 const MAX_MODEL = 120;
 
 const MAX_QUESTION = 2_000;
+
+const OUTCOME_PROBLEMS = {
+  declined: "That question could not be answered from this schema.",
+  empty: "That provider returned nothing. Check the key, the model id, and the base URL.",
+  unreadable:
+    "That answer came back in a shape I could not read. Ask again, or write the statement yourself.",
+} satisfies Record<Exclude<IGeneratedQuery["outcome"], "answered">, string>;
 
 export function aiRoutes(): Hono<IAuthVars> {
   const routes = new Hono<IAuthVars>();
@@ -122,9 +134,6 @@ export function aiRoutes(): Hono<IAuthVars> {
     };
     const inserted = organization.db.insert(aiProvider).values(values).returning();
 
-    // The demotion only happens when this provider is the default, and it has to
-    // land in the same atomic write as the insert: split across two round-trips,
-    // a concurrent request could find an organization with two defaults, or none.
     const [row] = isDefault
       ? (
           await organization.db.batch([
@@ -332,9 +341,8 @@ export function aiRoutes(): Hono<IAuthVars> {
         }
 
         const finished = style.readAnswer(answer);
-        if (problem === null && answer.trim() === "") {
-          problem =
-            "That provider returned nothing. Check the key, the model id, and the base URL.";
+        if (problem === null && finished.outcome === "empty") {
+          problem = OUTCOME_PROBLEMS.empty;
         }
         const sql = problem === null ? finished.sql : null;
         const pipeline = problem === null ? finished.pipeline : null;
@@ -379,14 +387,13 @@ export function aiRoutes(): Hono<IAuthVars> {
           durationMs,
         };
 
-        if (problem !== null) {
-          await turn.problem(problem);
-        } else if (finished.outcome !== "answered") {
-          await turn.problem(
-            finished.outcome === "declined"
-              ? "That question could not be answered from this schema."
-              : "That answer came back in a shape I could not read. Ask again, or write the statement yourself.",
-          );
+        const message =
+          problem ??
+          (finished.outcome === "answered"
+            ? null
+            : OUTCOME_PROBLEMS[finished.outcome]);
+        if (message !== null) {
+          await turn.problem(message);
         }
 
         await turn.done(body);
@@ -397,11 +404,6 @@ export function aiRoutes(): Hono<IAuthVars> {
   return routes;
 }
 
-/**
- * The base URL a spec talks to, from the request when the spec has none of its
- * own. Creation and the model listing share it so a URL that saves is a URL
- * that can be listed.
- */
 function providerBaseUrl(
   spec: IAiProviderSpec,
   payload: Record<string, unknown>,
@@ -426,6 +428,12 @@ async function modelsAnswer(
   }
   if (listing.kind === "unreachable") {
     throw new BadGatewayException("That provider could not be reached");
+  }
+  if (listing.kind === "status") {
+    throw new BadGatewayException(
+      providerStatusSentence(listing.status, "") ??
+        "That provider could not be reached",
+    );
   }
   if (listing.kind === "unsupported") {
     return { source: "suggestions", models: await suggestModels(organization, provider) };
@@ -463,12 +471,22 @@ async function routeToSource(
     .join("\n");
 
   let answer = "";
-  for await (const chunk of streamModel(
-    provider,
-    routeInstructions,
-    `Schema:\n${routeInstructions}${catalogue}\n\nQuestion: ${question}`,
-  )) {
-    answer += chunk;
+  try {
+    for await (const chunk of streamModel(
+      provider,
+      routeInstructions,
+      `Schema:\n${routeInstructions}${catalogue}\n\nQuestion: ${question}`,
+    )) {
+      answer += chunk;
+    }
+  } catch (caught) {
+    throw new BadGatewayException(
+      failureMessage(
+        caught,
+        "match that question to a source",
+        "That source could not be read, or the provider could not be reached. Check the source and the key.",
+      ),
+    );
   }
 
   const picked = answer.trim().replace(/[^A-Za-z0-9-]/g, "");

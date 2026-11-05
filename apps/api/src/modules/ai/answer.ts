@@ -1,5 +1,10 @@
+import {
+  APICallError,
+  EmptyResponseBodyError,
+  NoContentGeneratedError,
+} from "ai";
 import type { AiProviderRow } from "@heptadec/db";
-import { driverFailure } from "../../common/driver-error";
+import { driverFailure, logDriverFailure } from "../../common/driver-error";
 import { complete, streamModel } from "./generate";
 import type { ITurn } from "./turn";
 
@@ -61,7 +66,52 @@ export function failureMessage(
   action: string,
   fallback: string,
 ): string {
+  const provider = providerFailure(caught);
+  if (provider !== null) {
+    logDriverFailure(caught, action);
+    return provider;
+  }
   return driverFailure(caught, action) ?? fallback;
+}
+
+function providerFailure(caught: unknown): string | null {
+  if (
+    caught instanceof EmptyResponseBodyError ||
+    caught instanceof NoContentGeneratedError
+  ) {
+    return "That provider returned no answer. Check the model id and the base URL.";
+  }
+  if (!APICallError.isInstance(caught)) {
+    return null;
+  }
+  return providerStatusSentence(caught.statusCode, caught.message);
+}
+
+export function providerStatusSentence(
+  status: number | undefined,
+  detail: string,
+): string | null {
+  if (status === 401 || status === 403) {
+    return "That provider rejected the API key.";
+  }
+  if (status === 404) {
+    return "That model id was not found at that provider.";
+  }
+  if (
+    status === 402 ||
+    /insufficient (?:quota|credit)|out of (?:credit|fund|budget)|exceeded your current quota|credit balance/i.test(
+      detail,
+    )
+  ) {
+    return "That provider is out of credits.";
+  }
+  if (status === 429) {
+    return "That provider is rate-limited or out of credits. Try again shortly.";
+  }
+  if (status === 408 || (status !== undefined && status >= 500)) {
+    return "That provider could not be reached. Try again shortly.";
+  }
+  return null;
 }
 
 export function readJsonObject(text: string): Record<string, unknown> | null {

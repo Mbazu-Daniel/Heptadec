@@ -26,15 +26,14 @@ export type ModelListing =
   | { kind: "models"; models: IModel[] }
   | { kind: "unsupported" }
   | { kind: "refused" }
-  | { kind: "unreachable" };
+  | { kind: "unreachable" }
+  | { kind: "status"; status: number };
 
 export async function listModels(config: IModelConfig): Promise<ModelListing> {
   let baseUrl: string;
   try {
     baseUrl = providerEndpointFor(config.provider, config.baseUrl).baseUrl;
   } catch {
-    // An unknown provider or a missing address is a configuration refusal,
-    // the same kind of refusal a bad key produces here.
     return { kind: "refused" };
   }
 
@@ -46,8 +45,6 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (caught) {
-    // The listing answers with a status; the operator gets the driver's own
-    // words, which is the half this catch used to drop.
     logDriverFailure(caught, "reach that provider");
     return { kind: "unreachable" };
   }
@@ -59,7 +56,7 @@ export async function listModels(config: IModelConfig): Promise<ModelListing> {
     return { kind: "unsupported" };
   }
   if (!response.ok) {
-    return { kind: "unreachable" };
+    return { kind: "status", status: response.status };
   }
 
   const payload: unknown = await response.json();

@@ -101,7 +101,7 @@ export function QueryRunner({
       });
       const reply = draftOf(answer);
       if (reply.kind !== "sql") {
-        setProblem("That question could not be answered from this schema.");
+        setProblem("That answer did not come back as a query this view can run.");
         return;
       }
       setSql(reply.sql);

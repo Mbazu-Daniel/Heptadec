@@ -30,8 +30,6 @@ export function EngineForm({
   return (
     <div className="grid gap-4">
       {showUrlImport ? (
-        // Importing is the URL alone: host, credentials, and the database are
-        // all inside the string, so there is nothing else to fill.
         <ConnectionMethod kind={kind} url={url} onUrlChange={onUrlChange} />
       ) : (
         <EngineFields kind={kind} mode={mode} values={values} onChange={onChange} />
@@ -40,10 +38,6 @@ export function EngineForm({
   );
 }
 
-/**
- * The connection fields alone. A pasted URL fills them in; editing one by
- * hand is what submits, so the paste is only ever an import step.
- */
 export function EngineFields({
   kind,
   mode,
@@ -62,12 +56,6 @@ export function EngineFields({
   );
 }
 
-/**
- * The block of fields one engine shows. Keyed by the union, so an engine added
- * to the catalog stops compiling here until its form exists, rather than
- * rendering an empty block at runtime: the switch this replaces had no default
- * and no exemption from returning, so nothing checked that it was complete.
- */
 const FORMS: Record<DataSourceKind, (props: IBlockProps) => ReactElement> = {
   postgres: PostgresForm,
   quickwit: QuickwitForm,

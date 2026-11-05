@@ -46,11 +46,6 @@ const SELECT_EMPTY_CLASSNAME =
 const SELECT_CLEAR_CLASSNAME =
   "flex items-center justify-center size-6 rounded-md text-muted-foreground hover:bg-accent hover:text-on-accent transition-colors";
 
-/**
- * A searchable select dropdown. Lists `options` and filters them as you type.
- * Use `clearable` to reset to `null`. When `filterable` is off, all options
- * are shown regardless of input.
- */
 export function Select({
   options,
   value,

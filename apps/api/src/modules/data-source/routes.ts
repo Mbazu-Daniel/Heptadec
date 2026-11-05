@@ -187,8 +187,6 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
     }
     const current = found[0]!;
 
-    // The engine stays the one already stored: a source that points at a
-    // different database engine is a different source, not an edit.
     const patch = readConnectionUpdate(
       readBody(await c.req.json(), "A data source is required"),
       current,
@@ -207,8 +205,6 @@ export function dataSourceRoutes(): Hono<IAuthVars> {
         schemaName: patch.schemaName,
         options: patch.options,
         username: patch.username,
-        // A secret left out of the request keeps the one already sealed, since
-        // the client is never shown it and so cannot send it back.
         ...(patch.password === undefined
           ? {}
           : { secret: await sealed(patch.password) }),

@@ -50,9 +50,6 @@ export function queryRoutes(): Hono<IAuthVars> {
     if (source === undefined) {
       throw new NotFoundException("That data source does not exist");
     }
-    // The gate the client was given, read back from the catalog rather than
-    // written out a second time: if the two could disagree, a source could
-    // offer a button the server always refuses.
     if (!engineOf(source).supportsExplain) {
       throw new BadRequestException(
         `Explaining queries on ${engineOf(source).name} is not available yet`,

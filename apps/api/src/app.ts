@@ -41,20 +41,6 @@ export interface IAppOptions {
   compressResponses: boolean;
 }
 
-/**
- * What a module's routes are behind.
- *
- * "product" — the routes are the product, and each one needs an entitlement.
- * The Subscription Gate holds the whole module, so a route added to it later is
- * gated without anyone remembering to.
- *
- * "admin" — the routes need a session but not a subscription: signing in,
- * administering the organization, and paying.
- *
- * "self" — the routes serve somebody the app does not sign in: a public share
- * link, an MCP token. Such a module cannot be wrapped, because the gate would
- * refuse a request that carries no session, so it checks its own organization.
- */
 type ModuleGate = "product" | "admin" | "self";
 
 interface IAppModule {

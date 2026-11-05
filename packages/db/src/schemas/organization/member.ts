@@ -25,8 +25,6 @@ export const member = sqliteTable(
       table.organizationId,
       table.userId,
     ),
-    // The entitlement gate reads memberships by owner (userId, role) on every
-    // product request and in the billing sweep; without this the queries scan.
     index("member_user_role_idx").on(table.userId, table.role),
   ],
 );

@@ -15,13 +15,6 @@ export interface ISendResult {
   error: string | null;
 }
 
-/**
- * Sends one message down one Notification Channel. The kind's transport —
- * the Slack webhook, the SMTP socket, Resend's API — and the opening of the
- * channel's sealed configuration are this module's own behaviour, the one
- * path an Alert Rule breach and a billing reminder both cross; delivery
- * logging stays with its callers.
- */
 export async function sendToChannel(
   channel: NotificationChannelRow,
   subject: string,
@@ -33,12 +26,7 @@ export async function sendToChannel(
     config = JSON.parse(await decryptSecret(channel.config)) as INotificationConfig;
     recipients = JSON.parse(channel.recipients) as string[];
   } catch (caught) {
-    // A configuration that will not open is a failure of what was stored, not
-    // of the network, so it says so rather than reading as a channel that could
-    // not be reached, and the driver's own words reach the operator.
     return {
-      // The kind is a stored word the column carries; the channel row is the
-      // point where the database's strings become this module's types.
       channel: channel.kind as NotificationKind,
       status: "failed",
       error:
@@ -82,8 +70,6 @@ async function post(
       if (recipients.length === 0) {
         return "No recipient is set on this channel";
       }
-      // nodemailer speaks SMTP over a socket, which Workers cannot open. It is
-      // loaded only here so the runtime never evaluates it at startup.
       const nodemailer = await import("nodemailer");
       const transporter = nodemailer.default.createTransport({
         host: config.smtpHost,

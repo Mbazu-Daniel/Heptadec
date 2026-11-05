@@ -28,14 +28,6 @@ type SqlRunner = (
   statement: string,
 ) => Promise<IQueryResponse>;
 
-/**
- * Which dialect runs a statement, not which engine asked for it: MariaDB speaks
- * MySQL and libsql speaks SQLite, so an engine inherits its runner by naming a
- * dialect in the catalog rather than by being listed here.
- *
- * Keyed by the dialect union, so a dialect added later stops compiling until
- * its runner exists, instead of reaching a throwing default at runtime.
- */
 const SQL_RUNNERS: Record<SqlDialect, SqlRunner> = {
   postgres: (connection, statement) =>
     runPostgresQuery(asRelational(connection), statement),

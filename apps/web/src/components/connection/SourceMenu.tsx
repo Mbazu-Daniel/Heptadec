@@ -9,10 +9,6 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 
-/**
- * Everything a source can be asked for from the list, kept off the page that
- * reads it: a source you are querying is not a source you are reconfiguring.
- */
 export function SourceMenu({
   className,
   onSettings,

@@ -78,9 +78,6 @@ function ResultGrid({ grid, label }: { grid: IResultGrid; label: string }) {
 }
 
 export function SourceDetail({ source, onBack }: ISourceDetailProps) {
-  // What a source can be asked and run as, read off the wire rather than
-  // worked out here from its engine: the server already knows, and a second
-  // answer in the client can only disagree with the first.
   const language = source.queryLanguage;
   const speaksSearch = language === "search";
   const speaksCommand = language === "command";
@@ -136,9 +133,6 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     let live = true;
     setPreviewBusy(true);
     setPreviewError(null);
-    // A search is a Run like any other: it goes through the same query seam as
-    // SQL and a command, rather than being smuggled in as a preview parameter
-    // because that was the only way the server would accept one.
     const rows = speaksSearch
       ? runSearch(source.id, { index, query })
       : previewSourceRows(source.id, index);

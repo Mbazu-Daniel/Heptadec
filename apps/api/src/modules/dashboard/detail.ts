@@ -63,8 +63,6 @@ export async function readDashboardSources(
     )
     .orderBy(dataSource.name);
 
-  // The rows carry an engine as text; each is asked what it can be used for, so
-  // the dashboard's own sources are typed and carry the answer with them.
   return rows.map((row) => ({
     dataSourceId: row.dataSourceId,
     name: row.name,

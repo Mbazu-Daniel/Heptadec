@@ -11,11 +11,6 @@ export function request(path: string, init?: RequestInit): Promise<Response> {
 
 export const PASSWORD = "supersecret1";
 
-/**
- * The Postgres the test stack exposes. Its host port is read from the
- * environment because 5434 is commonly already taken by another project on a
- * shared machine — docker-compose.test.override.yml maps it to match.
- */
 export const TEST_POSTGRES_PORT = Number(
   process.env.HEPTADEC_TEST_POSTGRES_PORT ?? 5434,
 );
@@ -28,11 +23,6 @@ export const TEST_POSTGRES = {
   database: "heptadec_test",
 };
 
-/**
- * Every engine the test stack exposes, by the credentials a source needs to
- * reach it. One place, so a test that talks to an engine says which engine it
- * means rather than repeating a port and hoping it is the right one.
- */
 export const STACK = {
   postgres: { ...TEST_POSTGRES, username: "heptadec" },
   mysql: {

@@ -107,8 +107,6 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
     .where(eq(member.organizationId, organizationId));
   expect(row!.image).toBe(key);
 
-  // The member's avatar and the person's own image are separate facts. Writing
-  // one must not touch the other, so the user's image is still empty afterwards.
   const me = await request("/api/me", { headers: { cookie } });
   const body = (await me.json()) as { image: string | null; user: { image: string | null } };
   expect(body.image).toBe(`/api/images/${key}`);

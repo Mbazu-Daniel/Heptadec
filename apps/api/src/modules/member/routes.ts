@@ -82,9 +82,6 @@ export function memberRoutes(): Hono<IAuthVars> {
       image !== null &&
       !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
     ) {
-      // Not an empty-fallback guard but a real one: the only writer of this
-      // column is the upload flow, and an arbitrary URL here would be an image
-      // this server never checked the type of.
       throw new BadRequestException("That image did not come from this organization");
     }
 

@@ -25,13 +25,6 @@ export interface IAccountPayment {
   cadence: BillingCadence | null;
 }
 
-// The account owner of an organization is the member who holds the owner role
-// and joined before every other owner of that organization. Better Auth makes
-// the creator the first owner, so this is the single person whose free
-// allowance and paid plan cover the organization. A later co-owner is
-// deliberately excluded: without it, promoting someone would push their own
-// oldest organization out of their free allowance and let them create
-// organizations on another account's payment.
 function soleOwner(owner: typeof member, userId: string) {
   return and(
     eq(owner.role, "owner"),
@@ -59,8 +52,6 @@ export async function organizationsOwned(
   return rows.length;
 }
 
-// The account pays whenever an organization the user owns as its sole owner has
-// a live period.
 export async function accountPayment(
   db: HeptadecDatabase,
   userId: string,
@@ -82,16 +73,6 @@ export async function accountPayment(
   return { paid: true, paidUntil: found.periodEndsAt, cadence: found.cadence };
 }
 
-// A deployment without billing never blocks, and a paid account is unlimited.
-// The unpaid path is the one that needs mutual exclusion: two concurrent
-// "create another organization" submits can both read an under-limit owned count
-// before either insert lands and overshoot the one-free-organization allowance.
-// Exactly one wins the per-user slot, and the winner releases it from
-// afterCreateOrganization. Better Auth runs organizationLimit before its own
-// duplicate-slug check, so a create can claim the slot and then fail without
-// reaching the hook; the TTL is the cleanup for that path, kept just wide
-// enough to outlast a real create (a few D1 round-trips) so a retry is not
-// wrongly told it has hit the organization limit.
 const ORG_CREATE_LEASE_MS = 10_000;
 
 function organizationCreateSlot(userId: string): string {
@@ -152,9 +133,6 @@ export async function releaseOrganizationCreateSlot(
     .where(eq(schedulerLease.name, organizationCreateSlot(userId)));
 }
 
-// Entitlement is a question about the organization's owner, answered in at most
-// two round-trips so the gate that runs on every product request never fans out
-// to sequential per-query hops — each one a network call when the database is D1.
 export async function entitlementFor(
   db: HeptadecDatabase,
   organizationId: string,

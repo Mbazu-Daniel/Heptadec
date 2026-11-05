@@ -152,10 +152,9 @@ it("serializes two concurrent first organizations into one for an unpaid owner",
 });
 
 it("keeps a promoted co-owner's own organization free", async () => {
-  const first = await ownerWithOrganization(); // owner A, org A (older)
-  const second = await ownerWithOrganization(); // owner B, org B (newer)
+  const first = await ownerWithOrganization();
+  const second = await ownerWithOrganization();
 
-  // Promote B to owner of A's organization, joined after A.
   await db.insert(member).values({
     organizationId: first.organizationId,
     userId: second.userId,
@@ -170,8 +169,8 @@ it("keeps a promoted co-owner's own organization free", async () => {
 });
 
 it("does not let another account's payment unlock a co-owner", async () => {
-  const first = await ownerWithOrganization(); // owner A, org A
-  const second = await ownerWithOrganization(); // owner B, org B
+  const first = await ownerWithOrganization();
+  const second = await ownerWithOrganization();
   await db.insert(member).values({
     organizationId: first.organizationId,
     userId: second.userId,
@@ -179,10 +178,8 @@ it("does not let another account's payment unlock a co-owner", async () => {
     createdAt: new Date(Date.now() + DAY_MS),
   });
 
-  // A buys a plan for their own account.
   await boughtPeriod(first.organizationId, 30);
 
-  // B's account is still unpaid and owns only their own organization.
   await switchOrganization(second.cookie, second.organizationId);
   const billing = await request("/api/billing", { headers: { cookie: second.cookie } });
   expect(billing.status).toBe(200);
@@ -192,7 +189,6 @@ it("does not let another account's payment unlock a co-owner", async () => {
     organizationsOwned: 1,
   });
 
-  // B cannot create a second organization on A's payment.
   let refused = false;
   try {
     await authFor(db).api.createOrganization({

@@ -31,14 +31,6 @@ type SqlIntrospector = (
   connection: IStoredConnection,
 ) => Promise<Introspected>;
 
-/**
- * Which dialect reads a structure, not which engine asked for it: MariaDB
- * reports as MySQL and libsql as SQLite, so an engine inherits its reader by
- * naming a dialect in the catalog rather than by being listed here.
- *
- * Keyed by the dialect union, so a dialect added later stops compiling until
- * its reader exists, instead of reaching a throwing default at runtime.
- */
 const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
   postgres: (connection) => introspectPostgres(asRelational(connection)),
   mysql: introspectMysql,
@@ -46,12 +38,6 @@ const SQL_INTROSPECTORS: Record<SqlDialect, SqlIntrospector> = {
   sqlite: introspectSqlite,
 };
 
-// Reads the structure of whichever engine the source points at. Which reader to
-// use follows from the language and the dialect the catalog says the source
-// speaks, so an engine that names SQL and a dialect is read without this file
-// having heard of it. A pipeline source is MongoDB, which is where its
-// documents come from. Redis and Quickwit have no tables to read, so they are
-// refused.
 export async function introspectSchema(
   connection: IStoredConnection,
 ): Promise<Introspected> {
@@ -67,8 +53,6 @@ export async function introspectSchema(
   );
 }
 
-// Every engine below reports its catalogue in the shape assemble() expects,
-// so the diagram the app draws is the same whichever engine it came from.
 interface IColumnRow {
   table_name: string;
   column_name: string;
@@ -83,7 +67,6 @@ interface IIndexRow {
   column_name: string;
 }
 
-// ------------------------------------------------------------------- mysql
 
 interface IKeyRow {
   constraint_name: string;
@@ -151,7 +134,6 @@ async function introspectMysql(
   }
 }
 
-// -------------------------------------------------------------- clickhouse
 
 const CLICKHOUSE_COLUMNS = `
   SELECT table AS table_name,
@@ -177,7 +159,6 @@ async function introspectClickhouse(
     return {
       database: connection.database ?? "",
       schemaName: "default",
-      // MergeTree tables carry no foreign keys, so the diagram shows tables only.
       tables: assemble(rows, []),
       relationships: [],
       introspectedAt: new Date().toISOString(),
@@ -189,7 +170,6 @@ async function introspectClickhouse(
   }
 }
 
-// ------------------------------------------------------- sqlite and libsql
 
 interface ISqliteColumnRow {
   name: string;
@@ -276,12 +256,7 @@ function toSqliteColumn(row: ISqliteColumnRow): ISchemaColumn {
   };
 }
 
-// --------------------------------------------------------------- mongodb
 
-// MongoDB has no catalogue to read: a collection declares nothing until you
-// look at its documents. So the structure is inferred by sampling documents and
-// unioning the fields they happen to carry, and the reported types are what the
-// sample contained rather than a declared schema.
 const MAX_SAMPLED_DOCUMENTS = 200;
 
 const MAX_COLLECTION_FIELDS = 200;
@@ -373,7 +348,6 @@ function flattenDocument(
   }
 }
 
-// ------------------------------------------------------------------ shared
 
 function assemble(
   columnRows: IColumnRow[],

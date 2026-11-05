@@ -9,14 +9,6 @@ import type { IOrganizationScope } from "../../common/session/current-organizati
 import { NotFoundException } from "../../common/exceptions";
 import type { ISavedQueryChange } from "./contracts";
 
-/**
- * Saves a query, and keeps the version before it.
- *
- * A Query Version is a snapshot of the text a saved query had before an edit,
- * so an edit can be undone. Both the saved query route and the dashboard's
- * chart approval edit queries, and the rule that a version is taken belongs
- * here so the two cannot drift apart.
- */
 export async function editSavedQuery(
   organization: IOrganizationScope,
   savedQueryId: string,
@@ -60,10 +52,6 @@ export async function editSavedQuery(
   return row;
 }
 
-/**
- * Saves a query for the first time. A query that has never been edited has no
- * version before it, so there is nothing to snapshot.
- */
 export async function createSavedQuery(
   organization: IOrganizationScope,
   input: { dataSourceId: string; name: string; sql: string },

@@ -25,9 +25,6 @@ import { AuditLog } from "./AuditLog";
 import { Billing } from "./Billing";
 import type { ICrumb } from "./workspace";
 
-/** The workspace's sections, in sidebar order. One row per section says
- * everything there is to know about it: its view word, its URL slug, its
- * label, its icon and the panel it renders. Every new section is one row. */
 export type WorkspaceView =
   | "sources"
   | "dashboards"
@@ -46,8 +43,6 @@ export interface ISectionIconProps {
   className?: string;
 }
 
-/** What the Dashboard hands a section's panel: the active membership, the
- * state a panel shares with the workspace shell, and the navigation verbs. */
 export interface ISectionPanelContext {
   active: IMembership | undefined;
   resetToken: number;

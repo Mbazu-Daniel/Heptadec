@@ -313,10 +313,6 @@ async function storePayment(
   const now = new Date();
   const periodEndsAt = extendedPeriod(latest[0]?.periodEndsAt ?? null, now, cadence);
 
-  // One atomic batch replaces the interactive transaction the D1 driver would
-  // otherwise run as separate BEGIN/…/COMMIT round-trips. A racing duplicate
-  // delivery loses on the unique checkout_id/charge_id index and rolls back, so
-  // the payment is recorded exactly once.
   await db.batch([
     db.insert(billingPayment).values({
       organizationId,

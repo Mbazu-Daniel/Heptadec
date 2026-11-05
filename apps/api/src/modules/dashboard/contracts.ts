@@ -19,9 +19,6 @@ export interface IDashboardSource {
   dataSourceId: string;
   name: string;
   kind: DataSourceKind;
-  /** Whether the app's tooling covers this source, which is what a dashboard
-   * needs to be described from. Said here by the server rather than worked out
-   * by the client from the kind, which is how the offer and the gate drift. */
   tooling: boolean;
 }
 

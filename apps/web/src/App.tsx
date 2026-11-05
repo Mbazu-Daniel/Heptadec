@@ -240,9 +240,6 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
     void reload();
   }, [reload]);
 
-  // A session that carries organizations but no active one cannot answer the
-  // member routes, so the first membership is taken as the active one. The
-  // routing already treats that membership as the current organization.
   useEffect(() => {
     const first = orgs?.organizations[0];
     if (orgs !== null && orgs.activeOrganizationId === null && first !== undefined) {

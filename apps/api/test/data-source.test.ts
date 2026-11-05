@@ -905,7 +905,6 @@ it("renames a source and leaves every other column and the secret alone", async 
   expect(row.database).toBe("warehouse");
   expect(row.username).toBe("readonly_svc");
   expect(row.readOnly).toBe(false);
-  // The secret is never sent back, so it can only have been kept.
   expect(await decryptSecret(row.secret!)).toBe("s3cret-password");
 });
 
@@ -1007,7 +1006,6 @@ it("keeps a TLS source's stored certificates when they are not sent back", async
   expect(res.status).toBe(200);
 
   const row = await rowOf(organizationId, id);
-  // Moving off TLS drops them; staying on TLS keeps them.
   expect(row.connectionMode).toBe("tls");
   expect(await decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
   expect(await decryptSecret(row.clientCertificate!)).toBe(
@@ -1034,8 +1032,6 @@ it("keeps a stored certificate when a source moves off TLS", async () => {
   const row = await rowOf(organizationId, id);
   expect(row.connectionMode).toBe("tcp");
   expect(row.host).toBe("db.internal");
-  // A certificate is never shown back, so it is kept rather than destroyed
-  // silently: moving back to TLS works without asking for it again.
   expect(await decryptSecret(row.caCertificate!)).toBe("CA-CERTIFICATE-MATERIAL");
 });
 

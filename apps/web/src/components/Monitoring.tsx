@@ -72,9 +72,6 @@ function when(iso: string | null): string {
   return iso === null ? "never" : new Date(iso).toLocaleString();
 }
 
-/** One state, read with one instrument: a dot for the mood, words for the why.
-    Green holds for healthy attention, amber for problems that need a move,
-    muted for information that only became interesting when asked for. */
 function StatusPill({
   tone,
   children,
@@ -101,8 +98,6 @@ function StatusPill({
   );
 }
 
-/** The right-edge cluster every card in the expanded row shares: Edit for the
-    changes it owns, delete for the ones it regrets. One shape, learned once. */
 
 
 function freshness(seconds: number): string {
@@ -112,12 +107,6 @@ function freshness(seconds: number): string {
 }
 
 
-/**
- * Schedules and alerts in one place, grouped by the saved query they both hang
- * off. A schedule is the clock on a query and an alert is the reaction on the
- * same query, so showing them as two tables made one relationship look like two
- * unrelated features — and hid an alert whose query nothing ever runs.
- */
 export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
   const [jobs, setJobs] = useState<IScheduledJob[] | null>(null);
   const [queries, setQueries] = useState<
@@ -130,14 +119,11 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
   const [channelCount, setChannelCount] = useState<number | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // What is being added or edited. An edit carries the row it is editing, so
-  // the dialog opens prefilled and writes with PUT instead of creating.
   const [adding, setAdding] = useState<
     | { kind: "schedule"; job: IScheduledJob | null; queryId: string }
     | { kind: "alert"; rule: IAlertRule | null; queryId: string }
     | null
   >(null);
-  // Which rows are opened. The list stays collapsed until a row is clicked.
   const [expanded, setExpanded] = useState<readonly string[]>([]);
 
   const reload = useCallback(async () => {
@@ -222,7 +208,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
     .filter((entry) => entry.schedules.length > 0 || entry.rules.length > 0)
     .sort(
       (a, b) =>
-        // Queries on a timer first; the ones still waiting for a clock last.
         Number(b.schedules.length > 0) - Number(a.schedules.length > 0),
     );
 
@@ -233,7 +218,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
       ? null
       : (queries.find((query) => query.id === adding.queryId) ?? null);
 
-  /** The deliveries made against one query's alerts, newest first. */
   function deliveriesFor(rules: readonly IAlertRule[]): IAlertDelivery[] {
     if (log === null) {
       return [];
@@ -280,9 +264,6 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
                     : "Pick a saved query and put it on a timer."
                 }
                 action={
-                  // A query is written on the source it reads, so an empty
-                  // watcher with nothing to watch sends the reader there
-                  // rather than leaving the instruction with no way to follow it.
                   queries.length === 0 ? (
                     <Button onClick={onOpenSources} className={SMALL_BUTTON_CLASSNAME}>
                       Go to data sources
@@ -615,17 +596,10 @@ function ScheduleDialog({
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
-  /** Set when editing an existing schedule; null when creating one. */
   job: IScheduledJob | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  // A schedule runs one saved query, and the row this was opened from already
-  // said which. Writing a query is not this dialog's job — a Saved Query belongs
-  // to the source it reads and is written there — so this turns one query into
-  // a timer and nothing else.
-  // Editing opens on the schedule's own words: parseWhen reverses buildCron,
-  // and an unreadable cron falls back to the default form rather than a guess.
   const editing = job !== null;
   const [name, setName] = useState(job?.name ?? "");
   const [when, setWhen] = useState<IWhen>(
@@ -644,9 +618,6 @@ function ScheduleDialog({
     setBusy(true);
     setProblem(null);
     try {
-      // savedQueryId is absent on purpose when editing: the query a schedule
-      // runs is the schedule's identity, so moving it means creating a new
-      // schedule rather than rewriting history.
       const input = {
         name,
         cron,
@@ -839,14 +810,10 @@ function AlertDialog({
   onSaved,
 }: {
   query: ISavedQueryListResponse["savedQueries"][number];
-  /** Set when editing an existing rule; null when creating one. */
   rule: IAlertRule | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  // An alert watches one saved query's column, and the row it was opened from
-  // already said which — so it is named here rather than chosen from a list of
-  // one.
   const editing = rule !== null;
   const [name, setName] = useState(rule?.name ?? "");
   const [column, setColumn] = useState(rule?.column ?? "");

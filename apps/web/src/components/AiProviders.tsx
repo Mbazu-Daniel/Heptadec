@@ -105,10 +105,6 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  /**
-   * Lists a provider's models before it is saved, so the form can offer a
-   * dropdown instead of asking for a model id from memory.
-   */
   async function loadDraftModels(
     targetProvider: string,
     targetBaseUrl: string,

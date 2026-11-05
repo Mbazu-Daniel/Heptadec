@@ -132,7 +132,6 @@ function GitHubStars({ label }: { label?: string }) {
         }
       })
       .catch(() => undefined);
-    // Timeout after 5 seconds to avoid blocking the page if GitHub API is slow
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     return () => {
       clearTimeout(timeoutId);

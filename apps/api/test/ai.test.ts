@@ -743,7 +743,6 @@ it("names the source that answered when several are in scope", async () => {
   expect(body!.dataSourceId).toBe(sourceId);
   expect(body!.dataSourceName.length).toBeGreaterThan(0);
 
-  // The chat row remembers which source the answer came from.
   const rows = await db
     .select()
     .from(aiChat)
@@ -827,10 +826,8 @@ it("answers a redis question with a read-only command", async () => {
     expect(body!.dataSourceName).toBe("Cache");
     expect(body!.language).toBe("command");
     expect(body!.command).toBe("HGETALL event:1");
-    // A command is not SQL, and must not be offered as such.
     expect(body!.sql).toBeNull();
 
-    // The command it answered with is one the server will actually run.
     const ran = await request(`/api/data-sources/${cache.id}/query`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -898,7 +895,6 @@ it("answers a quickwit question with a search over one index", async () => {
     }
     expect(body).not.toBeNull();
     expect(body!.language).toBe("search");
-    // A search is neither SQL nor a Redis command.
     expect(body!.sql).toBeNull();
     expect(body!.command).toBeNull();
     expect(body!.search).toEqual({

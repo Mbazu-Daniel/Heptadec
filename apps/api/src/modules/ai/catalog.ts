@@ -35,9 +35,7 @@ export interface IAiProviderSpec {
   baseUrl: string;
   needsBaseUrl: boolean;
   exampleBaseUrl?: string;
-  /** The wire protocol this provider speaks. */
   protocol: AiProtocol | "anthropic";
-  /** Static model ids sourced from Mastra, so the form can offer them without a key. */
   models?: readonly string[];
 }
 

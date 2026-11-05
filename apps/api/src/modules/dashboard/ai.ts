@@ -78,11 +78,6 @@ export interface IChartPlan {
   skipped: string[];
 }
 
-/**
- * Asks the provider for a plan and places every chart it returns, so the route
- * only has to report what happened. A chart that cannot be built is skipped
- * with the reason; one bad chart never abandons the rest.
- */
 export async function planCharts(
   turn: ITurn,
   provider: AiProviderRow,
@@ -141,7 +136,6 @@ export async function planCharts(
   }
 }
 
-/** The proposal the provider read from a question, or null if it gave none. */
 export async function proposeChanges(
   turn: ITurn,
   provider: AiProviderRow,
@@ -171,10 +165,6 @@ export async function proposeChanges(
   }
 }
 
-/**
- * Applies approved actions in order. Each action succeeds or fails on its own:
- * a refusal is reported against its index rather than aborting the batch.
- */
 export async function applyChanges(
   dashboardId: string,
   requested: unknown[],
@@ -217,7 +207,6 @@ export async function applyChanges(
   return applied;
 }
 
-/** The sources on this dashboard that AI can describe in full. */
 export async function analysisSources(
   dashboardId: string,
   organization: IOrganizationScope,

@@ -21,11 +21,6 @@ type TestState =
   | { status: "ok"; total: number }
   | { status: "failed"; message: string };
 
-/**
- * The stored values as the form expects them. A secret is deliberately absent:
- * it is never sent back to the browser, so its field starts blank and a blank
- * one keeps the value already sealed on the source.
- */
 function prefilledValues(source: IDataSource): Record<string, string> {
   return {
     host: source.host ?? "",
@@ -40,10 +35,6 @@ function prefilledValues(source: IDataSource): Record<string, string> {
   };
 }
 
-/**
- * Which secrets the source already holds, by label. The values themselves are
- * never sent to the browser, so the form can only say that one is there.
- */
 function storedSecrets(source: IDataSource): readonly string[] {
   const held: readonly [string, boolean][] = [
     ["Password", source.hasSecret],
@@ -66,8 +57,6 @@ export function SourceSettingsDialog({
 }) {
   const spec = ENGINE_SPECS[source.kind];
   const [name, setName] = useState(source.name);
-  // The mode is how the source already connects; settings can only change
-  // the fields the mode shows.
   const mode = source.connectionMode;
   const [values, setValues] = useState<Record<string, string>>(() =>
     prefilledValues(source),

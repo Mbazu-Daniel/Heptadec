@@ -2,16 +2,8 @@ import { BadGatewayException } from "../../common/exceptions";
 import { endpointAddress } from "./connection";
 import type { IStoredConnection } from "./connection";
 
-/** How long Quickwit has to answer before the request is given up on. */
 export const QUICKWIT_TIMEOUT_MS = 30_000;
 
-/**
- * One call to a Quickwit node, and the only place its wire format is known.
- *
- * Two callers reach Quickwit — listing what a source holds, and running a search
- * over one of its indexes — so this is a seam rather than a helper: the paths,
- * the bearer token and the shape of a hit are settled here and nowhere else.
- */
 export async function quickwitFetch(
   connection: IStoredConnection,
   path: string,
@@ -37,7 +29,6 @@ export async function quickwitFetch(
   return (await response.json()) as unknown;
 }
 
-/** The indexes a source holds, by id. */
 export async function quickwitIndexes(
   connection: IStoredConnection,
 ): Promise<string[]> {
@@ -48,11 +39,6 @@ export async function quickwitIndexes(
   return indexes.map((index) => index.index_config.index_id);
 }
 
-/**
- * The documents a search matched, as the rows of a Grid. Quickwit answers with
- * at most `limit` hits and says nothing about how many exist beyond it, so
- * hitting the limit is the only evidence available that there were more.
- */
 export async function quickwitSearch(
   connection: IStoredConnection,
   index: string,

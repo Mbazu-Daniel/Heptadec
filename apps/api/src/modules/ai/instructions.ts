@@ -154,11 +154,6 @@ Read-only. One SELECT per chart, and nothing but a SELECT: never insert, update,
 delete, alter, drop, truncate, or grant, and never call a function that writes.
 `.trim();
 
-/**
- * Choosing which of several sources answers a question. Kept separate from the
- * query instructions so the model only picks a source here and never writes a
- * statement.
- */
 export const routeInstructions = `
 ## Role
 You choose which data source answers a question. You do not write any query.
@@ -176,10 +171,6 @@ markdown fence, no punctuation.
 ## Sources
 `;
 
-/**
- * Authoring one read-only Redis command. Redis has no tables, so what the model
- * gets is the key space that was actually observed.
- */
 export const redisInstructions = `
 ## Role
 You write one read-only Redis command from an observed key space.
@@ -203,10 +194,6 @@ ${REDIS_COMMANDS_FOR_THE_MODEL.join(", ")}
 ## Key space
 `;
 
-/**
- * Authoring one Quickwit search. Quickwit has no tables and no SQL, so the model
- * is given the indexes and the fields each one actually holds.
- */
 export const quickwitInstructions = `
 ## Role
 You write one Quickwit search query against one index.

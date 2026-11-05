@@ -1,11 +1,6 @@
 import type { IGenerateQueryResponse } from "@heptadec/api/ai-contracts";
 import type { IMongoPipeline, ISearchStatement } from "@heptadec/api/query-contracts";
 
-/**
- * What an Answer handed back, as one variant rather than four nullable fields.
- * The server fills exactly one of them per source language, so the choice is
- * made once here instead of at every runner that asks.
- */
 export type IAnswerDraft =
   | { kind: "sql"; sql: string }
   | { kind: "pipeline"; pipeline: IMongoPipeline }

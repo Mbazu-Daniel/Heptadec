@@ -22,10 +22,6 @@ const {
   widget,
 } = schema;
 
-// D1 has no interactive transaction: the only atomic write this app gets from
-// either driver is one batch, whose statements run in order and all commit or
-// none do. A cascade therefore lists its deletes in the order the foreign keys
-// want, and the rules it would have read mid-cascade arrive as subqueries.
 export async function deleteOrganizationRows(
   scope: IOrganizationScope,
 ): Promise<void> {

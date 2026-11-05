@@ -72,11 +72,7 @@ export function DataSources({
   const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<DataSourceKind>("postgres");
   const [name, setName] = useState("");
-  // There is no mode choice in the UI: an engine always connects its default
-  // way, so the mode is derived rather than stored.
   const mode = defaultConnectionMode(kind);
-  // The URL import starts closed, like a plain field form that can be filled
-  // by a paste once the importer is switched on.
   const [importOpen, setImportOpen] = useState(false);
   const [connectionUrl, setConnectionUrl] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -85,7 +81,6 @@ export function DataSources({
   const [formError, setFormError] = useState<string | null>(null);
   const [testState, setTestState] = useState<TestState>({ status: "idle" });
 
-  // An open ellipsis menu points at the source being changed or removed.
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<IDataSource | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -125,14 +120,13 @@ export function DataSources({
 
   const opened = sources.find((source) => source.id === openedId) ?? null;
 
-  // A pasted URL is an import: what it parses replaces the fields wholesale.
   useEffect(() => {
     if (connectionUrl.trim() === "") {
       return;
     }
     const parsed = parseConnectionUrl(connectionUrl, kind);
     if (Object.keys(parsed).length === 0) {
-      return; // Not a readable URL yet; leave the fields until it is.
+      return;
     }
     setValues(parsed);
   }, [connectionUrl, kind]);
@@ -145,8 +139,6 @@ export function DataSources({
     setTestState({ status: "idle" });
   }
 
-  // Switching the import off discards the paste with it: with the URL box
-  // gone there is nowhere for its truth to live, so the fields take over.
   function toggleUrlImport(): void {
     if (importOpen) {
       setConnectionUrl("");
@@ -154,8 +146,6 @@ export function DataSources({
     setImportOpen(!importOpen);
   }
 
-  // The pasted URL names its own engine — the scheme is the same word the
-  // server accepts a pasted URL by — so importing has no engine to pick.
   function setUrl(next: string): void {
     setConnectionUrl(next);
     const inferred = kindFromConnectionUrl(next);
@@ -253,9 +243,6 @@ export function DataSources({
   }
 
   if (opened !== null) {
-    // A source whose statements are SQL or an aggregation pipeline reports a
-    // structure the app can read and diagram. A command or search source has
-    // nothing to introspect, so it keeps the plain detail view.
     if (opened.queryLanguage !== "sql" && opened.queryLanguage !== "pipeline") {
       return (
         <section className={VIEW_CLASSNAME}>
@@ -432,8 +419,6 @@ export function DataSources({
               showUrlImport={importOpen}
               onUrlChange={setUrl}
               onChange={(field, next) => {
-                // A hand edit takes over from the paste: the typed fields are
-                // what gets sent, so the URL stops being the source of truth.
                 setConnectionUrl("");
                 setValues((current) => ({ ...current, [field]: next }));
               }}

@@ -29,23 +29,23 @@ async function regionCounts(): Promise<Array<{ label: string; value: number }>> 
   }));
 }
 
-async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
+async function ownerWithOrg(): Promise<{ cookie: string; organizationId: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Charts Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  return { cookie, orgId: org.id };
+  return { cookie, organizationId: org.id };
 }
 
 async function ownerWithSource(): Promise<{
   cookie: string;
-  orgId: string;
+  organizationId: string;
   sourceId: string;
 }> {
-  const { cookie, orgId } = await ownerWithOrg();
+  const { cookie, organizationId } = await ownerWithOrg();
 
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -64,16 +64,17 @@ async function ownerWithSource(): Promise<{
   const rows = await db
     .select()
     .from(dataSource)
-    .where(eq(dataSource.organizationId, orgId));
-  return { cookie, orgId, sourceId: rows[0]!.id };
+    .where(eq(dataSource.organizationId, organizationId));
+  return { cookie, organizationId, sourceId: rows[0]!.id };
 }
 
 async function createDashboard(
   cookie: string,
+  organizationId: string,
   name: string,
   dataSourceIds: string[],
 ): Promise<string> {
-  const res = await request("/api/dashboards", {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, dataSourceIds }),
@@ -83,8 +84,8 @@ async function createDashboard(
   return body.dashboard.id;
 }
 
-async function saveRegionCounts(cookie: string, sourceId: string): Promise<string> {
-  const res = await request(`/api/data-sources/${sourceId}/saved-queries`, {
+async function saveRegionCounts(cookie: string, organizationId: string, sourceId: string): Promise<string> {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
@@ -96,10 +97,11 @@ async function saveRegionCounts(cookie: string, sourceId: string): Promise<strin
 
 async function chartIt(
   cookie: string,
+  organizationId: string,
   dashboardId: string,
   fields: Record<string, unknown>,
 ): Promise<Response> {
-  return request(`/api/dashboards/${dashboardId}/widgets`, {
+  return request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(fields),
@@ -107,11 +109,11 @@ async function chartIt(
 }
 
 it("persists a dashboard and the chart placed on it", async () => {
-  const { cookie, orgId, sourceId } = await ownerWithSource();
-  const dashboardId = await createDashboard(cookie, "Ops overview", [sourceId]);
-  const savedQueryId = await saveRegionCounts(cookie, sourceId);
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const dashboardId = await createDashboard(cookie, organizationId, "Ops overview", [sourceId]);
+  const savedQueryId = await saveRegionCounts(cookie, organizationId, sourceId);
 
-  const res = await chartIt(cookie, dashboardId, {
+  const res = await chartIt(cookie, organizationId, dashboardId, {
     savedQueryId,
     chartType: "bar",
     title: "Events per region",
@@ -123,7 +125,7 @@ it("persists a dashboard and the chart placed on it", async () => {
   const dashboards = await db
     .select()
     .from(dashboard)
-    .where(eq(dashboard.organizationId, orgId));
+    .where(eq(dashboard.organizationId, organizationId));
   expect(dashboards).toHaveLength(1);
   expect(dashboards[0]!.name).toBe("Ops overview");
 
@@ -144,11 +146,11 @@ it("persists a dashboard and the chart placed on it", async () => {
 });
 
 it("plots a chart from the cached result of its last run", async () => {
-  const { cookie, sourceId } = await ownerWithSource();
-  const dashboardId = await createDashboard(cookie, "Ops overview", [sourceId]);
-  const savedQueryId = await saveRegionCounts(cookie, sourceId);
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const dashboardId = await createDashboard(cookie, organizationId, "Ops overview", [sourceId]);
+  const savedQueryId = await saveRegionCounts(cookie, organizationId, sourceId);
 
-  const created = await chartIt(cookie, dashboardId, {
+  const created = await chartIt(cookie, organizationId, dashboardId, {
     savedQueryId,
     chartType: "bar",
     title: "Events per region",
@@ -156,7 +158,7 @@ it("plots a chart from the cached result of its last run", async () => {
     valueColumn: "events",
   });
   const { widget: placed } = (await created.json()) as { widget: { id: string } };
-  const cold = await request(`/api/widgets/${placed.id}/data`, {
+  const cold = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(cold.status).toBe(200);
@@ -167,7 +169,7 @@ it("plots a chart from the cached result of its last run", async () => {
   };
   expect(coldBody.points).toEqual([]);
   expect(coldBody.ranAt).toBeNull();
-  const refreshed = await request(`/api/widgets/${placed.id}/refresh`, {
+  const refreshed = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/refresh`, {
     method: "POST",
     headers: { cookie },
   });
@@ -181,7 +183,7 @@ it("plots a chart from the cached result of its last run", async () => {
   const grid = JSON.parse(cache[0]!.payload) as { rowCount: number };
   expect(grid.rowCount).toBeGreaterThan(0);
 
-  const res = await request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(res.status).toBe(200);
@@ -201,11 +203,11 @@ it("plots a chart from the cached result of its last run", async () => {
 });
 
 it("refuses to plot a column that does not hold numbers", async () => {
-  const { cookie, sourceId } = await ownerWithSource();
-  const dashboardId = await createDashboard(cookie, "Ops overview", [sourceId]);
-  const savedQueryId = await saveRegionCounts(cookie, sourceId);
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const dashboardId = await createDashboard(cookie, organizationId, "Ops overview", [sourceId]);
+  const savedQueryId = await saveRegionCounts(cookie, organizationId, sourceId);
 
-  const created = await chartIt(cookie, dashboardId, {
+  const created = await chartIt(cookie, organizationId, dashboardId, {
     savedQueryId,
     chartType: "bar",
     title: "Nonsense",
@@ -213,23 +215,23 @@ it("refuses to plot a column that does not hold numbers", async () => {
     valueColumn: "region",
   });
   const { widget: placed } = (await created.json()) as { widget: { id: string } };
-  const refreshed = await request(`/api/widgets/${placed.id}/refresh`, {
+  const refreshed = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/refresh`, {
     method: "POST",
     headers: { cookie },
   });
   expect(refreshed.status).toBe(400);
 
-  const res = await request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/data`, {
     headers: { cookie },
   });
   expect(res.status).toBe(400);
 });
 
 it("404s a chart that belongs to another organization", async () => {
-  const { cookie, sourceId } = await ownerWithSource();
-  const dashboardId = await createDashboard(cookie, "Ops overview", [sourceId]);
-  const savedQueryId = await saveRegionCounts(cookie, sourceId);
-  const created = await chartIt(cookie, dashboardId, {
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const dashboardId = await createDashboard(cookie, organizationId, "Ops overview", [sourceId]);
+  const savedQueryId = await saveRegionCounts(cookie, organizationId, sourceId);
+  const created = await chartIt(cookie, organizationId, dashboardId, {
     savedQueryId,
     chartType: "pie",
     title: "Events per region",
@@ -245,17 +247,17 @@ it("404s a chart that belongs to another organization", async () => {
   });
   expect(strangerOrg.id).not.toBe("");
 
-  const res = await request(`/api/widgets/${placed.id}/data`, {
+  const res = await request(`/api/v1/organization/${organizationId}/widgets/${placed.id}/data`, {
     headers: { cookie: stranger.cookie },
   });
   expect(res.status).toBe(404);
 });
 
 it("deletes the charts that read a saved query when it goes", async () => {
-  const { cookie, sourceId } = await ownerWithSource();
-  const dashboardId = await createDashboard(cookie, "Ops overview", [sourceId]);
-  const savedQueryId = await saveRegionCounts(cookie, sourceId);
-  await chartIt(cookie, dashboardId, {
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const dashboardId = await createDashboard(cookie, organizationId, "Ops overview", [sourceId]);
+  const savedQueryId = await saveRegionCounts(cookie, organizationId, sourceId);
+  await chartIt(cookie, organizationId, dashboardId, {
     savedQueryId,
     chartType: "bar",
     title: "Events per region",
@@ -263,7 +265,7 @@ it("deletes the charts that read a saved query when it goes", async () => {
     valueColumn: "events",
   });
 
-  const res = await request(`/api/saved-queries/${savedQueryId}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });

@@ -44,15 +44,16 @@ async function startServer(): Promise<string> {
 
 async function ownerWithSource(readOnly: boolean): Promise<{
   cookie: string;
+  organizationId: string;
   dataSourceId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  await authFor(db).api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "MCP Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await request("/api/data-sources", {
+  const created = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -68,11 +69,11 @@ async function ownerWithSource(readOnly: boolean): Promise<{
   });
   expect(created.status).toBe(200);
   const body = (await created.json()) as { dataSource: { id: string } };
-  return { cookie, dataSourceId: body.dataSource.id };
+  return { cookie, organizationId: org.id, dataSourceId: body.dataSource.id };
 }
 
-async function issueToken(cookie: string, name = "laptop"): Promise<string> {
-  const res = await request("/api/mcp-tokens", {
+async function issueToken(cookie: string, organizationId: string, name = "laptop"): Promise<string> {
+  const res = await request(`/api/v1/organization/${organizationId}/mcp-tokens`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, capabilities: [...MCP_TOOLS] }),
@@ -121,8 +122,8 @@ async function rpc(token: string | null, method: string): Promise<Response> {
 }
 
 it("lists tools and runs a query with a real MCP client", async () => {
-  const { cookie, dataSourceId } = await ownerWithSource(true);
-  const client = await connect(await issueToken(cookie));
+  const { cookie, organizationId, dataSourceId } = await ownerWithSource(true);
+  const client = await connect(await issueToken(cookie, organizationId));
 
   const tools = await client.listTools();
   expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
@@ -171,8 +172,8 @@ it("lists tools and runs a query with a real MCP client", async () => {
 });
 
 it("refuses to query a writable source", async () => {
-  const { cookie, dataSourceId } = await ownerWithSource(false);
-  const client = await connect(await issueToken(cookie));
+  const { cookie, organizationId, dataSourceId } = await ownerWithSource(false);
+  const client = await connect(await issueToken(cookie, organizationId));
 
   const ran = await client.callTool({
     name: "run_query",
@@ -187,7 +188,7 @@ it("refuses to query a writable source", async () => {
 it("keeps one organization's data out of another's reach", async () => {
   const mine = await ownerWithSource(true);
   const theirs = await ownerWithSource(true);
-  const client = await connect(await issueToken(mine.cookie));
+  const client = await connect(await issueToken(mine.cookie, mine.organizationId));
 
   const peeked = await client.callTool({
     name: "describe_data_source",
@@ -200,8 +201,8 @@ it("keeps one organization's data out of another's reach", async () => {
 });
 
 it("refuses writes at the database, so read-only holds even when SQL asks", async () => {
-  const { cookie, dataSourceId } = await ownerWithSource(true);
-  const client = await connect(await issueToken(cookie));
+  const { cookie, organizationId, dataSourceId } = await ownerWithSource(true);
+  const client = await connect(await issueToken(cookie, organizationId));
 
   const wrote = await client.callTool({
     name: "run_query",
@@ -217,17 +218,17 @@ it("refuses writes at the database, so read-only holds even when SQL asks", asyn
 });
 
 it("stops honouring a revoked token", async () => {
-  const { cookie } = await ownerWithSource(true);
-  const token = await issueToken(cookie);
+  const { cookie, organizationId } = await ownerWithSource(true);
+  const token = await issueToken(cookie, organizationId);
   const client = await connect(token);
   expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   await client.close();
 
-  const listed = await request("/api/mcp-tokens", { headers: { cookie } });
+  const listed = await request(`/api/v1/organization/${organizationId}/mcp-tokens`, { headers: { cookie } });
   const rows = (await listed.json()) as { tokens: Array<{ id: string }> };
   expect(rows.tokens).toHaveLength(1);
 
-  const revoked = await request(`/api/mcp-tokens/${rows.tokens[0]!.id}`, {
+  const revoked = await request(`/api/v1/organization/${organizationId}/mcp-tokens/${rows.tokens[0]!.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -243,18 +244,18 @@ it("refuses a request with no token at all", async () => {
 });
 
 it("never hands the raw token back after creation", async () => {
-  const { cookie } = await ownerWithSource(true);
-  const token = await issueToken(cookie);
+  const { cookie, organizationId } = await ownerWithSource(true);
+  const token = await issueToken(cookie, organizationId);
 
-  const res = await request("/api/mcp-tokens", { headers: { cookie } });
+  const res = await request(`/api/v1/organization/${organizationId}/mcp-tokens`, { headers: { cookie } });
   const body = await res.text();
   expect(body).not.toContain(token);
   expect(body).not.toContain("hdc_");
 });
 
 it("stops a token that asks too often", async () => {
-  const { cookie } = await ownerWithSource(true);
-  const token = await issueToken(cookie);
+  const { cookie, organizationId } = await ownerWithSource(true);
+  const token = await issueToken(cookie, organizationId);
 
   const codes: number[] = [];
   for (let i = 0; i < 200; i += 1) {

@@ -25,7 +25,7 @@ async function ownerWithOrganization(): Promise<{
 it("stores an invitation that an owner sends through the api", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await request("/api/organization/invitations", {
+  const res = await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "invitee@example.com", role: "viewer" }),
@@ -51,13 +51,13 @@ it("refuses an invitation from a member who is not the owner", async () => {
   await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await request("/api/organization/invitations", {
+  const res = await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "sneaky@example.com", role: "editor" }),
@@ -74,7 +74,7 @@ it("refuses an invitation from a member who is not the owner", async () => {
 it("rejects an invitation to an address that is not an email", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const res = await request("/api/organization/invitations", {
+  const res = await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: "not-an-address", role: "viewer" }),
@@ -90,7 +90,7 @@ it("rejects an invitation to an address that is not an email", async () => {
 it("reads an invitation back for someone who is not signed in", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -112,7 +112,7 @@ it("reads an invitation back for someone who is not signed in", async () => {
 it("creates the membership and flips the invitation when accepted", async () => {
   const invited = uniqueEmail();
   const { cookie, organizationId } = await ownerWithOrganization();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -141,9 +141,9 @@ it("creates the membership and flips the invitation when accepted", async () => 
 });
 
 it("refuses an acceptance from someone the invitation was not sent to", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -173,7 +173,7 @@ it("will not preview an invitation that does not exist", async () => {
 it("refuses an expired invitation and leaves the membership untouched", async () => {
   const invited = uniqueEmail();
   const { cookie, organizationId } = await ownerWithOrganization();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -210,7 +210,7 @@ it("refuses an expired invitation and leaves the membership untouched", async ()
 it("refuses to cancel another organization's invitation and leaves it pending", async () => {
   const invited = uniqueEmail();
   const mine = await ownerWithOrganization();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${mine.organizationId}/invitations`, {
     method: "POST",
     headers: { cookie: mine.cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -218,7 +218,7 @@ it("refuses to cancel another organization's invitation and leaves it pending", 
 
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
   const other = await ownerWithOrganization();
-  const res = await request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/v1/organization/${other.organizationId}/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie: other.cookie },
   });

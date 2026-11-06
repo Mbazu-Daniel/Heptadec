@@ -7,14 +7,14 @@ import type { IExplainNode } from "../src/modules/query/contracts";
 
 const { dataSource } = schema;
 
-async function ownerWithSource(): Promise<{ cookie: string; id: string }> {
+async function ownerWithSource(): Promise<{ cookie: string; organizationId: string; id: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Explain Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -34,11 +34,11 @@ async function ownerWithSource(): Promise<{ cookie: string; id: string }> {
     .select()
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
-  return { cookie, id: rows[0]!.id };
+  return { cookie, organizationId: org.id, id: rows[0]!.id };
 }
 
-function explain(cookie: string, id: string, sql: string): Promise<Response> | Response {
-  return request(`/api/data-sources/${id}/explain`, {
+function explain(cookie: string, organizationId: string, id: string, sql: string): Promise<Response> | Response {
+  return request(`/api/v1/organization/${organizationId}/data-sources/${id}/explain`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -59,9 +59,9 @@ function flatten(node: IExplainNode): IExplainNode[] {
 }
 
 it("explains a real statement as a plan tree", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
-  const res = await explain(cookie, id, "SELECT id, event_name FROM events ORDER BY id");
+  const res = await explain(cookie, organizationId, id, "SELECT id, event_name FROM events ORDER BY id");
   expect(res.status).toBe(200);
 
   const body = (await res.json()) as { plan: IExplainNode };
@@ -77,10 +77,11 @@ it("explains a real statement as a plan tree", async () => {
 
 it("explains a write without running it", async () => {
   const before = await eventCount();
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
   const res = await explain(
     cookie,
+    organizationId,
     id,
     "INSERT INTO events(id,event_name,region) VALUES ('zzz','Injected','Nowhere')",
   );
@@ -89,10 +90,11 @@ it("explains a write without running it", async () => {
 });
 
 it("refuses a statement that is not one statement", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
   const res = await explain(
     cookie,
+    organizationId,
     id,
     "SELECT 1 AS a; INSERT INTO events(id,event_name,region) VALUES ('zzy','Sneaky','Nowhere')",
   );
@@ -108,6 +110,6 @@ it("404s an explanation for a source in another organization", async () => {
   });
   expect(org.id).not.toBe("");
 
-  const res = await explain(stranger.cookie, id, "SELECT 1 AS a");
+  const res = await explain(stranger.cookie, org.id, id, "SELECT 1 AS a");
   expect(res.status).toBe(404);
 });

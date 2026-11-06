@@ -10,17 +10,17 @@ const { dashboardDataSource, savedQuery, widget } = schema;
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
 
-async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
+async function ownerWithOrg(): Promise<{ cookie: string; organizationId: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Generated Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  return { cookie, orgId: org.id };
+  return { cookie, organizationId: org.id };
 }
 
-async function createSource(cookie: string, name: string): Promise<string> {
-  const res = await request("/api/data-sources", {
+async function createSource(cookie: string, organizationId: string, name: string): Promise<string> {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -40,10 +40,11 @@ async function createSource(cookie: string, name: string): Promise<string> {
 
 async function saveQuery(
   cookie: string,
+  organizationId: string,
   sourceId: string,
   sql: string,
 ): Promise<string> {
-  const res = await request(`/api/data-sources/${sourceId}/saved-queries`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Query", sql }),
@@ -54,10 +55,11 @@ async function saveQuery(
 
 async function createDashboard(
   cookie: string,
+  organizationId: string,
   name: string,
   dataSourceIds: string[],
 ): Promise<string> {
-  const res = await request("/api/dashboards", {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name, dataSourceIds }),
@@ -68,10 +70,11 @@ async function createDashboard(
 
 async function chartIt(
   cookie: string,
+  organizationId: string,
   dashboardId: string,
   savedQueryId: string,
 ): Promise<string> {
-  const res = await request(`/api/dashboards/${dashboardId}/widgets`, {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -88,9 +91,10 @@ async function chartIt(
 
 async function registerProvider(
   cookie: string,
+  organizationId: string,
   baseUrl: string,
 ): Promise<void> {
-  const res = await request("/api/ai/providers", {
+  const res = await request(`/api/v1/organization/${organizationId}/ai/providers`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -107,37 +111,59 @@ async function registerProvider(
 async function startProvider(
   text: string,
 ): Promise<{ baseUrl: string; close: () => Promise<void> }> {
-  const server: Server = createServer((_request, response) => {
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
+  const server: Server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk: Buffer) => {
+      body += chunk.toString("utf8");
     });
-    const size = 64;
-    const parts: string[] = [];
-    for (let i = 0; i < text.length; i += size) {
-      parts.push(text.slice(i, i + size));
-    }
-    let index = 0;
-    const push = (): void => {
-      if (index >= parts.length) {
-        response.write("data: [DONE]\n\n");
-        response.end();
+    request.on("end", () => {
+      if (JSON.parse(body || "{}").stream !== true) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            id: "1",
+            object: "chat.completion",
+            created: 1,
+            model: "test",
+            choices: [
+              { index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+        );
         return;
       }
-      const content = parts[index]!;
-      index += 1;
-      response.write(
-        `data: ${JSON.stringify({
-          id: "1",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "test",
-          choices: [{ index: 0, delta: { content }, finish_reason: null }],
-        })}\n\n`,
-      );
-      setImmediate(push);
-    };
-    push();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+      });
+      const size = 64;
+      const parts: string[] = [];
+      for (let i = 0; i < text.length; i += size) {
+        parts.push(text.slice(i, i + size));
+      }
+      let index = 0;
+      const push = (): void => {
+        if (index >= parts.length) {
+          response.write("data: [DONE]\n\n");
+          response.end();
+          return;
+        }
+        const content = parts[index]!;
+        index += 1;
+        response.write(
+          `data: ${JSON.stringify({
+            id: "1",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "test",
+            choices: [{ index: 0, delta: { content }, finish_reason: null }],
+          })}\n\n`,
+        );
+        setImmediate(push);
+      };
+      push();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -163,11 +189,11 @@ function readDone<T>(text: string): T {
 }
 
 it("stores the sources a dashboard is created from", async () => {
-  const { cookie, orgId } = await ownerWithOrg();
-  const first = await createSource(cookie, "Events");
-  const second = await createSource(cookie, "Orders");
+  const { cookie, organizationId } = await ownerWithOrg();
+  const first = await createSource(cookie, organizationId, "Events");
+  const second = await createSource(cookie, organizationId, "Orders");
 
-  const dashboardId = await createDashboard(cookie, "Two sources", [
+  const dashboardId = await createDashboard(cookie, organizationId, "Two sources", [
     first,
     second,
   ]);
@@ -180,18 +206,18 @@ it("stores the sources a dashboard is created from", async () => {
   expect(rows.map((row) => row.dataSourceId).sort()).toEqual(
     [first, second].sort(),
   );
-  expect(rows.every((row) => row.organizationId === orgId)).toBe(true);
+  expect(rows.every((row) => row.organizationId === organizationId)).toBe(true);
 });
 
 it("refuses a chart whose query belongs to a source the dashboard does not draw from", async () => {
-  const { cookie } = await ownerWithOrg();
-  const connected = await createSource(cookie, "Connected");
-  const elsewhere = await createSource(cookie, "Elsewhere");
+  const { cookie, organizationId } = await ownerWithOrg();
+  const connected = await createSource(cookie, organizationId, "Connected");
+  const elsewhere = await createSource(cookie, organizationId, "Elsewhere");
 
-  const orphanQuery = await saveQuery(cookie, elsewhere, REGION_COUNTS);
-  const dashboardId = await createDashboard(cookie, "Scoped", [connected]);
+  const orphanQuery = await saveQuery(cookie, organizationId, elsewhere, REGION_COUNTS);
+  const dashboardId = await createDashboard(cookie, organizationId, "Scoped", [connected]);
 
-  const res = await request(`/api/dashboards/${dashboardId}/widgets`, {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -212,11 +238,11 @@ it("refuses a chart whose query belongs to a source the dashboard does not draw 
 });
 
 it("drops the source links along with the dashboard", async () => {
-  const { cookie } = await ownerWithOrg();
-  const sourceId = await createSource(cookie, "Events");
-  const dashboardId = await createDashboard(cookie, "Doomed", [sourceId]);
+  const { cookie, organizationId } = await ownerWithOrg();
+  const sourceId = await createSource(cookie, organizationId, "Events");
+  const dashboardId = await createDashboard(cookie, organizationId, "Doomed", [sourceId]);
 
-  const removed = await request(`/api/dashboards/${dashboardId}`, {
+  const removed = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -230,8 +256,8 @@ it("drops the source links along with the dashboard", async () => {
 });
 
 it("plots the charts a provider drafts, and saves none of the ones that do not run", async () => {
-  const { cookie, orgId } = await ownerWithOrg();
-  const sourceId = await createSource(cookie, "Seeded events");
+  const { cookie, organizationId } = await ownerWithOrg();
+  const sourceId = await createSource(cookie, organizationId, "Seeded events");
 
   const plan = JSON.stringify({
     summary: "Events by region",
@@ -257,9 +283,9 @@ it("plots the charts a provider drafts, and saves none of the ones that do not r
 
   const provider = await startProvider(plan);
   try {
-    await registerProvider(cookie, provider.baseUrl);
+    await registerProvider(cookie, organizationId, provider.baseUrl);
 
-    const res = await request("/api/dashboards/generate", {
+    const res = await request(`/api/v1/organization/${organizationId}/dashboards/generate`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ name: "Generated", dataSourceIds: [sourceId] }),
@@ -272,7 +298,7 @@ it("plots the charts a provider drafts, and saves none of the ones that do not r
     const queries = await db
       .select()
       .from(savedQuery)
-      .where(eq(savedQuery.organizationId, orgId));
+      .where(eq(savedQuery.organizationId, organizationId));
     expect(queries.map((row) => row.name)).toEqual(["Events per region"]);
 
     const rows = await db
@@ -289,11 +315,11 @@ it("plots the charts a provider drafts, and saves none of the ones that do not r
 });
 
 it("proposes changes without applying them, then applies what is approved", async () => {
-  const { cookie } = await ownerWithOrg();
-  const sourceId = await createSource(cookie, "Seeded events");
-  const existing = await saveQuery(cookie, sourceId, REGION_COUNTS);
-  const dashboardId = await createDashboard(cookie, "Asking", [sourceId]);
-  const existingWidgetId = await chartIt(cookie, dashboardId, existing);
+  const { cookie, organizationId } = await ownerWithOrg();
+  const sourceId = await createSource(cookie, organizationId, "Seeded events");
+  const existing = await saveQuery(cookie, organizationId, sourceId, REGION_COUNTS);
+  const dashboardId = await createDashboard(cookie, organizationId, "Asking", [sourceId]);
+  const existingWidgetId = await chartIt(cookie, organizationId, dashboardId, existing);
 
   const proposal = JSON.stringify({
     summary: "Add a row count",
@@ -313,9 +339,9 @@ it("proposes changes without applying them, then applies what is approved", asyn
 
   const provider = await startProvider(proposal);
   try {
-    await registerProvider(cookie, provider.baseUrl);
+    await registerProvider(cookie, organizationId, provider.baseUrl);
 
-    const asked = await request(`/api/dashboards/${dashboardId}/ask`, {
+    const asked = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/ask`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ question: "how many events are there" }),
@@ -335,7 +361,7 @@ it("proposes changes without applying them, then applies what is approved", asyn
       .where(eq(widget.dashboardId, dashboardId));
     expect(afterAsking).toHaveLength(1);
 
-    const applied = await request(`/api/dashboards/${dashboardId}/apply`, {
+    const applied = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/apply`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ actions: [body.proposal.actions[0]] }),

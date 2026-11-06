@@ -1,4 +1,4 @@
-import "./setup";
+import "./setup.ts";
 
 process.env.BACHS_SECRET_KEY = "sk_sandbox_test_key";
 process.env.BACHS_WEBHOOK_SECRET = "whsec_test_billing_webhook_secret";

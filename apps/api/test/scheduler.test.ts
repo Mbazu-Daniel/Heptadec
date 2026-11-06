@@ -31,7 +31,7 @@ async function regionCounts(): Promise<Array<{ region: string; events: number }>
 
 async function ownerWithQuery(): Promise<{
   cookie: string;
-  orgId: string;
+  organizationId: string;
   savedQueryId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
@@ -40,7 +40,7 @@ async function ownerWithQuery(): Promise<{
     headers: { cookie },
   });
 
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -61,7 +61,7 @@ async function ownerWithQuery(): Promise<{
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
   const saved = await request(
-    `/api/data-sources/${rows[0]!.id}/saved-queries`,
+    `/api/v1/organization/${org.id}/data-sources/${rows[0]!.id}/saved-queries`,
     {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -71,14 +71,15 @@ async function ownerWithQuery(): Promise<{
   const { savedQuery: created } = (await saved.json()) as {
     savedQuery: { id: string };
   };
-  return { cookie, orgId: org.id, savedQueryId: created.id };
+  return { cookie, organizationId: org.id, savedQueryId: created.id };
 }
 
 async function schedule(
   cookie: string,
+  organizationId: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return request("/api/scheduled-jobs", {
+  return request(`/api/v1/organization/${organizationId}/scheduled-jobs`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -87,10 +88,11 @@ async function schedule(
 
 async function createSchedule(
   cookie: string,
+  organizationId: string,
   savedQueryId: string,
   fields: Record<string, unknown> = {},
 ): Promise<string> {
-  const res = await schedule(cookie, {
+  const res = await schedule(cookie, organizationId, {
     savedQueryId,
     name: "Hourly",
     cron: "* * * * *",
@@ -139,9 +141,9 @@ async function waitForSettledJob(
 }
 
 it("persists a schedule with the next run computed from its cron and timezone", async () => {
-  const { cookie, orgId, savedQueryId } = await ownerWithQuery();
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
 
-  const id = await createSchedule(cookie, savedQueryId, {
+  const id = await createSchedule(cookie, organizationId, savedQueryId, {
     cron: "0 9 * * *",
     timezone: "Europe/Berlin",
     ttlSeconds: 900,
@@ -152,7 +154,7 @@ it("persists a schedule with the next run computed from its cron and timezone", 
     .from(scheduledJob)
     .where(eq(scheduledJob.id, id));
   expect(rows).toHaveLength(1);
-  expect(rows[0]!.organizationId).toBe(orgId);
+  expect(rows[0]!.organizationId).toBe(organizationId);
   expect(rows[0]!.savedQueryId).toBe(savedQueryId);
   expect(rows[0]!.cron).toBe("0 9 * * *");
   expect(rows[0]!.timezone).toBe("Europe/Berlin");
@@ -170,8 +172,8 @@ it("persists a schedule with the next run computed from its cron and timezone", 
 });
 
 it("runs a due job on the timer and populates the cache", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId, { cron: "* * * * *" });
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId, { cron: "* * * * *" });
   await db
     .update(scheduledJob)
     .set({ nextRunAt: new Date(Date.now() - 60_000) })
@@ -205,8 +207,8 @@ it("runs a due job on the timer and populates the cache", async () => {
 });
 
 it("evaluates the alert rules watching a query when its job runs", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const made = await request("/api/alert-rules", {
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const made = await request(`/api/v1/organization/${organizationId}/alert-rules`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -222,7 +224,7 @@ it("evaluates the alert rules watching a query when its job runs", async () => {
     alertRule: { id: string };
   };
 
-  const id = await createSchedule(cookie, savedQueryId, { cron: "* * * * *" });
+  const id = await createSchedule(cookie, organizationId, savedQueryId, { cron: "* * * * *" });
   await db
     .update(scheduledJob)
     .set({ nextRunAt: new Date(Date.now() - 60_000) })
@@ -241,8 +243,8 @@ it("evaluates the alert rules watching a query when its job runs", async () => {
 });
 
 it("skips a job another runner holds, and runs it once the lease is clear", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId);
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId);
   const now = new Date();
 
   await db
@@ -265,9 +267,9 @@ it("skips a job another runner holds, and runs it once the lease is clear", asyn
 });
 
 it("keeps ticking when a stored schedule cannot be read", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const broken = await createSchedule(cookie, savedQueryId, { name: "Broken row" });
-  const healthy = await createSchedule(cookie, savedQueryId, { name: "Healthy row" });
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const broken = await createSchedule(cookie, organizationId, savedQueryId, { name: "Broken row" });
+  const healthy = await createSchedule(cookie, organizationId, savedQueryId, { name: "Healthy row" });
 
   const now = Date.now();
   await db
@@ -294,10 +296,10 @@ it("keeps ticking when a stored schedule cannot be read", async () => {
 });
 
 it("writes an edited schedule and recomputes when it runs next", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId, { cron: "0 9 * * *" });
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId, { cron: "0 9 * * *" });
 
-  const res = await request(`/api/scheduled-jobs/${id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/scheduled-jobs/${id}`, {
     method: "PUT",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -326,10 +328,10 @@ it("writes an edited schedule and recomputes when it runs next", async () => {
 });
 
 it("refuses an unreadable edit and leaves the stored schedule intact", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId);
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId);
 
-  const res = await request(`/api/scheduled-jobs/${id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/scheduled-jobs/${id}`, {
     method: "PUT",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -348,7 +350,7 @@ it("refuses an unreadable edit and leaves the stored schedule intact", async () 
 });
 
 it("refuses a schedule it could not honour and writes nothing", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
 
   for (const fields of [
     { cron: "not a cron" },
@@ -356,7 +358,7 @@ it("refuses a schedule it could not honour and writes nothing", async () => {
     { cron: "0 9 * * *", timezone: "Nope/Nope" },
     { cron: "0 0 30 2 *" },
   ]) {
-    const res = await schedule(cookie, { savedQueryId, name: "Broken", ...fields });
+    const res = await schedule(cookie, organizationId, { savedQueryId, name: "Broken", ...fields });
     expect(res.status, JSON.stringify(fields)).toBe(400);
   }
 
@@ -365,9 +367,9 @@ it("refuses a schedule it could not honour and writes nothing", async () => {
 });
 
 it("refuses scheduling a query on a source that cannot answer it", async () => {
-  const { cookie, orgId } = await ownerWithQuery();
+  const { cookie, organizationId } = await ownerWithQuery();
 
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -381,9 +383,9 @@ it("refuses scheduling a query on a source that cannot answer it", async () => {
   const rows = await db
     .select()
     .from(dataSource)
-    .where(eq(dataSource.organizationId, orgId));
+    .where(eq(dataSource.organizationId, organizationId));
 
-  const saved = await request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
+  const saved = await request(`/api/v1/organization/${organizationId}/data-sources/${rows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Keys", sql: "KEYS *" }),
@@ -391,7 +393,7 @@ it("refuses scheduling a query on a source that cannot answer it", async () => {
   expect(saved.status).toBe(201);
   const { savedQuery: created } = (await saved.json()) as { savedQuery: { id: string } };
 
-  const res = await schedule(cookie, { savedQueryId: created.id, name: "Hourly" });
+  const res = await schedule(cookie, organizationId, { savedQueryId: created.id, name: "Hourly" });
   expect(res.status).toBe(400);
 
   const jobs = await db.select().from(scheduledJob);
@@ -399,8 +401,8 @@ it("refuses scheduling a query on a source that cannot answer it", async () => {
 });
 
 it("404s another organization's schedule", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId);
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId);
 
   const stranger = await signUp(uniqueEmail());
   await authFor(db).api.createOrganization({
@@ -408,7 +410,7 @@ it("404s another organization's schedule", async () => {
     headers: { cookie: stranger.cookie },
   });
 
-  const removed = await request(`/api/scheduled-jobs/${id}`, {
+  const removed = await request(`/api/v1/organization/${organizationId}/scheduled-jobs/${id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
@@ -422,10 +424,10 @@ it("404s another organization's schedule", async () => {
 });
 
 it("removes the schedule when the saved query goes", async () => {
-  const { cookie, savedQueryId } = await ownerWithQuery();
-  const id = await createSchedule(cookie, savedQueryId);
+  const { cookie, organizationId, savedQueryId } = await ownerWithQuery();
+  const id = await createSchedule(cookie, organizationId, savedQueryId);
 
-  const res = await request(`/api/saved-queries/${savedQueryId}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });

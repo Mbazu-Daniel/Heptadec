@@ -5,6 +5,7 @@ import type { ISchemaResponse } from "../src/modules/schema/contracts";
 
 async function ownerWithSource(kind = "postgres"): Promise<{
   cookie: string;
+  organizationId: string;
   id: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
@@ -13,7 +14,7 @@ async function ownerWithSource(kind = "postgres"): Promise<{
     headers: { cookie },
   });
 
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(
@@ -33,20 +34,21 @@ async function ownerWithSource(kind = "postgres"): Promise<{
   });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { dataSource: { id: string } };
-  return { cookie, id: body.dataSource.id };
+  return { cookie, organizationId: org.id, id: body.dataSource.id };
 }
 
 async function schemaResponse(
   cookie: string,
+  organizationId: string,
   id: string,
 ): Promise<Response> {
-  return request(`/api/data-sources/${id}/schema`, {
+  return request(`/api/v1/organization/${organizationId}/data-sources/${id}/schema`, {
     headers: { cookie },
   });
 }
 
-async function readSchema(cookie: string, id: string): Promise<ISchemaResponse> {
-  const response = await schemaResponse(cookie, id);
+async function readSchema(cookie: string, organizationId: string, id: string): Promise<ISchemaResponse> {
+  const response = await schemaResponse(cookie, organizationId, id);
   expect(response.status).toBe(200);
   return (await response.json()) as ISchemaResponse;
 }
@@ -81,9 +83,9 @@ async function catalogueForeignKeys(): Promise<
 }
 
 it("draws one line per foreign key the database actually declares", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
-  const res = await schemaResponse(cookie, id);
+  const res = await schemaResponse(cookie, organizationId, id);
   expect(res.status).toBe(200);
   const body = (await res.json()) as ISchemaResponse;
   const declared = await catalogueForeignKeys();
@@ -101,9 +103,9 @@ it("draws one line per foreign key the database actually declares", async () => 
 });
 
 it("reports the seeded tables with their columns and declared types", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await readSchema(cookie, organizationId, id);
 
   expect(body.database).toBe(TEST_POSTGRES.database);
   expect(body.sourceId).toBe(id);
@@ -127,9 +129,9 @@ it("reports the seeded tables with their columns and declared types", async () =
 });
 
 it("keeps a foreign key's two endpoints pointing at real columns", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await readSchema(cookie, organizationId, id);
   const edge = body.relationships.find(
     (row) => row.fromTable === "order_items" && row.fromColumn === "product_id",
   );
@@ -149,9 +151,9 @@ it("keeps a foreign key's two endpoints pointing at real columns", async () => {
 });
 
 it("lists the indexes somebody wrote and not the one Postgres made for the key", async () => {
-  const { cookie, id } = await ownerWithSource();
+  const { cookie, organizationId, id } = await ownerWithSource();
 
-  const body = await readSchema(cookie, id);
+  const body = await readSchema(cookie, organizationId, id);
   const orderItems = body.tables.find((table) => table.name === "order_items");
   expect(orderItems?.indexedColumns).toContain("order_id");
   expect(orderItems?.indexedColumns).toContain("product_id");
@@ -160,12 +162,12 @@ it("lists the indexes somebody wrote and not the one Postgres made for the key",
 
 it("reads the schema the source names, not the one it used to assume", async () => {
   const { cookie } = await signUp(uniqueEmail());
-  await authFor(db).api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Schema Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await request("/api/data-sources", {
+  const created = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -182,7 +184,7 @@ it("reads the schema the source names, not the one it used to assume", async () 
   });
   const body = (await created.json()) as { dataSource: { id: string } };
 
-  const read = await schemaResponse(cookie, body.dataSource.id);
+  const read = await schemaResponse(cookie, org.id, body.dataSource.id);
   expect(read.status).toBe(200);
   const found = (await read.json()) as ISchemaResponse;
   expect(found.schemaName).toBe("no_such_schema");
@@ -191,9 +193,9 @@ it("reads the schema the source names, not the one it used to assume", async () 
 });
 
 it("refuses a source that is not postgres and names the engine", async () => {
-  const { cookie, id } = await ownerWithSource("redis");
+  const { cookie, organizationId, id } = await ownerWithSource("redis");
 
-  const res = await schemaResponse(cookie, id);
+  const res = await schemaResponse(cookie, organizationId, id);
   expect(res.status).toBe(400);
   expect(await res.text()).toContain("redis");
 });
@@ -207,18 +209,18 @@ it("404s for a data source in another organization", async () => {
   });
   expect(org.id).not.toBe("");
 
-  const res = await schemaResponse(stranger.cookie, id);
+  const res = await schemaResponse(stranger.cookie, org.id, id);
   expect(res.status).toBe(404);
 });
 
 it("does not leak the connection password when the database is unreachable", async () => {
   const { cookie } = await signUp(uniqueEmail());
-  await authFor(db).api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Unreachable Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const created = await request("/api/data-sources", {
+  const created = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -234,7 +236,7 @@ it("does not leak the connection password when the database is unreachable", asy
   });
   const body = (await created.json()) as { dataSource: { id: string } };
 
-  const res = await schemaResponse(cookie, body.dataSource.id);
+  const res = await schemaResponse(cookie, org.id, body.dataSource.id);
   expect(res.status).toBe(400);
   const text = await res.text();
   expect(text).not.toContain("do-not-print-me");

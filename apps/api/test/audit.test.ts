@@ -76,7 +76,7 @@ it("records an mcp token created and revoked through the api", async () => {
     headers: { cookie: created.cookie },
   });
 
-  const issued = await request("/api/mcp-tokens", {
+  const issued = await request(`/api/v1/organization/${org.id}/mcp-tokens`, {
     method: "POST",
     headers: headers(created.cookie),
     body: JSON.stringify({
@@ -87,7 +87,7 @@ it("records an mcp token created and revoked through the api", async () => {
   expect(issued.status).toBe(201);
   const token = (await issued.json()) as { id: string };
 
-  const revoked = await request(`/api/mcp-tokens/${token.id}`, {
+  const revoked = await request(`/api/v1/organization/${org.id}/mcp-tokens/${token.id}`, {
     method: "DELETE",
     headers: headers(created.cookie),
   });
@@ -135,12 +135,12 @@ it("keeps each organization's rows to itself when read back", async () => {
   expect(secondRows).toHaveLength(1);
 
   const listAs = async (organizationId: string) => {
-    await request("/api/organization/switch", {
+    await request(`/api/v1/organization/switch`, {
       method: "POST",
       headers: headers(member.cookie),
       body: JSON.stringify({ organizationId }),
     });
-    const res = await request("/api/audit-logs", {
+    const res = await request(`/api/v1/organization/${organizationId}/audit-logs`, {
       headers: { cookie: member.cookie },
     });
     expect(res.status).toBe(200);

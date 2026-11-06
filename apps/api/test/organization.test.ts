@@ -100,7 +100,7 @@ it("switches the active organization in the session row", async () => {
     headers: { cookie },
   });
 
-  const res = await request("/api/organization/switch", {
+  const res = await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: first.id }),
@@ -125,7 +125,7 @@ it("writes the member display name against the active organization only", async 
     headers: { cookie },
   });
 
-  const res = await request("/api/organization/member", {
+  const res = await request(`/api/v1/organization/${createdOrg.id}/member`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ displayName: "Platform Lead" }),
@@ -149,7 +149,7 @@ it("refuses to switch into an organization the user does not belong to", async (
     headers: { cookie: theirCookie },
   });
 
-  const res = await request("/api/organization/switch", {
+  const res = await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: myCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId: other.id }),
@@ -177,16 +177,16 @@ it("deletes every row the organization owns", async () => {
     body: { name: "Disposable", slug },
     headers: { cookie },
   });
-  const orgId = created.id;
+  const organizationId = created.id;
   const now = new Date();
-  const dataSourceId = `ds_${orgId}`;
-  const savedQueryId = `sq_${orgId}`;
-  const dashboardId = `db_${orgId}`;
-  const alertRuleId = `ar_${orgId}`;
+  const dataSourceId = `ds_${created.id}`;
+  const savedQueryId = `sq_${created.id}`;
+  const dashboardId = `db_${created.id}`;
+  const alertRuleId = `ar_${created.id}`;
 
   await db.insert(dataSource).values({
     id: dataSourceId,
-    organizationId: orgId,
+    organizationId: organizationId,
     kind: "postgres",
     name: "Source",
     readOnly: true,
@@ -195,7 +195,7 @@ it("deletes every row the organization owns", async () => {
   });
   await db.insert(savedQuery).values({
     id: savedQueryId,
-    organizationId: orgId,
+    organizationId: organizationId,
     dataSourceId,
     name: "Query",
     sql: "SELECT 1",
@@ -203,14 +203,14 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(queryVersion).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     savedQueryId,
     name: "Query",
     sql: "SELECT 1",
     createdAt: now,
   });
   await db.insert(queryResult).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     savedQueryId,
     ranAt: now,
     ttlSeconds: 60,
@@ -218,19 +218,19 @@ it("deletes every row the organization owns", async () => {
   });
   await db.insert(dashboard).values({
     id: dashboardId,
-    organizationId: orgId,
+    organizationId: organizationId,
     name: "Dashboard",
     createdAt: now,
     updatedAt: now,
   });
   await db.insert(dashboardDataSource).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     dashboardId,
     dataSourceId,
     createdAt: now,
   });
   await db.insert(widget).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     dashboardId,
     savedQueryId,
     chartType: "bar",
@@ -241,7 +241,7 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(shareLink).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     dashboardId,
     tokenHash: "hash",
     snapshot: "{}",
@@ -249,7 +249,7 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(scheduledJob).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     savedQueryId,
     name: "Job",
     cron: "0 * * * *",
@@ -261,7 +261,7 @@ it("deletes every row the organization owns", async () => {
   });
   await db.insert(alertRule).values({
     id: alertRuleId,
-    organizationId: orgId,
+    organizationId: organizationId,
     savedQueryId,
     name: "Rule",
     column: "a",
@@ -271,7 +271,7 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(alertDelivery).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     alertRuleId,
     channel: "slack",
     status: "sent",
@@ -279,7 +279,7 @@ it("deletes every row the organization owns", async () => {
     createdAt: now,
   });
   await db.insert(notificationChannel).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     name: "Slack",
     kind: "slack",
     recipients: "[]",
@@ -288,7 +288,7 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(aiProvider).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     name: "Provider",
     provider: "openai",
     model: "gpt",
@@ -298,7 +298,7 @@ it("deletes every row the organization owns", async () => {
     updatedAt: now,
   });
   await db.insert(aiChat).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     dataSourceId,
     providerName: "Provider",
     model: "gpt",
@@ -307,7 +307,7 @@ it("deletes every row the organization owns", async () => {
     createdAt: now,
   });
   await db.insert(auditLog).values({
-    organizationId: orgId,
+    organizationId: organizationId,
     occurredAt: now,
     actorId: "actor",
     actorLabel: "Actor",
@@ -315,16 +315,16 @@ it("deletes every row the organization owns", async () => {
     targetKind: "test",
   });
   await db.insert(billingCustomer).values({
-    organizationId: orgId,
-    customerId: `cust_${orgId}`,
+    organizationId: organizationId,
+    customerId: `cust_${created.id}`,
     autoRenew: false,
     createdAt: now,
     updatedAt: now,
   });
   await db.insert(billingPayment).values({
-    organizationId: orgId,
-    customerId: `cust_${orgId}`,
-    checkoutId: `chk_${orgId}`,
+    organizationId: organizationId,
+    customerId: `cust_${created.id}`,
+    checkoutId: `chk_${created.id}`,
     cadence: "monthly",
     amount: "5.00",
     currency: "USD",
@@ -333,7 +333,7 @@ it("deletes every row the organization owns", async () => {
     createdAt: now,
   });
 
-  const res = await request("/api/organization/delete", {
+  const res = await request(`/api/v1/organization/${created.id}/delete`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ slug }),
@@ -364,13 +364,13 @@ it("deletes every row the organization owns", async () => {
     const rows = await db
       .select()
       .from(table)
-      .where(eq(table.organizationId, orgId));
+      .where(eq(table.organizationId, organizationId));
     expect(rows, `${name} should be empty`).toHaveLength(0);
   }
 
   const organizations = await db
     .select()
     .from(organization)
-    .where(eq(organization.id, orgId));
+    .where(eq(organization.id, organizationId));
   expect(organizations).toHaveLength(0);
 });

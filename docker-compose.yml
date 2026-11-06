@@ -21,7 +21,7 @@ services:
     container_name: heptadec-redis
     command: ["redis-server", "--requirepass", "Delta1force"]
     ports:
-      - "6379:6379"
+      - "6385:6379"
     volumes:
       - heptadec-redisdata:/data
     healthcheck:

@@ -26,7 +26,7 @@ it("lists the members of the active organization", async () => {
     headers: { cookie },
   });
 
-  const res = await request("/api/organization/members", {
+  const res = await request(`/api/v1/organization/${organizationId}/members`, {
     headers: { cookie },
   });
   expect(res.status).toBe(200);
@@ -49,7 +49,7 @@ it("changes a member's role and stores it", async () => {
 
   const row = (await db.select().from(member).where(eq(member.userId, editor.user.id)))[0]!;
 
-  const res = await request(`/api/organization/members/${row.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/members/${row.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ role: "viewer" }),
@@ -75,13 +75,13 @@ it("refuses a role change from a member who is not the owner", async () => {
   const victimRow = (await db.select().from(member).where(eq(member.userId, victim.user.id)))[0]!;
   const editorRow = (await db.select().from(member).where(eq(member.userId, editor.user.id)))[0]!;
 
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await request(`/api/organization/members/${victimRow.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/members/${victimRow.id}`, {
     method: "PATCH",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ role: "editor" }),
@@ -102,7 +102,7 @@ it("removes a member and deletes the row", async () => {
   });
   const row = (await db.select().from(member).where(eq(member.userId, leaver.user.id)))[0]!;
 
-  const res = await request(`/api/organization/members/${row.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/members/${row.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -115,7 +115,7 @@ it("removes a member and deletes the row", async () => {
 it("stores a display name on the member row, and reports it as the name this organization sees", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
-  const saved = await request("/api/organization/member", {
+  const saved = await request(`/api/v1/organization/${organizationId}/member`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ displayName: "Platform Lead" }),
@@ -142,9 +142,9 @@ it("stores a display name on the member row, and reports it as the name this org
 });
 
 it("cancels a pending invitation and marks the row", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -152,7 +152,7 @@ it("cancels a pending invitation and marks the row", async () => {
 
   const row = (await db.select().from(invitation).where(eq(invitation.email, invited)))[0]!;
 
-  const res = await request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -165,7 +165,7 @@ it("cancels a pending invitation and marks the row", async () => {
 it("refuses to cancel an invitation when the caller is not an owner", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
   const invited = uniqueEmail();
-  await request("/api/organization/invitations", {
+  await request(`/api/v1/organization/${organizationId}/invitations`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ email: invited, role: "editor" }),
@@ -177,13 +177,13 @@ it("refuses to cancel an invitation when the caller is not an owner", async () =
     body: { userId: editor.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: editor.cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await request(`/api/organization/invitations/${row.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/invitations/${row.id}`, {
     method: "DELETE",
     headers: { cookie: editor.cookie },
   });
@@ -195,7 +195,7 @@ it("refuses to cancel an invitation when the caller is not an owner", async () =
 
 it("keeps the owner in place when members are listed", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
-  const res = await request("/api/organization/members", { headers: { cookie } });
+  const res = await request(`/api/v1/organization/${organizationId}/members`, { headers: { cookie } });
   const body = (await res.json()) as { members: Array<{ role: string; isYou: boolean }> };
   expect(body.members).toHaveLength(1);
   expect(body.members[0]).toMatchObject({ role: "owner", isYou: true });
@@ -211,7 +211,7 @@ it("stores an avatar on the membership, not on the person", async () => {
   // is what a client would have to send to point one organization's members at
   // another's image.
   const foreign = "avatars/00000000-0000-4000-8000-000000000000/whatever";
-  const refused = await request("/api/organization/member/image", {
+  const refused = await request(`/api/v1/organization/${organizationId}/member/image`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: foreign }),
@@ -223,7 +223,7 @@ it("stores an avatar on the membership, not on the person", async () => {
     .from(member)
     .where(eq(member.organizationId, organizationId));
   const key = `avatars/${organizationId}/${membership!.id}`;
-  const res = await request("/api/organization/member/image", {
+  const res = await request(`/api/v1/organization/${organizationId}/member/image`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: key }),

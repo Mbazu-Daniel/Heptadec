@@ -19,7 +19,7 @@ async function owner(): Promise<{ cookie: string; organizationId: string }> {
 
 it("answers a malformed JSON body with 400, not 500", async () => {
   const { cookie, organizationId } = await owner();
-  const res = await request("/api/dashboards", {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: "{not json",
@@ -29,8 +29,8 @@ it("answers a malformed JSON body with 400, not 500", async () => {
 });
 
 it("rejects a connection URL with broken percent-encoding", async () => {
-  const { cookie } = await owner();
-  const res = await request("/api/data-sources", {
+  const { cookie, organizationId } = await owner();
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -43,8 +43,8 @@ it("rejects a connection URL with broken percent-encoding", async () => {
 });
 
 it("does not hand back postgres' own error text", async () => {
-  const { cookie } = await owner();
-  const created = await request("/api/data-sources", {
+  const { cookie, organizationId } = await owner();
+  const created = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -61,7 +61,7 @@ it("does not hand back postgres' own error text", async () => {
   expect(created.status).toBe(200);
   const id = ((await created.json()) as { dataSource: { id: string } }).dataSource.id;
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql: "SELECT * FROM secret_customer_pii_table" }),
@@ -75,7 +75,7 @@ it("does not hand back postgres' own error text", async () => {
 
 it("refuses a widget refresh from someone who cannot edit", async () => {
   const ownerSession = await owner();
-  const created = await request("/api/data-sources", {
+  const created = await request(`/api/v1/organization/${ownerSession.organizationId}/data-sources`, {
     method: "POST",
     headers: {
       cookie: ownerSession.cookie,
@@ -95,7 +95,7 @@ it("refuses a widget refresh from someone who cannot edit", async () => {
   const sourceId = ((await created.json()) as { dataSource: { id: string } })
     .dataSource.id;
 
-  const query = await request(`/api/data-sources/${sourceId}/saved-queries`, {
+  const query = await request(`/api/v1/organization/${ownerSession.organizationId}/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: {
       cookie: ownerSession.cookie,
@@ -106,7 +106,7 @@ it("refuses a widget refresh from someone who cannot edit", async () => {
   const queryId = ((await query.json()) as { savedQuery: { id: string } })
     .savedQuery.id;
 
-  const made = await request("/api/dashboards", {
+  const made = await request(`/api/v1/organization/${ownerSession.organizationId}/dashboards`, {
     method: "POST",
     headers: {
       cookie: ownerSession.cookie,
@@ -117,7 +117,7 @@ it("refuses a widget refresh from someone who cannot edit", async () => {
   const dashboardId = ((await made.json()) as { dashboard: { id: string } })
     .dashboard.id;
 
-  const withWidget = await request(`/api/dashboards/${dashboardId}/widgets`, {
+  const withWidget = await request(`/api/v1/organization/${ownerSession.organizationId}/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: {
       cookie: ownerSession.cookie,
@@ -143,13 +143,13 @@ it("refuses a widget refresh from someone who cannot edit", async () => {
     headers: { cookie: viewer.cookie },
   });
 
-  const refresh = await request(`/api/widgets/${widgetId}/refresh`, {
+  const refresh = await request(`/api/v1/organization/${ownerSession.organizationId}/widgets/${widgetId}/refresh`, {
     method: "POST",
     headers: { cookie: viewer.cookie },
   });
   expect(refresh.status).toBe(403);
 
-  const schema_ = await request(`/api/data-sources/${sourceId}/schema`, {
+  const schema_ = await request(`/api/v1/organization/${ownerSession.organizationId}/data-sources/${sourceId}/schema`, {
     headers: { cookie: viewer.cookie },
   });
   expect(schema_.status).toBe(403);
@@ -167,7 +167,7 @@ it("deletes a dashboard's share links with the dashboard", async () => {
       updatedAt: new Date(),
     })
     .returning();
-  const made = await request("/api/dashboards", {
+  const made = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Doomed", dataSourceIds: [fixture!.id] }),
@@ -175,7 +175,7 @@ it("deletes a dashboard's share links with the dashboard", async () => {
   const dashboardId = ((await made.json()) as { dashboard: { id: string } })
     .dashboard.id;
 
-  const shared = await request(`/api/dashboards/${dashboardId}/share-links`, {
+  const shared = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({}),
@@ -187,7 +187,7 @@ it("deletes a dashboard's share links with the dashboard", async () => {
   const beforeDelete = await request(`/api/share/${token}`);
   expect(beforeDelete.status).toBe(200);
 
-  const removed = await request(`/api/dashboards/${dashboardId}`, {
+  const removed = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -204,8 +204,8 @@ it("deletes a dashboard's share links with the dashboard", async () => {
 });
 
 it("keeps only the newest cached result for a saved query", async () => {
-  const { cookie } = await owner();
-  const created = await request("/api/data-sources", {
+  const { cookie, organizationId } = await owner();
+  const created = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -221,7 +221,7 @@ it("keeps only the newest cached result for a saved query", async () => {
   });
   const sourceId = ((await created.json()) as { dataSource: { id: string } })
     .dataSource.id;
-  const query = await request(`/api/data-sources/${sourceId}/saved-queries`, {
+  const query = await request(`/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -232,14 +232,14 @@ it("keeps only the newest cached result for a saved query", async () => {
   const queryId = ((await query.json()) as { savedQuery: { id: string } })
     .savedQuery.id;
 
-  const made = await request("/api/dashboards", {
+  const made = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Cache", dataSourceIds: [sourceId] }),
   });
   const dashboardId = ((await made.json()) as { dashboard: { id: string } })
     .dashboard.id;
-  const withWidget = await request(`/api/dashboards/${dashboardId}/widgets`, {
+  const withWidget = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -255,7 +255,7 @@ it("keeps only the newest cached result for a saved query", async () => {
     .widget.id;
 
   for (let i = 0; i < 3; i += 1) {
-    const res = await request(`/api/widgets/${widgetId}/refresh`, {
+    const res = await request(`/api/v1/organization/${organizationId}/widgets/${widgetId}/refresh`, {
       method: "POST",
       headers: { cookie },
     });
@@ -288,8 +288,8 @@ it("still refuses a day that never exists", () => {
 });
 
 it("keeps read-only on even when options try to turn it off", async () => {
-  const { cookie } = await owner();
-  const created = await request("/api/data-sources", {
+  const { cookie, organizationId } = await owner();
+  const created = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -313,7 +313,7 @@ it("keeps read-only on even when options try to turn it off", async () => {
     .where(eq(dataSource.id, id));
   expect(before).toHaveLength(1);
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({

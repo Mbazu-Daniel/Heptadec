@@ -30,23 +30,23 @@ async function regionCounts(): Promise<Array<{ label: string; value: number }>> 
   }));
 }
 
-async function ownerWithOrg(): Promise<{ cookie: string; orgId: string }> {
+async function ownerWithOrg(): Promise<{ cookie: string; organizationId: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Share Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  return { cookie, orgId: org.id };
+  return { cookie, organizationId: org.id };
 }
 
 async function ownerWithChart(): Promise<{
   cookie: string;
-  orgId: string;
+  organizationId: string;
   dashboardId: string;
 }> {
-  const { cookie, orgId } = await ownerWithOrg();
+  const { cookie, organizationId } = await ownerWithOrg();
 
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -65,15 +65,15 @@ async function ownerWithChart(): Promise<{
   const sourceRows = await db
     .select()
     .from(dataSource)
-    .where(eq(dataSource.organizationId, orgId));
-  const saved = await request(`/api/data-sources/${sourceRows[0]!.id}/saved-queries`, {
+    .where(eq(dataSource.organizationId, organizationId));
+  const saved = await request(`/api/v1/organization/${organizationId}/data-sources/${sourceRows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
   });
   const { savedQuery } = (await saved.json()) as { savedQuery: { id: string } };
 
-  const dash = await request("/api/dashboards", {
+  const dash = await request(`/api/v1/organization/${organizationId}/dashboards`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -83,7 +83,7 @@ async function ownerWithChart(): Promise<{
   });
   const { dashboard } = (await dash.json()) as { dashboard: { id: string } };
 
-  const chart = await request(`/api/dashboards/${dashboard.id}/widgets`, {
+  const chart = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboard.id}/widgets`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -96,15 +96,16 @@ async function ownerWithChart(): Promise<{
   });
   expect(chart.status).toBe(201);
 
-  return { cookie, orgId, dashboardId: dashboard.id };
+  return { cookie, organizationId, dashboardId: dashboard.id };
 }
 
 async function createLink(
   cookie: string,
+  organizationId: string,
   dashboardId: string,
   body: unknown = {},
 ): Promise<{ token: string; id: string }> {
-  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -127,15 +128,15 @@ function publicGet(token: string): Promise<Response> | Response {
 }
 
 it("persists a share link with the token hashed and a frozen snapshot", async () => {
-  const { cookie, orgId, dashboardId } = await ownerWithChart();
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
 
-  const { token, id } = await createLink(cookie, dashboardId, { expiresInDays: 7 });
+  const { token, id } = await createLink(cookie, organizationId, dashboardId, { expiresInDays: 7 });
   expect(token).toHaveLength(10);
 
   const rows = await shareLinkRow(dashboardId);
   expect(rows).toHaveLength(1);
   expect(rows[0]!.id).toBe(id);
-  expect(rows[0]!.organizationId).toBe(orgId);
+  expect(rows[0]!.organizationId).toBe(organizationId);
   expect(rows[0]!.tokenHash).toBe(
     createHash("sha256").update(token).digest("hex"),
   );
@@ -154,8 +155,8 @@ it("persists a share link with the token hashed and a frozen snapshot", async ()
 });
 
 it("serves the frozen dashboard to anyone holding the token", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { token } = await createLink(cookie, dashboardId);
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { token } = await createLink(cookie, organizationId, dashboardId);
   const res = await publicGet(token);
   expect(res.status).toBe(200);
 
@@ -170,10 +171,10 @@ it("serves the frozen dashboard to anyone holding the token", async () => {
 });
 
 it("404s a revoked link", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { token, id } = await createLink(cookie, dashboardId);
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { token, id } = await createLink(cookie, organizationId, dashboardId);
 
-  const revoked = await request(`/api/share-links/${id}`, {
+  const revoked = await request(`/api/v1/organization/${organizationId}/share-links/${id}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -185,8 +186,8 @@ it("404s a revoked link", async () => {
 });
 
 it("404s an expired link", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { token, id } = await createLink(cookie, dashboardId, { expiresInDays: 1 });
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { token, id } = await createLink(cookie, organizationId, dashboardId, { expiresInDays: 1 });
 
   await db
     .update(shareLink)
@@ -198,9 +199,9 @@ it("404s an expired link", async () => {
 });
 
 it("refuses an expiry it cannot honour", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
 
-  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ expiresInDays: 400 }),
@@ -210,8 +211,8 @@ it("refuses an expiry it cannot honour", async () => {
 });
 
 it("404s share-link management from another organization", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { id } = await createLink(cookie, dashboardId);
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { id } = await createLink(cookie, organizationId, dashboardId);
 
   const stranger = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
@@ -220,12 +221,12 @@ it("404s share-link management from another organization", async () => {
   });
   expect(org.id).not.toBe("");
 
-  const list = await request(`/api/dashboards/${dashboardId}/share-links`, {
+  const list = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`, {
     headers: { cookie: stranger.cookie },
   });
   expect(list.status).toBe(404);
 
-  const revoke = await request(`/api/share-links/${id}`, {
+  const revoke = await request(`/api/v1/organization/${organizationId}/share-links/${id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
@@ -234,19 +235,19 @@ it("404s share-link management from another organization", async () => {
 });
 
 it("refuses a viewer who cannot share a dashboard", async () => {
-  const { cookie, orgId, dashboardId } = await ownerWithChart();
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
   await authFor(db).api.addMember({
-    body: { userId: viewer.id, role: "viewer", organizationId: orgId },
+    body: { userId: viewer.id, role: "viewer", organizationId: organizationId },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
-    body: JSON.stringify({ organizationId: orgId }),
+    body: JSON.stringify({ organizationId: organizationId }),
   });
 
-  const res = await request(`/api/dashboards/${dashboardId}/share-links`, {
+  const res = await request(`/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({}),
@@ -256,8 +257,8 @@ it("refuses a viewer who cannot share a dashboard", async () => {
 });
 
 it("rate limits the public view", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { token } = await createLink(cookie, dashboardId);
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { token } = await createLink(cookie, organizationId, dashboardId);
   let throttled = false;
   for (let attempt = 0; attempt < 60 && !throttled; attempt++) {
     const res = await request(`/api/share/${token}`, {
@@ -271,8 +272,8 @@ it("rate limits the public view", async () => {
 });
 
 it("refreshes the snapshot from the database behind it", async () => {
-  const { cookie, dashboardId } = await ownerWithChart();
-  const { token, id } = await createLink(cookie, dashboardId);
+  const { cookie, organizationId, dashboardId } = await ownerWithChart();
+  const { token, id } = await createLink(cookie, organizationId, dashboardId);
   const before = await regionCounts();
   const { default: pg } = await import("pg");
   const client = new pg.Client(TEST_POSTGRES);
@@ -281,7 +282,7 @@ it("refreshes the snapshot from the database behind it", async () => {
     await client.query(
       "INSERT INTO events(id,event_name,region) VALUES ('refresh-probe','checkout','us-east-1')",
     );
-    const refreshed = await request(`/api/share-links/${id}/refresh`, {
+    const refreshed = await request(`/api/v1/organization/${organizationId}/share-links/${id}/refresh`, {
       method: "POST",
       headers: { cookie },
     });

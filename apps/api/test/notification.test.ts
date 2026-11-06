@@ -16,20 +16,21 @@ afterAll(async () => {
   }
 });
 
-async function owner(): Promise<{ cookie: string; orgId: string }> {
+async function owner(): Promise<{ cookie: string; organizationId: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Notify Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  return { cookie, orgId: org.id };
+  return { cookie, organizationId: org.id };
 }
 
 async function saveChannel(
   cookie: string,
+  organizationId: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return request("/api/notification-channels", {
+  return request(`/api/v1/organization/${organizationId}/notification-channels`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -37,18 +38,18 @@ async function saveChannel(
 }
 
 async function rowsOf(
-  orgId: string,
+  organizationId: string,
   name: string,
 ): Promise<(typeof notificationChannel.$inferSelect)[]> {
   const rows = await db
     .select()
     .from(notificationChannel)
-    .where(eq(notificationChannel.organizationId, orgId));
+    .where(eq(notificationChannel.organizationId, organizationId));
   return rows.filter((row) => row.name === name);
 }
 
 it("stores each kind's settings sealed, with the addresses beside them", async () => {
-  const { cookie, orgId } = await owner();
+  const { cookie, organizationId } = await owner();
 
   const cases: Record<string, unknown>[] = [
     {
@@ -77,13 +78,13 @@ it("stores each kind's settings sealed, with the addresses beside them", async (
   ];
 
   for (const body of cases) {
-    const res = await saveChannel(cookie, body);
+    const res = await saveChannel(cookie, organizationId, body);
     expect(res.status, JSON.stringify(body)).toBe(201);
   }
 
   for (const body of cases) {
     const label = body.name as string;
-    const rows = await rowsOf(orgId, label);
+    const rows = await rowsOf(organizationId, label);
     expect(rows, label).toHaveLength(1);
     touched.push(rows[0]!.id);
     const { name: _name, recipients, kind, ...settings } = body;
@@ -96,7 +97,7 @@ it("stores each kind's settings sealed, with the addresses beside them", async (
     expect(JSON.parse(rows[0]!.recipients)).toEqual(recipients ?? []);
   }
 
-  const mail = await rowsOf(orgId, "Mailbox");
+  const mail = await rowsOf(organizationId, "Mailbox");
   const email = JSON.parse(await decryptSecret(mail[0]!.config)) as INotificationConfig;
   expect(email.kind === "email" && email.password).toBe("mail-secret");
   expect(JSON.parse(mail[0]!.recipients)).toEqual([
@@ -106,9 +107,9 @@ it("stores each kind's settings sealed, with the addresses beside them", async (
 });
 
 it("keeps a secret the form left blank, and never sends it back", async () => {
-  const { cookie, orgId } = await owner();
+  const { cookie, organizationId } = await owner();
 
-  const res = await saveChannel(cookie, {
+  const res = await saveChannel(cookie, organizationId, {
     name: "Inbox",
     kind: "email",
     smtpHost: "smtp.example.com",
@@ -132,7 +133,7 @@ it("keeps a secret the form left blank, and never sends it back", async () => {
     fromAddress: "alerts@example.com",
   });
 
-  const edited = await request(`/api/notification-channels/${placed.id}`, {
+  const edited = await request(`/api/v1/organization/${organizationId}/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -148,14 +149,14 @@ it("keeps a secret the form left blank, and never sends it back", async () => {
   });
   expect(edited.status).toBe(200);
 
-  const rows = await rowsOf(orgId, "Inbox");
+  const rows = await rowsOf(organizationId, "Inbox");
   const email = JSON.parse(await decryptSecret(rows[0]!.config)) as INotificationConfig;
   expect(email.kind === "email" && email.password).toBe("first-secret");
   expect(JSON.parse(rows[0]!.recipients)).toEqual(["sre@example.com"]);
 });
 
 it("refuses a channel that is missing what its kind needs, and stores nothing", async () => {
-  const { cookie, orgId } = await owner();
+  const { cookie, organizationId } = await owner();
 
   const refused: Record<string, unknown>[] = [
     { name: "No url", kind: "slack" },
@@ -197,16 +198,16 @@ it("refuses a channel that is missing what its kind needs, and stores nothing", 
   ];
 
   for (const body of refused) {
-    const res = await saveChannel(cookie, body);
+    const res = await saveChannel(cookie, organizationId, body);
     expect(res.status, JSON.stringify(body)).toBe(400);
-    expect(await rowsOf(orgId, body.name as string)).toHaveLength(0);
+    expect(await rowsOf(organizationId, body.name as string)).toHaveLength(0);
   }
 });
 
 it("clears a setting the client can see, but never one it cannot", async () => {
-  const { cookie, orgId } = await owner();
+  const { cookie, organizationId } = await owner();
 
-  const res = await saveChannel(cookie, {
+  const res = await saveChannel(cookie, organizationId, {
     name: "Chat",
     kind: "slack",
     webhookUrl: "https://hooks.slack.com/services/T1/B2/xyz",
@@ -217,7 +218,7 @@ it("clears a setting the client can see, but never one it cannot", async () => {
   };
   touched.push(placed.id);
 
-  const edited = await request(`/api/notification-channels/${placed.id}`, {
+  const edited = await request(`/api/v1/organization/${organizationId}/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -229,7 +230,7 @@ it("clears a setting the client can see, but never one it cannot", async () => {
   });
   expect(edited.status).toBe(200);
 
-  const rows = await rowsOf(orgId, "Chat");
+  const rows = await rowsOf(organizationId, "Chat");
   expect(JSON.parse(await decryptSecret(rows[0]!.config))).toEqual({
     kind: "slack",
     webhookUrl: "https://hooks.slack.com/services/T1/B2/xyz",
@@ -238,8 +239,8 @@ it("clears a setting the client can see, but never one it cannot", async () => {
 });
 
 it("404s another organization's channel and refuses one a viewer tries to add", async () => {
-  const { cookie, orgId } = await owner();
-  const res = await saveChannel(cookie, {
+  const { cookie, organizationId } = await owner();
+  const res = await saveChannel(cookie, organizationId, {
     name: "Mine",
     kind: "slack",
     webhookUrl: "https://example.com/hook",
@@ -255,21 +256,18 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
     headers: { cookie: stranger.cookie },
   });
 
-  const listed = await request("/api/notification-channels", {
+  const listed = await request(`/api/v1/organization/${organizationId}/notification-channels`, {
     headers: { cookie: stranger.cookie },
   });
-  expect(
-    ((await listed.json()) as { notificationChannels: unknown[] })
-      .notificationChannels,
-  ).toHaveLength(0);
+  expect(listed.status).toBe(404);
 
-  const removed = await request(`/api/notification-channels/${placed.id}`, {
+  const removed = await request(`/api/v1/organization/${organizationId}/notification-channels/${placed.id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
   expect(removed.status).toBe(404);
 
-  const renamed = await request(`/api/notification-channels/${placed.id}`, {
+  const renamed = await request(`/api/v1/organization/${organizationId}/notification-channels/${placed.id}`, {
     method: "PATCH",
     headers: { cookie: stranger.cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Stolen", kind: "slack" }),
@@ -278,17 +276,17 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
 
   const viewer = await signUp(uniqueEmail());
   await authFor(db).api.addMember({
-    body: { userId: viewer.user.id, role: "viewer", organizationId: orgId },
+    body: { userId: viewer.user.id, role: "viewer", organizationId: organizationId },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: viewer.cookie, "content-type": "application/json" },
-    body: JSON.stringify({ organizationId: orgId }),
+    body: JSON.stringify({ organizationId: organizationId }),
   });
 
   expect(
     (
-      await saveChannel(viewer.cookie, {
+      await saveChannel(viewer.cookie, organizationId, {
         name: "Not mine to add",
         kind: "slack",
         webhookUrl: "https://example.com/hook",
@@ -296,7 +294,7 @@ it("404s another organization's channel and refuses one a viewer tries to add", 
     ).status,
   ).toBe(403);
 
-  const rows = await rowsOf(orgId, "Mine");
+  const rows = await rowsOf(organizationId, "Mine");
   expect(rows).toHaveLength(1);
   expect(rows[0]!.name).toBe("Mine");
 });

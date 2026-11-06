@@ -403,7 +403,7 @@ describe("reading the plan back", () => {
       updatedAt: new Date(),
     });
 
-    const response = await request("/api/billing", { headers: { cookie } });
+    const response = await request(`/api/v1/organization/${organizationId}/billing`, { headers: { cookie } });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       configured: boolean;
@@ -430,9 +430,9 @@ describe("reading the plan back", () => {
   });
 
   it("reports no paid period for an organization that has never paid", async () => {
-    const { cookie } = await signedInOwner();
+    const { cookie, organizationId } = await signedInOwner();
 
-    const response = await request("/api/billing", { headers: { cookie } });
+    const response = await request(`/api/v1/organization/${organizationId}/billing`, { headers: { cookie } });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       paidUntil: string | null;

@@ -1,3 +1,3 @@
-export { memberRoutes } from "./routes";
+export { memberRoutes } from "./member.routes";
 
 export type { IMemberProfileResponse } from "./contracts";

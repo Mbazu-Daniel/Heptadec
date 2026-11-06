@@ -1,4 +1,4 @@
-export { invitationRoutes } from "./routes";
+export { invitationRoutes } from "./invitation.routes";
 
 export { acceptUrl, sendInvitationEmail } from "./mailer";
 

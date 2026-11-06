@@ -1,4 +1,4 @@
-export { organizationRoutes } from "./routes";
+export { organizationRoutes } from "./organization.routes";
 
 export type {
   IMembership,

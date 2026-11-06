@@ -4,7 +4,7 @@ import {
   type HeptadecDatabase,
 } from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
-import { UnauthorizedException } from "../../common/exceptions";
+import { UnauthorizedException } from "../../common/exceptions/index";
 import {
   organizationScope,
   type IOrganizationScope,

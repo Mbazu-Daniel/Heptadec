@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import type { IMongoPipeline } from "./contracts";
 
 export type ReadPurpose = "run" | "draft-preview";

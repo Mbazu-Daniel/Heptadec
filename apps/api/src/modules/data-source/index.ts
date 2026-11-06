@@ -1,4 +1,4 @@
-export { dataSourceRoutes } from "./routes";
+export { dataSourceRoutes } from "./data-source.routes";
 
 export type {
   DataSourceKind,

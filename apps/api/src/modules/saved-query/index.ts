@@ -1,4 +1,4 @@
-export { savedQueryRoutes } from "./routes";
+export { savedQueryRoutes } from "./saved-query.routes";
 export { editSavedQuery } from "./edit";
 
 export type {

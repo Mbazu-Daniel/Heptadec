@@ -1,1 +1,1 @@
-export { alertRoutes } from "./routes";
+export { alertRoutes } from "./alert.routes";

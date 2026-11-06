@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { readBody, readString } from "../../common/http/body";
 import type { IEngineSpec, QueryLanguage } from "../data-source/contracts";
 import type { IStoredConnection } from "../data-source/connection";

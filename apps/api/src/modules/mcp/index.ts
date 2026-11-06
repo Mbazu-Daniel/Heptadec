@@ -1,1 +1,1 @@
-export { mcpRoutes } from "./routes";
+export { mcpRoutes } from "./mcp.routes";

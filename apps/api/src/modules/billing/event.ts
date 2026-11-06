@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { type BillingCadence, isBillingCadence } from "./contracts";
 import { CADENCE_METADATA_KEY, ORGANIZATION_METADATA_KEY } from "./period";
 

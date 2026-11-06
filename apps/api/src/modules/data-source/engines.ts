@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import {
   ENGINE_SPECS,
   LANGUAGES,

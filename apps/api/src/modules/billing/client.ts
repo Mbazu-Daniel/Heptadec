@@ -1,5 +1,5 @@
 import { config } from "../../common/config/env";
-import { BadGatewayException } from "../../common/exceptions";
+import { BadGatewayException } from "../../common/exceptions/index";
 import { BILLING_CURRENCY } from "./catalog";
 
 const REQUEST_TIMEOUT_MS = 10_000;

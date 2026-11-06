@@ -58,7 +58,7 @@ function cloudflareReady(): boolean {
 async function resend(email: IEmail): Promise<EmailOutcome> {
   const client = new Resend(process.env.RESEND_API_KEY ?? "");
   const { error } = await client.emails.send({
-    from: process.env.RESEND_FROM ?? "Heptadec <invite@heptadec.local>",
+    from: process.env.RESEND_FROM ?? "Heptadec <noreply@heptadec.com>",
     to: email.to,
     subject: email.subject,
     text: email.text,

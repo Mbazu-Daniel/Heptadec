@@ -1,4 +1,4 @@
-import type { ErrorCode } from "../constants";
+import type { ErrorCode } from "../constants/error-code.const";
 
 export type ApiErrorCode = ErrorCode | "request_failed";
 

@@ -18,6 +18,7 @@ export const config = {
     process.env.PUBLIC_URL ??
     process.env.BETTER_AUTH_URL ??
     "http://localhost:8787",
+  // not necessary for self-hosting
   bachs: {
     secretKey: process.env.BACHS_SECRET_KEY ?? "",
     webhookSecret: process.env.BACHS_WEBHOOK_SECRET ?? "",

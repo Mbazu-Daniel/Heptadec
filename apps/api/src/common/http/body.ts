@@ -1,4 +1,4 @@
-import { BadRequestException } from "../exceptions";
+import { BadRequestException } from "../exceptions/index";
 
 export function readBody(payload: unknown, message: string): Record<string, unknown> {
   if (typeof payload !== "object" || payload === null) {

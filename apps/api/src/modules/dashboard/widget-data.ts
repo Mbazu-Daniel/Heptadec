@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import type { WidgetRow } from "@heptadec/db";
 import type { IWidgetData, IWidgetPoint } from "./contracts";

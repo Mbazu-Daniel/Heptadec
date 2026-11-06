@@ -1,4 +1,4 @@
-export { shareLinkRoutes, publicShareRoutes } from "./routes";
+export { shareLinkRoutes, publicShareRoutes } from "./share-link.routes";
 
 export type {
   ICreateShareLinkRequest,

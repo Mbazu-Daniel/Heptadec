@@ -1,5 +1,5 @@
 import pg from "pg";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import type { ConnectionOptions } from "node:tls";
 import type { ISavedConnection } from "./connection";
 

@@ -11,7 +11,7 @@ import {
   openMysql,
   quotePostgres,
 } from "../data-source/clients";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { structureFailure } from "../../common/driver-error";
 import { engineFrom } from "../data-source/engines";
 import type { SqlDialect } from "../data-source/contracts";

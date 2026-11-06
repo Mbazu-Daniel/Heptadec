@@ -46,10 +46,6 @@ async function derive(
   return new Uint8Array(bits);
 }
 
-// The iteration count travels inside the hash, so lowering ITERATIONS only
-// changes what new accounts get. Hashes written earlier still verify against
-// the count they were made with, right up to MAX_ITERATIONS — past it the
-// runtime cannot derive them at all, which is what verifyPassword refuses.
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const derived = await derive(password, salt, ITERATIONS);
@@ -78,9 +74,6 @@ export async function verifyPassword(data: {
     return false;
   }
   if (iterations > MAX_ITERATIONS) {
-    // Not a wrong password: a hash this runtime cannot derive at all. Only a
-    // password reset brings the account back, so say which one it is rather
-    // than letting the account look merely mistyped.
     console.error(
       `[api] stored password hash asks for ${iterations} iterations, above the ${MAX_ITERATIONS} this runtime supports; the account needs a password reset`,
     );

@@ -6,7 +6,7 @@ import {
 } from "@heptadec/db";
 import { oneRow } from "../../common/session/current-organization";
 import type { IOrganizationScope } from "../../common/session/current-organization";
-import { NotFoundException } from "../../common/exceptions";
+import { NotFoundException } from "../../common/exceptions/index";
 import type { ISavedQueryChange } from "./contracts";
 
 /**

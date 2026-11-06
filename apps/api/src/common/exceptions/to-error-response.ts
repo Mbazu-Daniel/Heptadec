@@ -1,6 +1,6 @@
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { ERROR_CODES, type ErrorCode } from "../constants";
+import { ERROR_CODES, type ErrorCode } from "../constants/error-code.const";
 import { ApiException } from "./api-exception";
 
 const CODE_BY_STATUS: Map<number, ErrorCode> = new Map(

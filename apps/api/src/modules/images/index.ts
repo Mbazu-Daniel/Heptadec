@@ -1,4 +1,4 @@
-export { imageRoutes } from "./routes";
+export { imageRoutes } from "./images.routes";
 
 export { avatarKeyPrefixFor, logoKeyFor } from "./contracts";
 

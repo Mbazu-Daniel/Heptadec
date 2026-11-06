@@ -1,4 +1,4 @@
-import type { AiProtocol } from "./transport";
+import type { IAiProviderSpec } from "./types";
 
 import modelsApi from "./models-api.json";
 
@@ -25,23 +25,10 @@ interface IModelsDevProvider {
   models?: Record<string, unknown> | null;
 }
 
-function protocolFor(npm: string | null | undefined): AiProtocol | "anthropic" {
-  return npm === "@ai-sdk/anthropic" ? "anthropic" : "openai-compatible";
-}
+const protocolFor = (npm: string | null | undefined): IAiProviderSpec["protocol"] =>
+  npm === "@ai-sdk/anthropic" ? "anthropic" : "openai-compatible";
 
-export interface IAiProviderSpec {
-  id: string;
-  label: string;
-  baseUrl: string;
-  needsBaseUrl: boolean;
-  exampleBaseUrl?: string;
-  /** The wire protocol this provider speaks. */
-  protocol: AiProtocol | "anthropic";
-  /** Static model ids sourced from Mastra, so the form can offer them without a key. */
-  models?: readonly string[];
-}
-
-function toSpec(provider: IModelsDevProvider): IAiProviderSpec {
+const toSpec = (provider: IModelsDevProvider): IAiProviderSpec => {
   const baseUrl = provider.api ?? DEFAULT_BASE_URLS[provider.id] ?? "";
   return {
     id: provider.id,
@@ -51,7 +38,7 @@ function toSpec(provider: IModelsDevProvider): IAiProviderSpec {
     protocol: protocolFor(provider.npm),
     models: provider.models ? Object.keys(provider.models) : undefined,
   };
-}
+};
 
 export const AI_PROVIDERS: IAiProviderSpec[] = (
   Object.values(modelsApi) as IModelsDevProvider[]
@@ -68,6 +55,5 @@ export const AI_PROVIDERS: IAiProviderSpec[] = (
     },
   ]);
 
-export function providerSpec(id: string): IAiProviderSpec | null {
-  return AI_PROVIDERS.find((entry) => entry.id === id) ?? null;
-}
+export const providerSpec = (id: string): IAiProviderSpec | null =>
+  AI_PROVIDERS.find((entry) => entry.id === id) ?? null;

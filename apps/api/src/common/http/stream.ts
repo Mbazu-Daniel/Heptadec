@@ -1,9 +1,16 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { IAuthVars } from "../../common/middleware/require-session";
-import { ANSWER_EVENTS } from "./contracts";
+import type { IAuthVars } from "../middleware/require-session";
 
-export interface ITurn {
+export interface IStreamEvents {
+  readonly status: string;
+  readonly delta: string;
+  readonly skipped: string;
+  readonly problem: string;
+  readonly done: string;
+}
+
+export interface IStreamTurn {
   readonly startedAt: number;
   status(message: string): Promise<void>;
   delta(text: string): Promise<void>;
@@ -12,15 +19,16 @@ export interface ITurn {
   done(payload: unknown): Promise<void>;
 }
 
-export interface ITurnFailure {
+export interface IStreamFailure {
   readonly log: string;
   readonly message: string;
 }
 
-export function runTurn(
+export function streamTurn(
   c: Context<IAuthVars>,
-  failure: ITurnFailure,
-  work: (turn: ITurn) => Promise<void>,
+  events: IStreamEvents,
+  failure: IStreamFailure,
+  work: (turn: IStreamTurn) => Promise<void>,
 ): Response | Promise<Response> {
   const startedAt = Date.now();
 
@@ -32,13 +40,13 @@ export function runTurn(
     const write = (event: string, payload: unknown) =>
       stream.writeSSE({ event, data: JSON.stringify(payload) });
 
-    const turn: ITurn = {
+    const turn: IStreamTurn = {
       startedAt,
-      status: (message) => write(ANSWER_EVENTS.status, { message }),
-      delta: (text) => write(ANSWER_EVENTS.delta, { text }),
-      skipped: (titles) => write(ANSWER_EVENTS.skipped, { titles }),
-      problem: (message) => write(ANSWER_EVENTS.problem, { message }),
-      done: (payload) => write(ANSWER_EVENTS.done, payload),
+      status: (message) => write(events.status, { message }),
+      delta: (text) => write(events.delta, { text }),
+      skipped: (titles) => write(events.skipped, { titles }),
+      problem: (message) => write(events.problem, { message }),
+      done: (payload) => write(events.done, payload),
     };
 
     try {

@@ -8,6 +8,7 @@ import {
   uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
+import { useOrganizationId } from "../organization";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import { authClient } from "../auth";
 import { Avatar } from "./ui/feedback";
@@ -31,6 +32,7 @@ interface IMemberProfileProps {
 }
 
 export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
+  const organizationId = useOrganizationId();
   const [image, setImage] = useState<string | null>(me.image);
   const [displayName, setDisplayName] = useState("");
   const [current, setCurrent] = useState("");
@@ -45,7 +47,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
 
   useEffect(() => {
     let live = true;
-    fetchMemberProfile()
+    fetchMemberProfile(organizationId)
       .then((profile) => {
         if (live) {
           setDisplayName(profile.displayName ?? "");
@@ -61,7 +63,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [organizationId]);
 
   function start(): void {
     setBusy(true);
@@ -81,8 +83,8 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
         setError("Pick an image under 8 MB.");
         return;
       }
-      const path = await uploadImage("avatar", picture);
-      setImage((await saveMemberImage(path)).image);
+      const path = await uploadImage(organizationId, "avatar", picture);
+      setImage((await saveMemberImage(organizationId, path)).image);
       setNotice("Your image is updated.");
       onReload();
     } catch (caught) {
@@ -95,7 +97,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function removeImage(): Promise<void> {
     start();
     try {
-      setImage((await saveMemberImage(null)).image);
+      setImage((await saveMemberImage(organizationId, null)).image);
       setNotice("Your image is removed.");
       onReload();
     } catch {
@@ -108,7 +110,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function saveName(): Promise<void> {
     start();
     try {
-      await saveMemberDisplayName(
+      await saveMemberDisplayName(organizationId, 
         displayName.trim().length === 0 ? null : displayName.trim(),
       );
       setNotice("Your name is updated.");

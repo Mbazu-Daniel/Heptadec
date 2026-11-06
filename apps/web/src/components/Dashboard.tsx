@@ -13,6 +13,7 @@ import {
 } from "./workspace-sections";
 import { Breadcrumbs, type ICrumb } from "./workspace";
 import { NotFound } from "./NotFound";
+import { OrganizationProvider } from "../organization";
 
 interface IDashboardProps {
   me: IMe;
@@ -96,7 +97,9 @@ export function Dashboard({
             ]}
           />
         </header>
-        {sectionForView(view).render(panelContext)}
+        <OrganizationProvider organizationId={active?.organization.id ?? null}>
+          {sectionForView(view).render(panelContext)}
+        </OrganizationProvider>
       </SidebarInset>
     </SidebarProvider>
   );

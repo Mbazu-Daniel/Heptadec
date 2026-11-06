@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { IconTrash } from "@tabler/icons-react";
+import { useOrganizationId } from "../organization";
 import {
   ALERT_OPERATORS,
   type AlertOperator,
@@ -119,6 +120,7 @@ function freshness(seconds: number): string {
  * unrelated features — and hid an alert whose query nothing ever runs.
  */
 export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
+  const organizationId = useOrganizationId();
   const [jobs, setJobs] = useState<IScheduledJob[] | null>(null);
   const [queries, setQueries] = useState<
     ISavedQueryListResponse["savedQueries"]
@@ -145,11 +147,11 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
     try {
       const [scheduled, saved, alertRules, deliveries, connected] =
         await Promise.all([
-          listScheduledJobs(),
-          listAllSavedQueries(),
-          listAlertRules(),
-          listAlertDeliveries(),
-          listNotificationChannels(),
+          listScheduledJobs(organizationId),
+          listAllSavedQueries(organizationId),
+          listAlertRules(organizationId),
+          listAlertDeliveries(organizationId),
+          listNotificationChannels(organizationId),
         ]);
       setJobs(scheduled.scheduledJobs);
       setQueries(saved.savedQueries);
@@ -169,7 +171,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
     setBusy(true);
     setProblem(null);
     try {
-      await deleteScheduledJob(job.id);
+      await deleteScheduledJob(organizationId, job.id);
       await reload();
     } catch (caught) {
       setProblem(messageFor(caught, "That schedule was not removed."));
@@ -182,7 +184,7 @@ export function Monitoring({ onOpenSources }: { onOpenSources: () => void }) {
     setBusy(true);
     setProblem(null);
     try {
-      await deleteAlertRule(rule.id);
+      await deleteAlertRule(organizationId, rule.id);
       await reload();
     } catch (caught) {
       setProblem(messageFor(caught, "That alert was not removed."));
@@ -620,6 +622,7 @@ function ScheduleDialog({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const organizationId = useOrganizationId();
   // A schedule runs one saved query, and the row this was opened from already
   // said which. Writing a query is not this dialog's job — a Saved Query belongs
   // to the source it reads and is written there — so this turns one query into
@@ -654,9 +657,9 @@ function ScheduleDialog({
         ttlSeconds,
       };
       if (job !== null) {
-        await updateScheduledJob(job.id, input);
+        await updateScheduledJob(organizationId, job.id, input);
       } else {
-        await createScheduledJob({ ...input, savedQueryId: query.id });
+        await createScheduledJob(organizationId, { ...input, savedQueryId: query.id });
       }
       await onSaved();
     } catch (caught) {
@@ -844,6 +847,7 @@ function AlertDialog({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const organizationId = useOrganizationId();
   // An alert watches one saved query's column, and the row it was opened from
   // already said which — so it is named here rather than chosen from a list of
   // one.
@@ -870,9 +874,9 @@ function AlertDialog({
         threshold: Number(threshold),
       };
       if (rule !== null) {
-        await updateAlertRule(rule.id, input);
+        await updateAlertRule(organizationId, rule.id, input);
       } else {
-        await createAlertRule({ ...input, savedQueryId: query.id });
+        await createAlertRule(organizationId, { ...input, savedQueryId: query.id });
       }
       await onSaved();
     } catch (caught) {

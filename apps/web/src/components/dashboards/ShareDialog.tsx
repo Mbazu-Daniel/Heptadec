@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconLink, IconRefresh, IconTrash } from "@tabler/icons-react";
 import type { IShareLink } from "@heptadec/api/share-link-contracts";
 import {
@@ -32,6 +33,7 @@ export function ShareDialog({
   dashboardId: string;
   onClose: () => void;
 }) {
+  const organizationId = useOrganizationId();
   const [links, setLinks] = useState<IShareLink[] | null>(null);
   const [expiresInDays, setExpiresInDays] = useState<string>("");
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function ShareDialog({
 
   useEffect(() => {
     let live = true;
-    listShareLinks(dashboardId).then(
+    listShareLinks(organizationId, dashboardId).then(
       (found) => {
         if (live) {
           setLinks(found.shareLinks);
@@ -63,7 +65,7 @@ export function ShareDialog({
     setProblem(null);
     setStatus(null);
     try {
-      const { shareLink, url } = await createShareLink(dashboardId, {
+      const { shareLink, url } = await createShareLink(organizationId, dashboardId, {
         ...(expiresInDays === "" ? {} : { expiresInDays: Number(expiresInDays) }),
       });
       setLinks((current) => [shareLink, ...(current ?? [])]);
@@ -79,7 +81,7 @@ export function ShareDialog({
     setProblem(null);
     setStatus(null);
     try {
-      await refreshShareLink(id);
+      await refreshShareLink(organizationId, id);
       setStatus("That link now shows the latest numbers.");
     } catch (caught) {
       setProblem(messageFor(caught, "That link could not be refreshed."));
@@ -90,7 +92,7 @@ export function ShareDialog({
     setProblem(null);
     setStatus(null);
     try {
-      await deleteShareLink(link.id);
+      await deleteShareLink(organizationId, link.id);
       setLinks((current) => (current ?? []).filter((entry) => entry.id !== link.id));
       setStatus("That link no longer works.");
     } catch (caught) {

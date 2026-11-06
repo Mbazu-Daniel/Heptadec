@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useOrganizationId } from "../organization";
 import type {
   IDataSource,
   IPreviewObject,
@@ -78,6 +79,7 @@ function ResultGrid({ grid, label }: { grid: IResultGrid; label: string }) {
 }
 
 export function SourceDetail({ source, onBack }: ISourceDetailProps) {
+  const organizationId = useOrganizationId();
   // What a source can be asked and run as, read off the wire rather than
   // worked out here from its engine: the server already knows, and a second
   // answer in the client can only disagree with the first.
@@ -108,7 +110,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     setSelected(null);
     setPreview(null);
     setObjectsError(null);
-    listSourceObjects(source.id)
+    listSourceObjects(organizationId, source.id)
       .then((result) => {
         if (!live) {
           return;
@@ -140,8 +142,8 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     // SQL and a command, rather than being smuggled in as a preview parameter
     // because that was the only way the server would accept one.
     const rows = speaksSearch
-      ? runSearch(source.id, { index, query })
-      : previewSourceRows(source.id, index);
+      ? runSearch(organizationId, source.id, { index, query })
+      : previewSourceRows(organizationId, source.id, index);
     rows
       .then((result) => {
         if (live) {
@@ -176,7 +178,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     setCommandBusy(true);
     setCommandError(null);
     try {
-      setCommandResult(await runRedisCommand(source.id, text));
+      setCommandResult(await runRedisCommand(organizationId, source.id, text));
     } catch (caught) {
       setCommandResult(null);
       setCommandError(messageFor(caught, "That command could not run."));
@@ -194,7 +196,7 @@ export function SourceDetail({ source, onBack }: ISourceDetailProps) {
     setPreviewError(null);
     setDrafted(false);
     try {
-      const answer = await askQuestion([source.id], question.trim(), undefined, {});
+      const answer = await askQuestion(organizationId, [source.id], question.trim(), undefined, {});
       const draft = draftOf(answer);
       if (draft.kind === "command") {
         setCommand(draft.command);

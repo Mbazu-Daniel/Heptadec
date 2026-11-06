@@ -77,7 +77,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
 
   const refresh = useCallback(async () => {
     try {
-      const roster = await listMembers();
+      const roster = await listMembers(organizationId);
       setMembers(roster.members);
     } catch (caught) {
       setError(messageFor(caught, "The team list could not be loaded."));
@@ -87,7 +87,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
       return;
     }
     try {
-      const invites = await listInvitations();
+      const invites = await listInvitations(organizationId);
       setPending(invites.invitations.filter((row) => row.status === "pending"));
     } catch (caught) {
       setError(messageFor(caught, "Invitations could not be loaded."));
@@ -310,7 +310,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                         disabled={busy}
                         onClick={() =>
                           void run(
-                            () => cancelInvitation(row.id),
+                            () => cancelInvitation(organizationId, row.id),
                             "Invitation cancelled.",
                           )
                         }
@@ -353,7 +353,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                       onChange={(event) => {
                         const next = event.target.value as Role;
                         void run(
-                          () => setMemberRole(selected.id, next),
+                          () => setMemberRole(organizationId, selected.id, next),
                           `Role changed to ${next}.`,
                         );
                       }}
@@ -376,7 +376,7 @@ export function TeamPanel({ organizationId, role }: ITeamPanelProps) {
                         disabled={busy}
                         onClick={() => {
                           void run(
-                            () => removeMember(selected.id),
+                            () => removeMember(organizationId, selected.id),
                             "Member removed.",
                           );
                         }}

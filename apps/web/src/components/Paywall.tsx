@@ -21,14 +21,16 @@ export function SubscriptionGate({
   isOwner,
   others,
   onSignOut,
+  organizationId,
   children,
 }: {
   isOwner: boolean;
   others: Array<{ name: string; slug: string }>;
   onSignOut: () => void;
+  organizationId: string;
   children: ReactNode;
 }) {
-  const billing = useBilling();
+  const billing = useBilling(organizationId);
 
   if (billing.summary === null) {
     return billing.unreadable ? (

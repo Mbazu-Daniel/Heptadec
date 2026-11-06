@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import type {
   ChartType,
   ICreateWidgetRequest,
@@ -46,6 +47,7 @@ export function WidgetDialog({
   onClose: () => void;
   onSaved: (saved: IWidget) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [queries, setQueries] = useState<ISavedQuery[] | null>(null);
   const [sourceFilter, setSourceFilter] = useState("");
   const [savedQueryId, setSavedQueryId] = useState(widget?.savedQueryId ?? "");
@@ -69,7 +71,7 @@ export function WidgetDialog({
 
   useEffect(() => {
     let live = true;
-    listAllSavedQueries().then(
+    listAllSavedQueries(organizationId).then(
       (found) => {
         if (live) {
           setQueries(found.savedQueries);
@@ -92,7 +94,7 @@ export function WidgetDialog({
     }
     let live = true;
     setColumns(null);
-    runQuery(query.dataSourceId, query.sql).then(
+    runQuery(organizationId, query.dataSourceId, query.sql).then(
       (result) => {
         if (live) {
           setColumns(result.columns);
@@ -124,7 +126,7 @@ export function WidgetDialog({
       const saved =
         widget === null
           ? (
-              await createWidget(dashboardId, {
+              await createWidget(organizationId, dashboardId, {
                 savedQueryId,
                 chartType,
                 title,
@@ -133,7 +135,7 @@ export function WidgetDialog({
               } satisfies ICreateWidgetRequest)
             ).widget
           : (
-              await updateWidget(widget.id, {
+              await updateWidget(organizationId, widget.id, {
                 chartType,
                 title,
                 labelColumn,

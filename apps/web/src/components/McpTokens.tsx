@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useOrganizationId } from "../organization";
 import { IconPlugConnected, IconTrash } from "@tabler/icons-react";
 import {
   MCP_TOOLS,
@@ -37,6 +38,7 @@ function when(iso: string | null): string {
 const DEFAULT_CAPABILITIES: string[] = [...MCP_TOOLS];
 
 export function McpTokens({ isOwner }: { isOwner: boolean }) {
+  const organizationId = useOrganizationId();
   const [tokens, setTokens] = useState<IMcpToken[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
     }
     setProblem(null);
     try {
-      const listed = await listMcpTokens();
+      const listed = await listMcpTokens(organizationId);
       setTokens(listed.tokens);
     } catch (caught) {
       setProblem(messageFor(caught, "The MCP tokens could not be loaded."));
@@ -76,7 +78,7 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
     setBusy(true);
     setProblem(null);
     try {
-      const created = await createMcpToken(name, capabilities);
+      const created = await createMcpToken(organizationId, name, capabilities);
       setIssued(created.token);
       setName("");
       setCapabilities([...DEFAULT_CAPABILITIES]);
@@ -93,7 +95,7 @@ export function McpTokens({ isOwner }: { isOwner: boolean }) {
     setProblem(null);
     setNotice(null);
     try {
-      await revokeMcpToken(tokenId);
+      await revokeMcpToken(organizationId, tokenId);
       await reload();
       setNotice("That token was revoked.");
     } catch (caught) {

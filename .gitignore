@@ -24,20 +24,7 @@ impl.html
 *.db-shm
 *.db-wal
 scripts/check-*
-.claude/
-.codex/
-.cursor/
-.github/hooks/
-.grok/
-.hermes/
-.kiro/
-.opencode/
-.pi/
-.qoder/
-.rovodev/
-.vibe/
-.agents/
-skills-lock.json
+*.html
 
 # This machine moves the test stack onto ports another project is using. It is
 # a local override of docker-compose.test.yml, not project config.

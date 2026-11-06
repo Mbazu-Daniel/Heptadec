@@ -63,7 +63,7 @@ export function OrganizationSettings({
         setError("Pick an image under 8 MB.");
         return;
       }
-      const path = await uploadImage("logo", picture);
+      const path = await uploadImage(membership.organization.id, "logo", picture);
       const result = await authClient.organization.update({
         data: { logo: path },
       });
@@ -125,7 +125,7 @@ export function OrganizationSettings({
   async function erase(): Promise<void> {
     start();
     try {
-      await deleteOrganization(typedSlug.trim());
+      await deleteOrganization(membership.organization.id, typedSlug.trim());
       window.location.assign("/");
     } catch (caught) {
       setError(messageFor(caught, "The organization could not be deleted."));

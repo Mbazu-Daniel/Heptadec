@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconHistory } from "@tabler/icons-react";
 import type { IQueryVersion } from "@heptadec/api/saved-query-contracts";
 import { listQueryVersions, messageFor, restoreQueryVersion } from "../../api";
@@ -21,13 +22,14 @@ export function VersionHistory({
   onRestored: () => void;
   onClose: () => void;
 }) {
+  const organizationId = useOrganizationId();
   const [versions, setVersions] = useState<IQueryVersion[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    listQueryVersions(savedQueryId).then(
+    listQueryVersions(organizationId, savedQueryId).then(
       (found) => {
         if (live) {
           setVersions(found.versions);
@@ -48,7 +50,7 @@ export function VersionHistory({
     setRestoring(version.id);
     setProblem(null);
     try {
-      await restoreQueryVersion(savedQueryId, version.id);
+      await restoreQueryVersion(organizationId, savedQueryId, version.id);
       onRestored();
       onClose();
     } catch (caught) {

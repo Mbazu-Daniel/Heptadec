@@ -31,9 +31,9 @@ async function bachsFor(origin: string): Promise<Bachs> {
   return loaded.bachs;
 }
 
-async function waitForAccountPaid(): Promise<void> {
+async function waitForAccountPaid(organizationId: string): Promise<void> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
-    const summary = await fetchBilling();
+    const summary = await fetchBilling(organizationId);
     if (summary.accountPaid) {
       return;
     }
@@ -41,7 +41,7 @@ async function waitForAccountPaid(): Promise<void> {
   }
 }
 
-export function useBilling(): IBilling {
+export function useBilling(organizationId: string | null): IBilling {
   const [summary, setSummary] = useState<IBillingSummary | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [unreadable, setUnreadable] = useState(false);
@@ -51,13 +51,16 @@ export function useBilling(): IBilling {
 
   const reload = useCallback(async () => {
     setProblem(null);
+    if (organizationId === null) {
+      return;
+    }
     try {
-      setSummary(await fetchBilling());
+      setSummary(await fetchBilling(organizationId));
     } catch (caught) {
       setUnreadable(true);
       setProblem(messageFor(caught, "The plan could not be loaded."));
     }
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     void reload();
@@ -68,7 +71,9 @@ export function useBilling(): IBilling {
       if (event.type === "checkout.completed") {
         setBusy(false);
         setPaid(true);
-        await waitForAccountPaid();
+        if (organizationId !== null) {
+          await waitForAccountPaid(organizationId);
+        }
         await reload();
         return;
       }
@@ -86,11 +91,15 @@ export function useBilling(): IBilling {
 
   const open = useCallback(
     async (request: IStartCheckoutRequest): Promise<void> => {
+      if (organizationId === null) {
+        setCheckoutProblem("Select an organization first.");
+        return;
+      }
       setBusy(true);
       setPaid(false);
       setCheckoutProblem(null);
       try {
-        const { checkoutUrl } = await startCheckout(request);
+        const { checkoutUrl } = await startCheckout(organizationId, request);
         const bachs = await bachsFor(new URL(checkoutUrl).origin);
         await bachs.Checkout.open({
           checkoutUrl,
@@ -108,10 +117,14 @@ export function useBilling(): IBilling {
 
   const renew = useCallback(
     async (enabled: boolean): Promise<void> => {
+      if (organizationId === null) {
+        setCheckoutProblem("Select an organization first.");
+        return;
+      }
       setBusy(true);
       setCheckoutProblem(null);
       try {
-        await setAutoRenew({ enabled });
+        await setAutoRenew(organizationId, { enabled });
         await reload();
       } catch (caught) {
         setCheckoutProblem(

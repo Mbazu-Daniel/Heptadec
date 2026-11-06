@@ -13,7 +13,7 @@ import { sendInvitationEmail } from "../../modules/invitation/mailer";
 import {
   recordAuditFor,
   recordAudit,
-} from "../../modules/audit/record";
+} from "../../modules/audit/index";
 import { nameFromEmail } from "../helpers/name";
 import { hashPassword, verifyPassword } from "../helpers/password";
 import {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import {
   IconPencil,
   IconPlayerPlay,
@@ -37,6 +38,7 @@ export function DashboardDetail({
   dashboardId: string;
   onBack: () => void;
 }) {
+  const organizationId = useOrganizationId();
   const [dashboard, setDashboard] = useState<IDashboardWithWidgets | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -47,7 +49,7 @@ export function DashboardDetail({
 
   useEffect(() => {
     let live = true;
-    fetchDashboard(dashboardId).then(
+    fetchDashboard(organizationId, dashboardId).then(
       (found) => {
         if (live) {
           setDashboard(found.dashboard);
@@ -83,7 +85,7 @@ export function DashboardDetail({
 
   async function remove(widget: IWidget): Promise<void> {
     try {
-      await deleteWidget(widget.id);
+      await deleteWidget(organizationId, widget.id);
       setDashboard((current) =>
         current === null
           ? current
@@ -96,7 +98,7 @@ export function DashboardDetail({
 
   async function removeDashboard(): Promise<void> {
     try {
-      await deleteDashboard(dashboardId);
+      await deleteDashboard(organizationId, dashboardId);
       onBack();
     } catch (caught) {
       setProblem(messageFor(caught, "That dashboard could not be removed."));
@@ -246,6 +248,7 @@ function DashboardWidget({
   onEdit: () => void;
   onRemove: () => void;
 }) {
+  const organizationId = useOrganizationId();
   const [data, setData] = useState<IWidgetData | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -254,7 +257,7 @@ function DashboardWidget({
     let live = true;
     setData(null);
     setProblem(null);
-    fetchWidgetData(widget.id).then(
+    fetchWidgetData(organizationId, widget.id).then(
       (found) => {
         if (live) {
           setData(found);
@@ -274,7 +277,7 @@ function DashboardWidget({
     setRefreshing(true);
     setProblem(null);
     try {
-      setData(await refreshWidgetData(widget.id));
+      setData(await refreshWidgetData(organizationId, widget.id));
     } catch (caught) {
       setProblem(messageFor(caught, "That chart could not be refreshed."));
     } finally {

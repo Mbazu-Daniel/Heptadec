@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOrganizationId } from "../organization";
 import {
   AUDIT_EVENTS,
   AUDIT_TARGET_KINDS,
@@ -58,6 +59,7 @@ function groupEvents(): Array<{ kind: string; events: readonly AuditEvent[] }> {
 const EVENT_GROUPS = groupEvents();
 
 export function AuditLog({ isOwner }: { isOwner: boolean }) {
+  const organizationId = useOrganizationId();
   const [logs, setLogs] = useState<IAuditLog[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -75,7 +77,7 @@ export function AuditLog({ isOwner }: { isOwner: boolean }) {
       const ticket = ++sequence.current;
       setProblem(null);
       try {
-        const listed = await listAuditLogs(filters);
+        const listed = await listAuditLogs(organizationId, filters);
         if (ticket !== sequence.current) {
           return;
         }

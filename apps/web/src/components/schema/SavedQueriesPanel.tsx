@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconBookmark, IconHistory, IconTrash } from "@tabler/icons-react";
 import type { ISavedQuery } from "@heptadec/api/saved-query-contracts";
 import {
@@ -24,6 +25,7 @@ export function SavedQueriesPanel({
   reloadToken?: number;
   onLoad: (sql: string) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [queries, setQueries] = useState<ISavedQuery[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -40,7 +42,7 @@ export function SavedQueriesPanel({
 
   async function reload(forSource: string): Promise<void> {
     try {
-      const found = await listSavedQueries(forSource);
+      const found = await listSavedQueries(organizationId, forSource);
       if (currentSource.current === forSource) {
         setQueries(found.savedQueries);
       }
@@ -55,7 +57,7 @@ export function SavedQueriesPanel({
     setSaving(true);
     setProblem(null);
     try {
-      const { savedQuery } = await createSavedQuery(sourceId, {
+      const { savedQuery } = await createSavedQuery(organizationId, sourceId, {
         name,
         sql: activeSql,
       });
@@ -70,7 +72,7 @@ export function SavedQueriesPanel({
 
   async function remove(query: ISavedQuery): Promise<void> {
     try {
-      await deleteSavedQuery(query.id);
+      await deleteSavedQuery(organizationId, query.id);
       setQueries((current) =>
         (current ?? []).filter((entry) => entry.id !== query.id),
       );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconPlayerPlay, IconRobot } from "@tabler/icons-react";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import type { IQueryResponse } from "@heptadec/api/query-contracts";
@@ -27,6 +28,7 @@ export function PipelineRunner({
   tables: ISchemaTable[];
   focusTable: string | null;
 }) {
+  const organizationId = useOrganizationId();
   const [collection, setCollection] = useState(tables[0]?.name ?? "");
   const [stages, setStages] = useState(DEFAULT_STAGES);
   const [result, setResult] = useState<IQueryResponse | null>(null);
@@ -42,7 +44,7 @@ export function PipelineRunner({
     setAsking(true);
     setProblem(null);
     try {
-      const answer = await askQuestion([source.id], question.trim(), undefined, {});
+      const answer = await askQuestion(organizationId, [source.id], question.trim(), undefined, {});
       const draft = draftOf(answer);
       if (draft.kind !== "pipeline") {
         setProblem("That answer did not come back as a pipeline this view can run.");
@@ -68,7 +70,7 @@ export function PipelineRunner({
     setRunning(true);
     setProblem(null);
     try {
-      setResult(await runPipeline(source.id, { collection: nextCollection, pipeline: parsed }));
+      setResult(await runPipeline(organizationId, source.id, { collection: nextCollection, pipeline: parsed }));
     } catch (caught) {
       setResult(null);
       setProblem(messageFor(caught, "That pipeline could not run."));

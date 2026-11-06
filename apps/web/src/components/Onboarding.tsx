@@ -3,7 +3,12 @@ import { ENGINE_SPECS } from "@heptadec/api/data-source-contracts";
 import type { DataSourceKind } from "@heptadec/api/data-source-contracts";
 import type { IMe } from "@heptadec/api/auth-contracts";
 import type { IOrganizationsResponse } from "@heptadec/api/organization-contracts";
-import { completeOnboarding, messageFor, saveMemberDisplayName } from "../api";
+import {
+  completeOnboarding,
+  fetchOrganizations,
+  messageFor,
+  saveMemberDisplayName,
+} from "../api";
 import { EngineIcon } from "../lib/engine-icon";
 import { Input } from "./ui/input";
 import { OrganizationForm } from "./CreateOrganization";
@@ -35,6 +40,7 @@ const ENGINE_KINDS = Object.keys(ENGINE_SPECS) as DataSourceKind[];
 export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
   const [step, setStep] = useState(0);
   const [orgCreated, setOrgCreated] = useState(false);
+  const [createdOrganizationId, setCreatedOrganizationId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState(me.displayName ?? me.user.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +76,15 @@ export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
     try {
       if (current.id === "name") {
         const trimmed = displayName.trim();
-        await saveMemberDisplayName(trimmed === "" ? null : trimmed);
+        const organizationId =
+          createdOrganizationId ?? orgs?.activeOrganizationId ?? null;
+        if (organizationId === null) {
+          throw new Error("Select an organization first");
+        }
+        await saveMemberDisplayName(
+          organizationId,
+          trimmed === "" ? null : trimmed,
+        );
       }
       if (isLast) {
         await completeOnboarding();
@@ -97,7 +111,13 @@ export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
       {current.id === "org" ? (
         <OrganizationForm
           submitLabel="Continue"
-          onCreated={() => setOrgCreated(true)}
+          onCreated={() => {
+            setOrgCreated(true);
+            fetchOrganizations()
+              .then((orgResult) => setCreatedOrganizationId(orgResult.activeOrganizationId))
+              .catch(() => undefined);
+          }}
+          organizationId={orgs?.activeOrganizationId ?? null}
         />
       ) : (
         <form className="flex flex-col gap-5" onSubmit={next}>

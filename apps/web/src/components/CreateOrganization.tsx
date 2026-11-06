@@ -24,11 +24,13 @@ function slugFrom(name: string): string {
 interface IOrganizationFormProps {
   submitLabel: string;
   onCreated: (slug: string) => void;
+  organizationId: string | null;
 }
 
 export function OrganizationForm({
   submitLabel,
   onCreated,
+  organizationId,
 }: IOrganizationFormProps) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -36,7 +38,7 @@ export function OrganizationForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsPlan, setNeedsPlan] = useState(false);
-  const billing = useBilling();
+  const billing = useBilling(organizationId);
 
   const shownSlug = slugEdited ? slug : slugFrom(name);
 
@@ -157,9 +159,10 @@ export function OrganizationForm({
 
 interface ICreateOrganizationProps {
   onCreated: (slug: string) => void;
+  organizationId: string | null;
 }
 
-export function CreateOrganization({ onCreated }: ICreateOrganizationProps) {
+export function CreateOrganization({ onCreated, organizationId }: ICreateOrganizationProps) {
   return (
     <AuthPage
       wide
@@ -167,7 +170,7 @@ export function CreateOrganization({ onCreated }: ICreateOrganizationProps) {
       title="Create an organization"
       lede="Your team shares data sources, saved queries, and dashboards inside one organization."
     >
-      <OrganizationForm submitLabel="Create organization" onCreated={onCreated} />
+      <OrganizationForm submitLabel="Create organization" onCreated={onCreated} organizationId={organizationId} />
     </AuthPage>
   );
 }

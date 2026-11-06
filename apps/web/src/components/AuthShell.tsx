@@ -35,7 +35,7 @@ export const AUTH_SUCCESS_CLASSNAME =
 function AuthHeader() {
   return (
     <header className="relative z-10 border-b border-(--mk-hairline) bg-[color-mix(in_srgb,var(--mk-bg)_60%,transparent)] backdrop-blur-[12px]">
-      <div className="mx-auto flex h-[58px] max-w-[1280px] items-center justify-between px-6">
+      <div className="mx-auto flex h-14.5 max-w-[1280px] items-center justify-between px-6">
         <a href="/" className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-(--mk-cyan) shadow-[0_0_8px_color-mix(in_srgb,var(--mk-cyan)_80%,transparent)]" />
           <span className="font-display text-[21px] leading-[26px] font-semibold tracking-tight text-(--mk-fg-primary)">

@@ -1,5 +1,6 @@
 import { sendEmail } from "../../common/email";
 import { config } from "../../common/config/env";
+import { BadGatewayException } from "../../common/exceptions";
 import type { IInvitationMail } from "./contracts";
 
 export function acceptUrl(invitationId: string): string {
@@ -30,5 +31,5 @@ export async function sendInvitationEmail(data: IInvitationMail): Promise<void> 
     console.log(`[api] no email transport, invitation not sent. link: ${link}`);
     return;
   }
-  throw new Error(outcome.reason);
+  throw new BadGatewayException(outcome.reason);
 }

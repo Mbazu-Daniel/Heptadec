@@ -123,7 +123,7 @@ function GitHubStars({ label }: { label?: string }) {
     })
       .then(async (res) => {
         if (!res.ok) return null;
-        const data = await res.json();
+        const data: { stargazers_count?: number } | null = await res.json();
         return data;
       })
       .then((body: { stargazers_count?: number } | null) => {

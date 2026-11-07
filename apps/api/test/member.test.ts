@@ -208,7 +208,7 @@ it("stores an avatar on the membership, not on the person", async () => {
   const { cookie, organizationId } = await ownerWithOrganization();
 
   const foreign = "avatars/00000000-0000-4000-8000-000000000000/whatever";
-  const refused = await request("/api/organization/member/image", {
+  const refused = await request("/api/organization/member", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: foreign }),
@@ -220,7 +220,7 @@ it("stores an avatar on the membership, not on the person", async () => {
     .from(member)
     .where(eq(member.organizationId, organizationId));
   const key = `avatars/${organizationId}/${membership!.id}`;
-  const res = await request("/api/organization/member/image", {
+  const res = await request("/api/organization/member", {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: key }),

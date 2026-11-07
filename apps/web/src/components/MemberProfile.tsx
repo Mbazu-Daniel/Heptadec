@@ -3,8 +3,7 @@ import { readAvatar } from "../lib/avatar";
 import {
   fetchMemberProfile,
   messageFor,
-  saveMemberDisplayName,
-  saveMemberImage,
+  saveMemberProfile,
   uploadImage,
 } from "../api";
 import { useImagesConfigured } from "../lib/images";
@@ -84,7 +83,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
         return;
       }
       const path = await uploadImage(organizationId, "avatar", picture);
-      setImage((await saveMemberImage(organizationId, path)).image);
+      setImage((await saveMemberProfile(organizationId, { image: path })).image);
       setNotice("Your image is updated.");
       onReload();
     } catch (caught) {
@@ -97,7 +96,7 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function removeImage(): Promise<void> {
     start();
     try {
-      setImage((await saveMemberImage(organizationId, null)).image);
+      setImage((await saveMemberProfile(organizationId, { image: null })).image);
       setNotice("Your image is removed.");
       onReload();
     } catch {
@@ -110,9 +109,9 @@ export function MemberProfile({ me, onReload, onBack }: IMemberProfileProps) {
   async function saveName(): Promise<void> {
     start();
     try {
-      await saveMemberDisplayName(organizationId, 
-        displayName.trim().length === 0 ? null : displayName.trim(),
-      );
+      await saveMemberProfile(organizationId, {
+        displayName: displayName.trim().length === 0 ? null : displayName.trim(),
+      });
       setNotice("Your name is updated.");
       onReload();
     } catch (caught) {

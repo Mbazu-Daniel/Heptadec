@@ -4,13 +4,9 @@ export interface IMemberProfileInput {
   base: string | null;
 }
 
-export interface IUpdateDisplayNameInput {
-  displayName: string | null;
-  base: string | null;
-}
-
-export interface IUpdateMemberImageInput {
-  image: string | null;
+export interface IUpdateMemberProfileInput {
+  displayName?: string | null;
+  image?: string | null;
   base: string | null;
 }
 

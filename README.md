@@ -1296,35 +1296,24 @@ Return the current member profile.
 - `401`: Authentication required
 
 #### `PATCH /api/organization/member`
-Update the current member's display name.
+Update the current member's display name and avatar.
+
+Both fields are optional, and each can travel on its own: a display name saves
+or clears the name this organization sees, an image saves or clears the avatar
+key.
 
 **Request**:
 ```json
 {
-  "displayName": "Alice"
+  "displayName": "Alice",
+  "image": "avatars/<organizationId>/<memberId>"
 }
 ```
 
 **Response**: same as `GET /api/organization/member`
 
 **Errors**:
-- `400`: Display name is invalid
-- `401`: Authentication required
-
-#### `PATCH /api/organization/member/image`
-Update the current member's avatar key.
-
-**Request**:
-```json
-{
-  "image": "..."
-}
-```
-
-**Response**: same as `GET /api/organization/member`
-
-**Errors**:
-- `400`: Image did not come from this organization
+- `400`: Display name is invalid, image did not come from this organization, or neither field was sent
 - `401`: Authentication required
 
 #### `GET /api/organization/members`

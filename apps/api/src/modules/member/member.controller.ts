@@ -12,8 +12,7 @@ import {
   getMemberProfile,
   listMembers,
   removeMember,
-  updateDisplayName,
-  updateMemberImage,
+  updateMemberProfile,
   updateMemberRole,
 } from "./member.service";
 
@@ -25,42 +24,45 @@ export async function getMemberProfileHandler(c: Context<IAuthVars>) {
   return c.json(await getMemberProfile(organization, { base }));
 }
 
-export async function updateDisplayNameHandler(c: Context<IAuthVars>) {
+export async function updateMemberHandler(c: Context<IAuthVars>) {
   const organization = activeOrganization(c);
   const base = publicBaseFrom(c.env);
 
-  const payload = readBody(await c.req.json(), "A display name is required");
-  const raw = payload.displayName;
-  if (raw !== null && typeof raw !== "string") {
-    throw new BadRequestException("The display name must be text");
-  }
-  const trimmed = typeof raw === "string" ? raw.trim() : "";
-  if (trimmed.length > MAX_DISPLAY_NAME) {
-    throw new BadRequestException("The display name is too long");
-  }
-  const displayName = trimmed.length === 0 ? null : trimmed;
+  const payload = readBody(await c.req.json(), "Send a display name or an image");
+  const updates: { displayName?: string | null; image?: string | null } = {};
 
-  return c.json(await updateDisplayName(organization, { displayName, base }));
-}
-
-export async function updateMemberImageHandler(c: Context<IAuthVars>) {
-  const organization = activeOrganization(c);
-  const base = publicBaseFrom(c.env);
-
-  const payload = readBody(await c.req.json(), "That image could not be saved");
-  const raw = payload.image;
-  if (raw !== null && typeof raw !== "string") {
-    throw new BadRequestException("The image must be text or nothing");
-  }
-  const image = raw === null || raw === "" ? null : raw;
-  if (
-    image !== null &&
-    !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
-  ) {
-    throw new BadRequestException("That image did not come from this organization");
+  if (payload.displayName !== undefined) {
+    const raw = payload.displayName;
+    if (raw !== null && typeof raw !== "string") {
+      throw new BadRequestException("The display name must be text");
+    }
+    const trimmed = typeof raw === "string" ? raw.trim() : "";
+    if (trimmed.length > MAX_DISPLAY_NAME) {
+      throw new BadRequestException("The display name is too long");
+    }
+    updates.displayName = trimmed.length === 0 ? null : trimmed;
   }
 
-  return c.json(await updateMemberImage(organization, { image, base }));
+  if (payload.image !== undefined) {
+    const raw = payload.image;
+    if (raw !== null && typeof raw !== "string") {
+      throw new BadRequestException("The image must be text or nothing");
+    }
+    const image = raw === null || raw === "" ? null : raw;
+    if (
+      image !== null &&
+      !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
+    ) {
+      throw new BadRequestException("That image did not come from this organization");
+    }
+    updates.image = image;
+  }
+
+  if (updates.displayName === undefined && updates.image === undefined) {
+    throw new BadRequestException("Send a display name or an image");
+  }
+
+  return c.json(await updateMemberProfile(organization, { ...updates, base }));
 }
 
 export async function listMembersHandler(c: Context<IAuthVars>) {

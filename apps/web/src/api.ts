@@ -243,23 +243,14 @@ export async function uploadImage(organizationId: string, target: ImageTarget, p
   return signed.key;
 }
 
-export async function saveMemberDisplayName(
+export async function saveMemberProfile(
   organizationId: string,
-  displayName: string | null,
-): Promise<IMemberProfileResponse> {
-  return request<IMemberProfileResponse>(`/api/v1/organization/${organizationId}/member`, "PATCH", {
-    displayName,
-  });
-}
-
-export async function saveMemberImage(
-  organizationId: string,
-  image: string | null,
+  payload: { displayName?: string | null; image?: string | null },
 ): Promise<IMemberProfileResponse> {
   return request<IMemberProfileResponse>(
-    `/api/v1/organization/${organizationId}/member/image`,
+    `/api/v1/organization/${organizationId}/member`,
     "PATCH",
-    { image },
+    payload,
   );
 }
 

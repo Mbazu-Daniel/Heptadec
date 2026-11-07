@@ -7,7 +7,7 @@ import {
   completeOnboarding,
   fetchOrganizations,
   messageFor,
-  saveMemberDisplayName,
+  saveMemberProfile,
 } from "../api";
 import { EngineIcon } from "../lib/engine-icon";
 import { Input } from "./ui/input";
@@ -81,10 +81,9 @@ export function Onboarding({ me, orgs, onDone }: IOnboardingProps) {
         if (organizationId === null) {
           throw new Error("Select an organization first");
         }
-        await saveMemberDisplayName(
-          organizationId,
-          trimmed === "" ? null : trimmed,
-        );
+        await saveMemberProfile(organizationId, {
+          displayName: trimmed === "" ? null : trimmed,
+        });
       }
       if (isLast) {
         await completeOnboarding();

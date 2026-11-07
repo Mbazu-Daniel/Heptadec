@@ -94,7 +94,7 @@ it("keeps the picture a member sets, and tells the profile page it is there", as
     .where(eq(member.organizationId, organizationId));
   const key = `avatars/${organizationId}/${membership!.id}`;
 
-  const saved = await request(`/api/v1/organization/${organizationId}/member/image`, {
+  const saved = await request(`/api/v1/organization/${organizationId}/member`, {
     method: "PATCH",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ image: key }),

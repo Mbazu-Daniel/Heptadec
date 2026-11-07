@@ -12,8 +12,7 @@ import type {
   IListMembersInput,
   IMemberProfileInput,
   IRemoveMemberInput,
-  IUpdateDisplayNameInput,
-  IUpdateMemberImageInput,
+  IUpdateMemberProfileInput,
   IUpdateMemberRoleInput,
 } from "./types";
 
@@ -29,35 +28,32 @@ export async function getMemberProfile(
   };
 }
 
-export async function updateDisplayName(
+export async function updateMemberProfile(
   organization: IRequestScope,
-  input: IUpdateDisplayNameInput,
+  input: IUpdateMemberProfileInput,
 ): Promise<IMemberProfileResponse> {
-  await organization.db
-    .update(member)
-    .set({ displayName: input.displayName })
-    .where(eq(member.id, organization.caller.id));
+  const updates: { displayName?: string | null; image?: string | null } = {};
+  if (input.displayName !== undefined) {
+    updates.displayName = input.displayName;
+  }
+  if (input.image !== undefined) {
+    updates.image = input.image;
+  }
+
+  if (updates.displayName !== undefined || updates.image !== undefined) {
+    await organization.db
+      .update(member)
+      .set(updates)
+      .where(eq(member.id, organization.caller.id));
+  }
+
+  const displayName =
+    updates.displayName !== undefined ? updates.displayName : organization.caller.displayName;
+  const image = updates.image !== undefined ? updates.image : organization.caller.image;
 
   return {
-    displayName: input.displayName,
-    image: mediaUrl(organization.caller.image, input.base),
-    role: roleOf(organization.caller.role),
-    organizationId: organization.organizationId,
-  };
-}
-
-export async function updateMemberImage(
-  organization: IRequestScope,
-  input: IUpdateMemberImageInput,
-): Promise<IMemberProfileResponse> {
-  await organization.db
-    .update(member)
-    .set({ image: input.image })
-    .where(eq(member.id, organization.caller.id));
-
-  return {
-    displayName: organization.caller.displayName,
-    image: mediaUrl(input.image, input.base),
+    displayName,
+    image: mediaUrl(image, input.base),
     role: roleOf(organization.caller.role),
     organizationId: organization.organizationId,
   };

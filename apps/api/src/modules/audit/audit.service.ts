@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { auditLog, member, type HeptadecDatabase } from "@heptadec/db";
+import { InternalServerException } from "../../common/exceptions/index";
 import type { Context } from "hono";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import type { IOrganizationScope } from "../../common/session/current-organization";
@@ -63,7 +64,9 @@ export async function recordAudit(
 ): Promise<void> {
   const session = c.get("session");
   if (session === null) {
-    throw new Error("recordAudit called outside a session-guarded route");
+    throw new InternalServerException(
+      "recordAudit called outside a session-guarded route",
+    );
   }
   const db = c.get("db");
   const displayName = await memberDisplayName(

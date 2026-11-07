@@ -27,6 +27,7 @@ import {
 } from "./postgres-client";
 import type { DataSourceKind } from "./contracts";
 import type { IPreviewObject, IPreviewResponse } from "./contracts";
+import { BadGatewayException } from "../../common/exceptions/index";
 
 export const PREVIEW_DEFAULT_LIMIT = 50;
 
@@ -185,7 +186,10 @@ async function previewLibsqlTable(
       args: [limit],
     });
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("The preview query timed out")), STATEMENT_TIMEOUT_MS);
+      timer = setTimeout(
+        () => reject(new BadGatewayException("The preview query timed out")),
+        STATEMENT_TIMEOUT_MS,
+      );
     });
     const result = await Promise.race([run, timeout]);
     const rows = toRows(result.rows as Array<Record<string, unknown>>);

@@ -14,6 +14,7 @@ import {
   type IStoredConnection,
 } from "./connection";
 import { jsonValue } from "../../common/http/json-value";
+import { BadRequestException } from "../../common/exceptions/index";
 
 export const STATEMENT_TIMEOUT_MS = 15000;
 
@@ -27,7 +28,7 @@ export { SAFE_IDENTIFIER, MAX_SCAN_KEYS, MAX_VALUE_CHARS };
 
 export function assertIdentifier(value: string): void {
   if (!SAFE_IDENTIFIER.test(value)) {
-    throw new Error(`Rejected identifier: ${value}`);
+    throw new BadRequestException(`Rejected identifier: ${value}`);
   }
 }
 

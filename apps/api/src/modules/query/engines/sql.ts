@@ -136,7 +136,10 @@ async function runSqliteStatement(
     const run = client.execute(statement);
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error("statement timeout")),
+        () =>
+          reject(
+            new BadRequestException("That statement took too long and was cancelled"),
+          ),
         15000,
       );
     });
@@ -153,6 +156,9 @@ async function runSqliteStatement(
       statement,
     };
   } catch (caught) {
+    if (caught instanceof BadRequestException) {
+      throw caught;
+    }
     throw refused(caught);
   } finally {
     if (timer !== undefined) {

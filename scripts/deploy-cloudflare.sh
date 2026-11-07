@@ -6,11 +6,11 @@
 #
 #   pnpm deploy:cloudflare
 #
-# This is the laptop path. Pushing to main is the other one: Workers Builds
+# This is the local path. Pushing to main is the other one: Workers Builds
 # reads the same root wrangler.jsonc and runs `pnpm run deploy`.
 #
 # The deployment's own values come from the environment: the gitignored .env on
-# a laptop. The plain ones are written to the Worker on the first deploy, after
+# a local. The plain ones are written to the Worker on the first deploy, after
 # which the dashboard owns them; the secrets are set here and kept.
 #   CLOUDFLARE_ACCOUNT_ID   the account to deploy into
 #   R2_PUBLIC_ID            the bucket's managed r2.dev domain

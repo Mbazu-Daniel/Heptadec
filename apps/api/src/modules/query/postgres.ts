@@ -1,5 +1,5 @@
 import pg from "pg";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import { postgresClient } from "../data-source/postgres-client";

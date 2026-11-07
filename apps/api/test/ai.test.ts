@@ -141,13 +141,14 @@ interface IEvent {
 
 async function ask(
   cookie: string,
+  organizationId: string,
   dataSourceId: string,
   question: string,
 ): Promise<{
   events: IEvent[];
   body: { sql: string | null; answered: boolean; dataSourceName?: string };
 }> {
-  const res = await request("/api/ai/ask", {
+  const res = await request(`/api/v1/organization/${organizationId}/ai/ask`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ dataSourceIds: [dataSourceId], question }),
@@ -192,7 +193,7 @@ async function ownerWithSource(): Promise<{
     body: { name: "AI Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  const created = await request("/api/data-sources", {
+  const created = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -220,9 +221,10 @@ function mineOf<T extends { organizationId: string }>(
 
 async function addProvider(
   cookie: string,
+  organizationId: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return request("/api/ai/providers", {
+  return request(`/api/v1/organization/${organizationId}/ai/providers`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -235,7 +237,7 @@ it("turns a question into a statement and logs the call", async () => {
   );
   try {
     const { cookie, sourceId, organizationId } = await ownerWithSource();
-    const created = await addProvider(cookie, {
+    const created = await addProvider(cookie, organizationId, {
       name: "laptop",
       provider: "openai-compatible",
       model: "some-model",
@@ -244,7 +246,7 @@ it("turns a question into a statement and logs the call", async () => {
     });
     expect(created.status).toBe(201);
 
-    const { events, body } = await ask(cookie, sourceId, "how many events per region?");
+    const { events, body } = await ask(cookie, organizationId, sourceId, "how many events per region?");
     expect(body.answered).toBe(true);
     expect(body.sql).toContain("SELECT region");
 
@@ -282,7 +284,7 @@ it("never stores the key in the clear", async () => {
   const provider = await startProvider("SELECT 1");
   try {
     const { cookie, organizationId } = await ownerWithSource();
-    await addProvider(cookie, {
+    await addProvider(cookie, organizationId, {
       name: "team key",
       provider: "openai-compatible",
       model: "m",
@@ -295,7 +297,7 @@ it("never stores the key in the clear", async () => {
     expect(rows[0]!.apiKey).not.toContain("sk-never-in-plaintext");
     expect(rows[0]!.apiKey.startsWith("v1:")).toBe(true);
 
-    const listed = await request("/api/ai/providers", { headers: { cookie } });
+    const listed = await request(`/api/v1/organization/${organizationId}/ai/providers`, { headers: { cookie } });
     const text = await listed.text();
     expect(text).not.toContain("sk-never-in-plaintext");
   } finally {
@@ -308,14 +310,14 @@ it("keeps one organization's keys and providers out of another's reach", async (
   try {
     const mine = await ownerWithSource();
     const theirs = await ownerWithSource();
-    await addProvider(mine.cookie, {
+    await addProvider(mine.cookie, mine.organizationId, {
       name: "mine",
       provider: "openai-compatible",
       model: "m",
       baseUrl: provider.baseUrl,
       apiKey: "sk-mine",
     });
-    await addProvider(theirs.cookie, {
+    await addProvider(theirs.cookie, theirs.organizationId, {
       name: "theirs",
       provider: "openai-compatible",
       model: "m",
@@ -324,12 +326,12 @@ it("keeps one organization's keys and providers out of another's reach", async (
     });
 
     const mineList = (await (
-      await request("/api/ai/providers", { headers: { cookie: mine.cookie } })
+      await request(`/api/v1/organization/${mine.organizationId}/ai/providers`, { headers: { cookie: mine.cookie } })
     ).json()) as { providers: Array<{ name: string }> };
     expect(mineList.providers.map((p) => p.name)).toEqual(["mine"]);
 
     const theirList = (await (
-      await request("/api/ai/providers", { headers: { cookie: theirs.cookie } })
+      await request(`/api/v1/organization/${theirs.organizationId}/ai/providers`, { headers: { cookie: theirs.cookie } })
     ).json()) as { providers: Array<{ name: string }> };
     expect(theirList.providers.map((p) => p.name)).toEqual(["theirs"]);
 
@@ -346,7 +348,7 @@ it("keeps one organization's keys and providers out of another's reach", async (
     const mineRow = rows.find((r) => r.name === "mine")!;
     const theirRow = rows.find((r) => r.name === "theirs")!;
 
-    const stolen = await request(`/api/ai/providers/${theirRow.id}`, {
+    const stolen = await request(`/api/v1/organization/${mine.organizationId}/ai/providers/${theirRow.id}`, {
       method: "DELETE",
       headers: { cookie: mine.cookie },
     });
@@ -363,8 +365,8 @@ it("keeps one organization's keys and providers out of another's reach", async (
 });
 
 it("refuses to ask before a provider exists", async () => {
-  const { cookie, sourceId } = await ownerWithSource();
-  const res = await request("/api/ai/ask", {
+  const { cookie, organizationId, sourceId } = await ownerWithSource();
+  const res = await request(`/api/v1/organization/${organizationId}/ai/ask`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ dataSourceId: sourceId, question: "anything?" }),
@@ -377,15 +379,15 @@ it("uses the provider the user marked as default", async () => {
   const first = await startProvider("SELECT 'first'");
   const second = await startProvider("SELECT 'second'");
   try {
-    const { cookie, sourceId } = await ownerWithSource();
-    await addProvider(cookie, {
+    const { cookie, organizationId, sourceId } = await ownerWithSource();
+    await addProvider(cookie, organizationId, {
       name: "a",
       provider: "openai-compatible",
       model: "m",
       baseUrl: first.baseUrl,
       apiKey: "sk-a",
     });
-    await addProvider(cookie, {
+    await addProvider(cookie, organizationId, {
       name: "b",
       provider: "openai-compatible",
       model: "m",
@@ -394,7 +396,7 @@ it("uses the provider the user marked as default", async () => {
       isDefault: true,
     });
 
-    const { body } = await ask(cookie, sourceId, "pick one");
+    const { body } = await ask(cookie, organizationId, sourceId, "pick one");
     expect(body.sql).toContain("second");
     expect(first.captured).toHaveLength(0);
     expect(second.captured).toHaveLength(1);
@@ -408,7 +410,7 @@ it("says so when the model declines to answer", async () => {
   const provider = await startProvider("UNANSWERABLE");
   try {
     const { cookie, sourceId, organizationId } = await ownerWithSource();
-    await addProvider(cookie, {
+    await addProvider(cookie, organizationId, {
       name: "laptop",
       provider: "openai-compatible",
       model: "m",
@@ -418,6 +420,7 @@ it("says so when the model declines to answer", async () => {
 
     const { events, body } = await ask(
       cookie,
+      organizationId,
       sourceId,
       "what is the airspeed of a swallow",
     );
@@ -435,7 +438,7 @@ it("says so when the model declines to answer", async () => {
 
 it("logs the failure without echoing the key when the provider is down", { timeout: 30_000 }, async () => {
   const { cookie, sourceId, organizationId } = await ownerWithSource();
-  await addProvider(cookie, {
+  await addProvider(cookie, organizationId, {
     name: "dead",
     provider: "openai-compatible",
     model: "m",
@@ -443,7 +446,7 @@ it("logs the failure without echoing the key when the provider is down", { timeo
     apiKey: "sk-dead-secret",
   });
 
-  const { events, body } = await ask(cookie, sourceId, "anything");
+  const { events, body } = await ask(cookie, organizationId, sourceId, "anything");
   expect(body.sql).toBeNull();
   const problem = events.find((event) => event.name === "problem");
   expect(problem).toBeDefined();
@@ -458,8 +461,8 @@ it("logs the failure without echoing the key when the provider is down", { timeo
 });
 
 it("refuses a provider that is not in the catalog", async () => {
-  const { cookie } = await ownerWithSource();
-  const res = await addProvider(cookie, {
+  const { cookie, organizationId } = await ownerWithSource();
+  const res = await addProvider(cookie, organizationId, {
     name: "made up",
     provider: "not-a-real-provider",
     model: "m",
@@ -469,8 +472,8 @@ it("refuses a provider that is not in the catalog", async () => {
 });
 
 it("does not offer a provider the transport cannot speak", async () => {
-  const { cookie } = await ownerWithSource();
-  const res = await request("/api/ai/providers", { headers: { cookie } });
+  const { cookie, organizationId } = await ownerWithSource();
+  const res = await request(`/api/v1/organization/${organizationId}/ai/providers`, { headers: { cookie } });
   const body = (await res.json()) as {
     catalog: Array<{ id: string }>;
   };
@@ -480,7 +483,7 @@ it("does not offer a provider the transport cannot speak", async () => {
 
 it("refuses a provider the transport cannot speak, and writes nothing", async () => {
   const { cookie, organizationId } = await ownerWithSource();
-  const res = await addProvider(cookie, {
+  const res = await addProvider(cookie, organizationId, {
     name: "Anthropic",
     provider: "anthropic",
     model: "claude",
@@ -492,8 +495,8 @@ it("refuses a provider the transport cannot speak, and writes nothing", async ()
 });
 
 it("offers Groq in the catalog as a ready choice", async () => {
-  const { cookie } = await ownerWithSource();
-  const res = await request("/api/ai/providers", { headers: { cookie } });
+  const { cookie, organizationId } = await ownerWithSource();
+  const res = await request(`/api/v1/organization/${organizationId}/ai/providers`, { headers: { cookie } });
   const body = (await res.json()) as {
     catalog: Array<{
       id: string;
@@ -509,18 +512,18 @@ it("offers Groq in the catalog as a ready choice", async () => {
 });
 
 it("keeps providers away from anyone who is not an owner", async () => {
-  const { cookie, organizationId: orgId } = await ownerWithSource();
+  const { cookie, organizationId } = await ownerWithSource();
   const editor = await signUp(uniqueEmail());
   await authFor(db).api.addMember({
-    body: { userId: editor.user.id, role: "editor", organizationId: orgId },
+    body: { userId: editor.user.id, role: "editor", organizationId },
     headers: { cookie },
   });
   await authFor(db).api.setActiveOrganization({
-    body: { organizationId: orgId },
+    body: { organizationId },
     headers: { cookie: editor.cookie },
   });
 
-  const res = await request("/api/ai/providers", { headers: { cookie: editor.cookie } });
+  const res = await request(`/api/v1/organization/${organizationId}/ai/providers`, { headers: { cookie: editor.cookie } });
   expect(res.status).toBe(403);
 });
 
@@ -530,8 +533,8 @@ it("lists the models the provider actually serves, not a shipped list", async ()
     { id: "qwen/qwen3.8-27b", name: "Qwen 3.8 27B" },
   ]);
   try {
-    const { cookie } = await ownerWithSource();
-    const created = await addProvider(cookie, {
+    const { cookie, organizationId } = await ownerWithSource();
+    const created = await addProvider(cookie, organizationId, {
       name: "live",
       provider: "openai-compatible",
       model: "openai/gpt-oss-120b",
@@ -541,7 +544,7 @@ it("lists the models the provider actually serves, not a shipped list", async ()
     expect(created.status).toBe(201);
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(200);
@@ -568,7 +571,7 @@ it("offers a provider's models before it is saved, and writes nothing", async ()
   ]);
   try {
     const { cookie, organizationId } = await ownerWithSource();
-    const res = await request("/api/ai/providers/models", {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/providers/models`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -599,15 +602,15 @@ it("offers a provider's models before it is saved, and writes nothing", async ()
 it("falls back to what the organization already uses when a provider lists nothing", async () => {
   const provider = await startModelsProvider(null);
   try {
-    const { cookie } = await ownerWithSource();
-    const first = await addProvider(cookie, {
+    const { cookie, organizationId } = await ownerWithSource();
+    const first = await addProvider(cookie, organizationId, {
       name: "a",
       provider: "openai-compatible",
       model: "model-the-org-uses",
       baseUrl: provider.baseUrl,
       apiKey: "sk-x",
     });
-    await addProvider(cookie, {
+    await addProvider(cookie, organizationId, {
       name: "b",
       provider: "openai-compatible",
       model: "another-model",
@@ -616,7 +619,7 @@ it("falls back to what the organization already uses when a provider lists nothi
     });
     const id = ((await first.json()) as { id: string }).id;
 
-    const res = await request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(200);
@@ -637,8 +640,8 @@ it("falls back to what the organization already uses when a provider lists nothi
 it("says the key was refused rather than listing nothing", async () => {
   const provider = await startModelsProvider(null, 401);
   try {
-    const { cookie } = await ownerWithSource();
-    const created = await addProvider(cookie, {
+    const { cookie, organizationId } = await ownerWithSource();
+    const created = await addProvider(cookie, organizationId, {
       name: "bad key",
       provider: "openai-compatible",
       model: "m",
@@ -647,7 +650,7 @@ it("says the key was refused rather than listing nothing", async () => {
     });
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/providers/${id}/models`, {
       headers: { cookie },
     });
     expect(res.status).toBe(400);
@@ -662,7 +665,7 @@ it("keeps one organization's model list out of another's reach", async () => {
   try {
     const mine = await ownerWithSource();
     const theirs = await ownerWithSource();
-    const created = await addProvider(theirs.cookie, {
+    const created = await addProvider(theirs.cookie, theirs.organizationId, {
       name: "theirs",
       provider: "openai-compatible",
       model: "m",
@@ -671,7 +674,7 @@ it("keeps one organization's model list out of another's reach", async () => {
     });
     const id = ((await created.json()) as { id: string }).id;
 
-    const res = await request(`/api/ai/providers/${id}/models`, {
+    const res = await request(`/api/v1/organization/${mine.organizationId}/ai/providers/${id}/models`, {
       headers: { cookie: mine.cookie },
     });
     expect(res.status).toBe(404);
@@ -683,8 +686,8 @@ it("keeps one organization's model list out of another's reach", async () => {
 it("prunes a huge schema to a budget instead of sending all of it", async () => {
   const provider = await startProvider("SELECT 1");
   try {
-    const { cookie, sourceId } = await ownerWithSource();
-    await addProvider(cookie, {
+    const { cookie, organizationId, sourceId } = await ownerWithSource();
+    await addProvider(cookie, organizationId, {
       name: "laptop",
       provider: "openai-compatible",
       model: "m",
@@ -692,7 +695,7 @@ it("prunes a huge schema to a budget instead of sending all of it", async () => 
       apiKey: "sk-x",
     });
 
-    await ask(cookie, sourceId, "anything");
+    await ask(cookie, organizationId, sourceId, "anything");
 
     const sent = JSON.parse(provider.captured[0]!.body) as {
       messages: Array<{ content: string }>;
@@ -709,7 +712,7 @@ it("names the source that answered when several are in scope", async () => {
   const provider = await startProvider("SELECT 1");
   try {
   const { cookie, sourceId, organizationId } = await ownerWithSource();
-  await addProvider(cookie, {
+  await addProvider(cookie, organizationId, {
     name: "laptop",
     provider: "openai-compatible",
     model: "some-model",
@@ -717,7 +720,7 @@ it("names the source that answered when several are in scope", async () => {
     apiKey: "sk-org-secret",
   });
 
-  const res = await request("/api/ai/ask", {
+  const res = await request(`/api/v1/organization/${organizationId}/ai/ask`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -759,7 +762,7 @@ it("404s when the scope names a source that is not the caller's", async () => {
   const mine = await ownerWithSource();
   const theirs = await ownerWithSource();
 
-  const res = await request("/api/ai/ask", {
+  const res = await request(`/api/v1/organization/${mine.organizationId}/ai/ask`, {
     method: "POST",
     headers: { cookie: mine.cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -773,15 +776,15 @@ it("404s when the scope names a source that is not the caller's", async () => {
 it("answers a redis question with a read-only command", async () => {
   const provider = await startProvider("HGETALL event:1");
   try {
-    const { cookie } = await ownerWithSource();
-    await addProvider(cookie, {
+    const { cookie, organizationId } = await ownerWithSource();
+    await addProvider(cookie, organizationId, {
       name: "laptop",
       provider: "openai-compatible",
       model: "some-model",
       baseUrl: provider.baseUrl,
       apiKey: "sk-org-secret",
     });
-    const created = await request("/api/data-sources", {
+    const created = await request(`/api/v1/organization/${organizationId}/data-sources`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -796,7 +799,7 @@ it("answers a redis question with a read-only command", async () => {
       dataSource: { id: string };
     };
 
-    const res = await request("/api/ai/ask", {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/ask`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -831,7 +834,7 @@ it("answers a redis question with a read-only command", async () => {
     expect(body!.sql).toBeNull();
 
     // The command it answered with is one the server will actually run.
-    const ran = await request(`/api/data-sources/${cache.id}/query`, {
+    const ran = await request(`/api/v1/organization/${organizationId}/data-sources/${cache.id}/query`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ command: body!.command }),
@@ -847,15 +850,15 @@ it("answers a quickwit question with a search over one index", async () => {
     '{"index": "otel-logs", "query": "body:probe"}',
   );
   try {
-    const { cookie } = await ownerWithSource();
-    await addProvider(cookie, {
+    const { cookie, organizationId } = await ownerWithSource();
+    await addProvider(cookie, organizationId, {
       name: "laptop",
       provider: "openai-compatible",
       model: "some-model",
       baseUrl: provider.baseUrl,
       apiKey: "sk-org-secret",
     });
-    const created = await request("/api/data-sources", {
+    const created = await request(`/api/v1/organization/${organizationId}/data-sources`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -870,7 +873,7 @@ it("answers a quickwit question with a search over one index", async () => {
       dataSource: { id: string };
     };
 
-    const res = await request("/api/ai/ask", {
+    const res = await request(`/api/v1/organization/${organizationId}/ai/ask`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({

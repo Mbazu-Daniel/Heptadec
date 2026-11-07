@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import {
+  requireOrganization,
   requireSession,
   type IAuthVars,
 } from "../../common/middleware/require-session";
@@ -10,7 +11,7 @@ import { requireEntitlement } from "./entitlement";
 export function subscribed(product: Hono<IAuthVars>): Hono<IAuthVars> {
   const gated = new Hono<IAuthVars>();
   for (const path of routePaths(product)) {
-    gated.use(path, requireSession, gate);
+    gated.use(path, requireSession, requireOrganization, gate);
   }
   gated.route("/", product);
   return gated;

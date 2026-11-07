@@ -1,4 +1,4 @@
-import { BadGatewayException } from "../../common/exceptions";
+import { BadGatewayException } from "../../common/exceptions/index";
 import { endpointAddress } from "./connection";
 import type { IStoredConnection } from "./connection";
 

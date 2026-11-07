@@ -1,5 +1,5 @@
 import pg from "pg";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { structureFailure } from "../../common/driver-error";
 import { postgresClient } from "../data-source/postgres-client";
 import type { ISavedConnection } from "../data-source/connection";

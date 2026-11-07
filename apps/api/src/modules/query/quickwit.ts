@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { quickwitSearch } from "../data-source/quickwit-client";
 import { toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";

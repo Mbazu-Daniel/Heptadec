@@ -35,8 +35,8 @@ function postgresInput(name: string) {
   };
 }
 
-function createSource(cookie: string, name: string): Promise<Response> {
-  return request("/api/data-sources", {
+function createSource(cookie: string, organizationId: string, name: string): Promise<Response> {
+  return request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(postgresInput(name)),
@@ -73,7 +73,7 @@ async function switchOrganization(
   cookie: string,
   organizationId: string,
 ): Promise<void> {
-  const res = await request("/api/organization/switch", {
+  const res = await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
@@ -106,11 +106,11 @@ it("keeps a lone organization usable forever, long past the old trial window", a
   const { cookie, organizationId } = await ownerWithOrganization();
   await backdate(organizationId, 400);
 
-  const res = await createSource(cookie, "Eternal source");
+  const res = await createSource(cookie, organizationId, "Eternal source");
   expect(res.status).toBe(200);
   expect(await sourcesOf(organizationId)).toHaveLength(1);
 
-  const listed = await request("/api/data-sources", { headers: { cookie } });
+  const listed = await request(`/api/v1/organization/${organizationId}/data-sources`, { headers: { cookie } });
   expect(listed.status).toBe(200);
 });
 
@@ -164,7 +164,7 @@ it("keeps a promoted co-owner's own organization free", async () => {
   });
 
   await switchOrganization(second.cookie, second.organizationId);
-  const res = await createSource(second.cookie, "B own source");
+  const res = await createSource(second.cookie, second.organizationId, "B own source");
   expect(res.status).toBe(200);
   expect(await sourcesOf(second.organizationId)).toHaveLength(1);
 });
@@ -184,7 +184,7 @@ it("does not let another account's payment unlock a co-owner", async () => {
 
   // B's account is still unpaid and owns only their own organization.
   await switchOrganization(second.cookie, second.organizationId);
-  const billing = await request("/api/billing", { headers: { cookie: second.cookie } });
+  const billing = await request(`/api/v1/organization/${second.organizationId}/billing`, { headers: { cookie: second.cookie } });
   expect(billing.status).toBe(200);
   expect(await billing.json()).toMatchObject({
     configured: true,
@@ -203,7 +203,7 @@ it("does not let another account's payment unlock a co-owner", async () => {
     refused = true;
   }
   expect(refused).toBe(true);
-  const after = await request("/api/billing", { headers: { cookie: second.cookie } });
+  const after = await request(`/api/v1/organization/${second.organizationId}/billing`, { headers: { cookie: second.cookie } });
   expect(await after.json()).toMatchObject({ organizationsOwned: 1 });
 });
 
@@ -231,12 +231,12 @@ it("keeps the oldest organization free while a lapsed extra one is locked", asyn
   await lapsePeriod(first);
 
   await switchOrganization(cookie, second.id);
-  const refused = await createSource(cookie, "Locked extra");
+  const refused = await createSource(cookie, second.id, "Locked extra");
   expect(refused.status).toBe(402);
   expect(await sourcesOf(second.id)).toHaveLength(0);
 
   await switchOrganization(cookie, first);
-  const kept = await createSource(cookie, "Free oldest");
+  const kept = await createSource(cookie, first, "Free oldest");
   expect(kept.status).toBe(200);
   expect(await sourcesOf(first)).toHaveLength(1);
 });
@@ -248,10 +248,10 @@ it("reports the free plan through the routes an owner needs to pay", async () =>
   const me = await request("/api/me", { headers: { cookie } });
   expect(me.status).toBe(200);
 
-  const org = await request("/api/organization", { headers: { cookie } });
+  const org = await request(`/api/v1/organization`, { headers: { cookie } });
   expect(org.status).toBe(200);
 
-  const billing = await request("/api/billing", { headers: { cookie } });
+  const billing = await request(`/api/v1/organization/${organizationId}/billing`, { headers: { cookie } });
   expect(billing.status).toBe(200);
   const summary = (await billing.json()) as Record<string, unknown>;
   expect(summary).toMatchObject({
@@ -276,8 +276,8 @@ function mcp(token: string): Promise<Response> {
   });
 }
 
-async function issueToken(cookie: string): Promise<string> {
-  const res = await request("/api/mcp-tokens", {
+async function issueToken(cookie: string, organizationId: string): Promise<string> {
+  const res = await request(`/api/v1/organization/${organizationId}/mcp-tokens`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "laptop", capabilities: [...MCP_TOOLS] }),
@@ -289,7 +289,7 @@ async function issueToken(cookie: string): Promise<string> {
 
 it("serves a lone organization's MCP token forever, but locks a lapsed extra one", async () => {
   const { cookie, organizationId: first } = await ownerWithOrganization();
-  const loneToken = await issueToken(cookie);
+  const loneToken = await issueToken(cookie, first);
   await backdate(first, 400);
   expect((await mcp(loneToken)).status).not.toBe(402);
 
@@ -299,7 +299,7 @@ it("serves a lone organization's MCP token forever, but locks a lapsed extra one
     headers: { cookie },
   });
   await switchOrganization(cookie, second.id);
-  const extraToken = await issueToken(cookie);
+  const extraToken = await issueToken(cookie, second.id);
   await lapsePeriod(first);
 
   expect((await mcp(extraToken)).status).toBe(402);

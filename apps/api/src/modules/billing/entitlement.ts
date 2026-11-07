@@ -9,7 +9,7 @@ import {
 import {
   NotFoundException,
   PaymentRequiredException,
-} from "../../common/exceptions";
+} from "../../common/exceptions/index";
 import { billingConfigured } from "./catalog";
 import type { BillingCadence } from "./contracts";
 

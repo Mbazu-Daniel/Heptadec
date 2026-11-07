@@ -20,4 +20,4 @@ export { InternalServerException } from "./internal-server";
 
 export { toErrorResponse, type IErrorResponse } from "./to-error-response";
 
-export type { ErrorCode } from "../constants";
+export type { ErrorCode } from "../constants/error-code.const";

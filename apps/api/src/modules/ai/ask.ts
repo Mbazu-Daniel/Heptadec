@@ -1,57 +1,48 @@
-import type {
-  IEngineSpec,
-  QueryLanguage,
-} from "../data-source/contracts";
+import type { IEngineSpec, QueryLanguage } from "../data-source/contracts";
 import type { IStoredConnection } from "../data-source/connection";
 import { introspectSchema } from "../schema/introspect";
 import { readMongoPipeline } from "../query/mongo";
 import { readSearchStatement } from "../query/quickwit";
-import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
-import { quickwitContext, redisContext, schemaContext } from "./context";
 import {
   mongoInstructions,
   queryInstructions,
   quickwitInstructions,
   redisInstructions,
 } from "./instructions";
+import { quickwitContext, redisContext, schemaContext } from "./context";
+import type { IAskStyle, IGeneratedQuery, IQueryDraft } from "./types";
 
-export interface IGeneratedQuery {
-  sql: string | null;
-  pipeline: IMongoPipeline | null;
-  command: string | null;
-  search: ISearchStatement | null;
-  outcome: "answered" | "declined" | "empty" | "unreadable";
-}
-
-type IDraft = Pick<IGeneratedQuery, "sql" | "pipeline" | "command" | "search">;
-
-const REFUSED: IDraft = {
+const REFUSED: IQueryDraft = {
   sql: null,
   pipeline: null,
   command: null,
   search: null,
 };
 
-export interface IAskStyle {
-  language: QueryLanguage;
-  instructions: string;
+interface IAskStyleSpec {
+  instructions(engine: IEngineSpec): string | null;
   context(sourceId: string, stored: IStoredConnection): Promise<string>;
-  readAnswer(text: string): IGeneratedQuery;
+  readDraft(cleaned: string): IQueryDraft | null;
 }
 
-const ASK_STYLES: Record<
-  QueryLanguage,
-  {
-    instructions(engine: IEngineSpec): string | null;
-    context(sourceId: string, stored: IStoredConnection): Promise<string>;
-    readDraft(cleaned: string): IDraft | null;
+const schemaSourceContext = async (
+  sourceId: string,
+  stored: IStoredConnection,
+): Promise<string> =>
+  schemaContext({ sourceId, ...(await introspectSchema(stored)) });
+
+const readJsonAnswer = <T>(text: string, read: (value: unknown) => T): T | null => {
+  try {
+    return read(JSON.parse(text));
+  } catch {
+    return null;
   }
-> = {
+};
+
+const ASK_STYLES: Record<QueryLanguage, IAskStyleSpec> = {
   sql: {
     instructions: (engine) =>
-      engine.sqlDialect === null
-        ? null
-        : queryInstructions(engine.sqlDialect),
+      engine.sqlDialect === null ? null : queryInstructions(engine.sqlDialect),
     context: schemaSourceContext,
     readDraft: (cleaned) => ({ ...REFUSED, sql: cleaned }),
   },
@@ -78,6 +69,26 @@ const ASK_STYLES: Record<
   },
 };
 
+const readAnswer = (
+  text: string,
+  readDraft: (cleaned: string) => IQueryDraft | null,
+): IGeneratedQuery => {
+  const cleaned = text
+    .replace(/^```[a-z]*\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  if (cleaned === "") {
+    return { ...REFUSED, outcome: "empty" };
+  }
+  if (cleaned.toUpperCase().startsWith("UNANSWERABLE")) {
+    return { ...REFUSED, outcome: "declined" };
+  }
+  const draft = readDraft(cleaned);
+  return draft === null
+    ? { ...REFUSED, outcome: "unreadable" }
+    : { ...draft, outcome: "answered" };
+};
+
 export function askStyleOf(engine: IEngineSpec): IAskStyle | null {
   const language = engine.queryLanguage;
   if (language === null) {
@@ -94,39 +105,4 @@ export function askStyleOf(engine: IEngineSpec): IAskStyle | null {
     context: (sourceId, stored) => spec.context(sourceId, stored),
     readAnswer: (text) => readAnswer(text, spec.readDraft),
   };
-}
-
-async function schemaSourceContext(
-  sourceId: string,
-  stored: IStoredConnection,
-): Promise<string> {
-  return schemaContext({ sourceId, ...(await introspectSchema(stored)) });
-}
-
-function readAnswer(
-  text: string,
-  readDraft: (cleaned: string) => IDraft | null,
-): IGeneratedQuery {
-  const cleaned = text
-    .replace(/^```[a-z]*\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-  if (cleaned === "") {
-    return { ...REFUSED, outcome: "empty" };
-  }
-  if (cleaned.toUpperCase().startsWith("UNANSWERABLE")) {
-    return { ...REFUSED, outcome: "declined" };
-  }
-  const draft = readDraft(cleaned);
-  return draft === null
-    ? { ...REFUSED, outcome: "unreadable" }
-    : { ...draft, outcome: "answered" };
-}
-
-function readJsonAnswer<T>(text: string, read: (value: unknown) => T): T | null {
-  try {
-    return read(JSON.parse(text));
-  } catch {
-    return null;
-  }
 }

@@ -150,6 +150,8 @@ export function messageFor(caught: unknown, fallback: string): string {
   return caught instanceof ApiError ? caught.message : fallback;
 }
 
+
+
 async function request<T>(
   path: string,
   method = "GET",
@@ -190,41 +192,42 @@ export async function listProviders(): Promise<IProvider[]> {
 }
 
 export function fetchOrganizations(): Promise<IOrganizationsResponse> {
-  return request<IOrganizationsResponse>("/api/organization");
+  return request<IOrganizationsResponse>("/api/v1/organization");
 }
 
 export async function switchOrganization(organizationId: string): Promise<void> {
-  await request("/api/organization/switch", "POST", { organizationId });
+  await request("/api/v1/organization/switch", "POST", { organizationId });
 }
 
-export async function deleteOrganization(slug: string): Promise<void> {
-  await request("/api/organization/delete", "POST", { slug });
+export async function deleteOrganization(organizationId: string, slug: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/delete`, "POST", { slug });
 }
 
-export function fetchMemberProfile(): Promise<IMemberProfileResponse> {
-  return request<IMemberProfileResponse>("/api/organization/member");
+export function fetchMemberProfile(organizationId: string): Promise<IMemberProfileResponse> {
+  return request<IMemberProfileResponse>(`/api/v1/organization/${organizationId}/member`);
 }
 
 export function fetchImagesConfig(): Promise<IImagesConfigResponse> {
   return request<IImagesConfigResponse>("/api/images/config");
 }
 
-export function fetchBilling(): Promise<IBillingSummary> {
-  return request<IBillingSummary>("/api/billing");
+export function fetchBilling(organizationId: string): Promise<IBillingSummary> {
+  return request<IBillingSummary>(`/api/v1/organization/${organizationId}/billing`);
 }
 
-export function startCheckout(payload: IStartCheckoutRequest): Promise<IStartCheckoutResponse> {
-  return request<IStartCheckoutResponse>("/api/billing/checkout", "POST", payload);
+export function startCheckout(organizationId: string, payload: IStartCheckoutRequest): Promise<IStartCheckoutResponse> {
+  return request<IStartCheckoutResponse>(`/api/v1/organization/${organizationId}/billing/checkout`, "POST", payload);
 }
 
 export function setAutoRenew(
+  organizationId: string,
   payload: ISetAutoRenewRequest,
 ): Promise<ISetAutoRenewResponse> {
-  return request<ISetAutoRenewResponse>("/api/billing/auto-renew", "POST", payload);
+  return request<ISetAutoRenewResponse>(`/api/v1/organization/${organizationId}/billing/auto-renew`, "POST", payload);
 }
 
-export async function uploadImage(target: ImageTarget, picture: Blob): Promise<string> {
-  const signed = await request<IPresignImageResponse>("/api/images/presign", "POST", {
+export async function uploadImage(organizationId: string, target: ImageTarget, picture: Blob): Promise<string> {
+  const signed = await request<IPresignImageResponse>(`/api/v1/organization/${organizationId}/images/presign`, "POST", {
     target,
     contentType: picture.type,
     size: picture.size,
@@ -241,18 +244,20 @@ export async function uploadImage(target: ImageTarget, picture: Blob): Promise<s
 }
 
 export async function saveMemberDisplayName(
+  organizationId: string,
   displayName: string | null,
 ): Promise<IMemberProfileResponse> {
-  return request<IMemberProfileResponse>("/api/organization/member", "PATCH", {
+  return request<IMemberProfileResponse>(`/api/v1/organization/${organizationId}/member`, "PATCH", {
     displayName,
   });
 }
 
 export async function saveMemberImage(
+  organizationId: string,
   image: string | null,
 ): Promise<IMemberProfileResponse> {
   return request<IMemberProfileResponse>(
-    "/api/organization/member/image",
+    `/api/v1/organization/${organizationId}/member/image`,
     "PATCH",
     { image },
   );
@@ -273,34 +278,37 @@ export async function acceptInvitation(
   );
 }
 
-export function listInvitations(): Promise<IInvitationListResponse> {
-  return request<IInvitationListResponse>("/api/organization/invitations");
+export function listInvitations(organizationId: string): Promise<IInvitationListResponse> {
+  return request<IInvitationListResponse>(`/api/v1/organization/${organizationId}/invitations`);
 }
 
-export function listAiProviders(): Promise<IAiProviderListResponse> {
-  return request<IAiProviderListResponse>("/api/ai/providers");
+export function listAiProviders(organizationId: string): Promise<IAiProviderListResponse> {
+  return request<IAiProviderListResponse>(`/api/v1/organization/${organizationId}/ai/providers`);
 }
 
 export function createAiProvider(
+  organizationId: string,
   input: ICreateAiProviderRequest,
 ): Promise<ICreateAiProviderResponse> {
-  return request<ICreateAiProviderResponse>("/api/ai/providers", "POST", input);
+  return request<ICreateAiProviderResponse>(`/api/v1/organization/${organizationId}/ai/providers`, "POST", input);
 }
 
 export function listAiProviderModels(
+  organizationId: string,
   providerId: string,
 ): Promise<IListModelsResponse> {
-  return request<IListModelsResponse>(`/api/ai/providers/${providerId}/models`);
+  return request<IListModelsResponse>(`/api/v1/organization/${organizationId}/ai/providers/${providerId}/models`);
 }
 
 export function listProviderModels(
+  organizationId: string,
   input: IListProviderModelsRequest,
 ): Promise<IListModelsResponse> {
-  return request<IListModelsResponse>("/api/ai/providers/models", "POST", input);
+  return request<IListModelsResponse>(`/api/v1/organization/${organizationId}/ai/providers/models`, "POST", input);
 }
 
-export async function removeAiProvider(providerId: string): Promise<void> {
-  await request(`/api/ai/providers/${providerId}`, "DELETE");
+export async function removeAiProvider(organizationId: string, providerId: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/ai/providers/${providerId}`, "DELETE");
 }
 
 export interface IStreamHandlers {
@@ -373,13 +381,14 @@ async function streamRequest<T>(
 export type IAskHandlers = IStreamHandlers;
 
 export async function askQuestion(
+  organizationId: string,
   dataSourceIds: readonly string[],
   question: string,
   providerId: string | undefined,
   handlers: IAskHandlers,
 ): Promise<IGenerateQueryResponse> {
   return streamRequest(
-    "/api/ai/ask",
+    `/api/v1/organization/${organizationId}/ai/ask`,
     {
       dataSourceIds: [...dataSourceIds],
       question,
@@ -408,402 +417,435 @@ function readPayload<T>(data: string): T {
   return JSON.parse(data) as T;
 }
 
-export function listMcpTokens(): Promise<IMcpTokenListResponse> {
-  return request<IMcpTokenListResponse>("/api/mcp-tokens");
+export function listMcpTokens(organizationId: string): Promise<IMcpTokenListResponse> {
+  return request<IMcpTokenListResponse>(`/api/v1/organization/${organizationId}/mcp-tokens`);
 }
 
 export function createMcpToken(
+  organizationId: string,
   name: string,
   capabilities: string[],
 ): Promise<ICreateMcpTokenResponse> {
-  return request<ICreateMcpTokenResponse>("/api/mcp-tokens", "POST", {
+  return request<ICreateMcpTokenResponse>(`/api/v1/organization/${organizationId}/mcp-tokens`, "POST", {
     name,
     capabilities,
   });
 }
 
-export async function revokeMcpToken(tokenId: string): Promise<void> {
-  await request(`/api/mcp-tokens/${tokenId}`, "DELETE");
+export async function revokeMcpToken(organizationId: string, tokenId: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/mcp-tokens/${tokenId}`, "DELETE");
 }
 
-export function listMembers(): Promise<IMembersResponse> {
-  return request<IMembersResponse>("/api/organization/members");
+export function listMembers(organizationId: string): Promise<IMembersResponse> {
+  return request<IMembersResponse>(`/api/v1/organization/${organizationId}/members`);
 }
 
 export async function setMemberRole(
+  organizationId: string,
   memberId: string,
   role: Role,
 ): Promise<void> {
-  await request(`/api/organization/members/${memberId}`, "PATCH", { role });
+  await request(`/api/v1/organization/${organizationId}/members/${memberId}`, "PATCH", { role });
 }
 
-export async function removeMember(memberId: string): Promise<void> {
-  await request(`/api/organization/members/${memberId}`, "DELETE");
+export async function removeMember(organizationId: string, memberId: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/members/${memberId}`, "DELETE");
 }
 
-export async function cancelInvitation(invitationId: string): Promise<void> {
-  await request(`/api/organization/invitations/${invitationId}`, "DELETE");
+export async function cancelInvitation(organizationId: string, invitationId: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/invitations/${invitationId}`, "DELETE");
 }
 
 export async function declineInvitation(invitationId: string): Promise<void> {
   await request(`/api/invitation/${invitationId}/decline`, "POST");
 }
 
-export function listDataSources(): Promise<IDataSourceListResponse> {
-  return request<IDataSourceListResponse>("/api/data-sources");
+export function listDataSources(organizationId: string): Promise<IDataSourceListResponse> {
+  return request<IDataSourceListResponse>(`/api/v1/organization/${organizationId}/data-sources`);
 }
 
 export function createDataSource(
+  organizationId: string,
   input: ICreateDataSourceRequest,
 ): Promise<ICreateDataSourceResponse> {
-  return request<ICreateDataSourceResponse>("/api/data-sources", "POST", input);
+  return request<ICreateDataSourceResponse>(`/api/v1/organization/${organizationId}/data-sources`, "POST", input);
 }
 
 export function updateDataSource(
+  organizationId: string,
   id: string,
   input: IUpdateDataSourceRequest,
 ): Promise<IUpdateDataSourceResponse> {
   return request<IUpdateDataSourceResponse>(
-    `/api/data-sources/${id}`,
+    `/api/v1/organization/${organizationId}/data-sources/${id}`,
     "PATCH",
     input,
   );
 }
 
 export function deleteDataSource(
+  organizationId: string,
   id: string,
 ): Promise<IDeleteDataSourceResponse> {
-  return request<IDeleteDataSourceResponse>(`/api/data-sources/${id}`, "DELETE");
+  return request<IDeleteDataSourceResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}`, "DELETE");
 }
 
-export function fetchSchema(dataSourceId: string): Promise<ISchemaResponse> {
+export function fetchSchema(organizationId: string, dataSourceId: string): Promise<ISchemaResponse> {
   return request<ISchemaResponse>(
-    `/api/data-sources/${dataSourceId}/schema`,
+    `/api/v1/organization/${organizationId}/data-sources/${dataSourceId}/schema`,
   );
 }
 
 export function testDataSourceConnection(
+  organizationId: string,
   input: ICreateDataSourceRequest,
 ): Promise<ITestConnectionResponse> {
   return request<ITestConnectionResponse>(
-    "/api/data-sources/test",
+    `/api/v1/organization/${organizationId}/data-sources/test`,
     "POST",
     input,
   );
 }
 
-export function listSourceObjects(id: string): Promise<IObjectsResponse> {
-  return request<IObjectsResponse>(`/api/data-sources/${id}/objects`);
+export function listSourceObjects(organizationId: string, id: string): Promise<IObjectsResponse> {
+  return request<IObjectsResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/objects`);
 }
 
 export function previewSourceRows(
+  organizationId: string,
   id: string,
   object: string,
   query?: string,
 ): Promise<IPreviewResponse> {
-  return request<IPreviewResponse>(`/api/data-sources/${id}/preview`, "POST", {
+  return request<IPreviewResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, "POST", {
     object,
     ...(query === undefined ? {} : { query }),
   });
 }
 
 export function runQuery(
+  organizationId: string,
   id: string,
   sql: string,
   refine: IQueryRefine | null = null,
 ): Promise<IQueryResponse> {
   const body: IQueryRequest =
     refine === null ? { sql } : { sql, refine };
-  return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
+  return request<IQueryResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, "POST", body);
 }
 
 export function runPipeline(
+  organizationId: string,
   id: string,
   pipeline: IMongoPipeline,
 ): Promise<IQueryResponse> {
   const body: IQueryRequest = { mongo: pipeline };
-  return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
+  return request<IQueryResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, "POST", body);
 }
 
 export function runRedisCommand(
+  organizationId: string,
   id: string,
   command: string,
 ): Promise<IRedisQueryResponse> {
-  return request<IRedisQueryResponse>(`/api/data-sources/${id}/query`, "POST", {
+  return request<IRedisQueryResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, "POST", {
     command,
   });
 }
 
 export function runSearch(
+  organizationId: string,
   id: string,
   statement: ISearchStatement,
 ): Promise<IQueryResponse> {
   const body: IQueryRequest = { search: statement };
-  return request<IQueryResponse>(`/api/data-sources/${id}/query`, "POST", body);
+  return request<IQueryResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, "POST", body);
 }
 
 export function listSavedQueries(
+  organizationId: string,
   sourceId: string,
 ): Promise<ISavedQueryListResponse> {
   return request<ISavedQueryListResponse>(
-    `/api/data-sources/${sourceId}/saved-queries`,
+    `/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries`,
   );
 }
 
 export function createSavedQuery(
+  organizationId: string,
   sourceId: string,
   input: ICreateSavedQueryRequest,
 ): Promise<ISavedQueryResponse> {
   return request<ISavedQueryResponse>(
-    `/api/data-sources/${sourceId}/saved-queries`,
+    `/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries`,
     "POST",
     input,
   );
 }
 
 export function recordRun(
+  organizationId: string,
   sourceId: string,
   sql: string,
 ): Promise<ISavedQueryResponse> {
   return request<ISavedQueryResponse>(
-    `/api/data-sources/${sourceId}/saved-queries/runs`,
+    `/api/v1/organization/${organizationId}/data-sources/${sourceId}/saved-queries/runs`,
     "POST",
     { sql },
   );
 }
 
 export function updateSavedQuery(
+  organizationId: string,
   id: string,
   input: IUpdateSavedQueryRequest,
 ): Promise<ISavedQueryResponse> {
   return request<ISavedQueryResponse>(
-    `/api/saved-queries/${id}`,
+    `/api/v1/organization/${organizationId}/saved-queries/${id}`,
     "PATCH",
     input,
   );
 }
 
-export function deleteSavedQuery(id: string): Promise<void> {
-  return request(`/api/saved-queries/${id}`, "DELETE");
+export function deleteSavedQuery(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/saved-queries/${id}`, "DELETE");
 }
 
-export function listAllSavedQueries(): Promise<ISavedQueryListResponse> {
-  return request<ISavedQueryListResponse>("/api/saved-queries");
+export function listAllSavedQueries(organizationId: string): Promise<ISavedQueryListResponse> {
+  return request<ISavedQueryListResponse>(`/api/v1/organization/${organizationId}/saved-queries`);
 }
 
 export function listQueryVersions(
+  organizationId: string,
   id: string,
 ): Promise<IQueryVersionListResponse> {
-  return request<IQueryVersionListResponse>(`/api/saved-queries/${id}/versions`);
+  return request<IQueryVersionListResponse>(`/api/v1/organization/${organizationId}/saved-queries/${id}/versions`);
 }
 
 export function restoreQueryVersion(
+  organizationId: string,
   id: string,
   versionId: string,
 ): Promise<ISavedQueryResponse> {
   return request<ISavedQueryResponse>(
-    `/api/saved-queries/${id}/restore`,
+    `/api/v1/organization/${organizationId}/saved-queries/${id}/restore`,
     "POST",
     { versionId },
   );
 }
 
 export function explainQuery(
+  organizationId: string,
   id: string,
   sql: string,
 ): Promise<IExplainResponse> {
   const body: IQueryRequest = { sql };
-  return request<IExplainResponse>(`/api/data-sources/${id}/explain`, "POST", body);
+  return request<IExplainResponse>(`/api/v1/organization/${organizationId}/data-sources/${id}/explain`, "POST", body);
 }
 
-export function listScheduledJobs(): Promise<IScheduledJobListResponse> {
-  return request<IScheduledJobListResponse>("/api/scheduled-jobs");
+export function listScheduledJobs(organizationId: string): Promise<IScheduledJobListResponse> {
+  return request<IScheduledJobListResponse>(`/api/v1/organization/${organizationId}/scheduled-jobs`);
 }
 
 export function createScheduledJob(
+  organizationId: string,
   input: ICreateScheduledJobRequest,
 ): Promise<IScheduledJobResponse> {
-  return request<IScheduledJobResponse>("/api/scheduled-jobs", "POST", input);
+  return request<IScheduledJobResponse>(`/api/v1/organization/${organizationId}/scheduled-jobs`, "POST", input);
 }
 
 export function updateScheduledJob(
+  organizationId: string,
   id: string,
   input: IUpdateScheduledJobRequest,
 ): Promise<IScheduledJobResponse> {
-  return request<IScheduledJobResponse>(`/api/scheduled-jobs/${id}`, "PUT", input);
+  return request<IScheduledJobResponse>(`/api/v1/organization/${organizationId}/scheduled-jobs/${id}`, "PUT", input);
 }
 
-export function deleteScheduledJob(id: string): Promise<void> {
-  return request(`/api/scheduled-jobs/${id}`, "DELETE");
+export function deleteScheduledJob(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/scheduled-jobs/${id}`, "DELETE");
 }
 
-export function listAlertRules(): Promise<IAlertRuleListResponse> {
-  return request<IAlertRuleListResponse>("/api/alert-rules");
+export function listAlertRules(organizationId: string): Promise<IAlertRuleListResponse> {
+  return request<IAlertRuleListResponse>(`/api/v1/organization/${organizationId}/alert-rules`);
 }
 
 export function createAlertRule(
+  organizationId: string,
   input: ICreateAlertRuleRequest,
 ): Promise<IAlertRuleResponse> {
-  return request<IAlertRuleResponse>("/api/alert-rules", "POST", input);
+  return request<IAlertRuleResponse>(`/api/v1/organization/${organizationId}/alert-rules`, "POST", input);
 }
 
 export function updateAlertRule(
+  organizationId: string,
   id: string,
   input: IUpdateAlertRuleRequest,
 ): Promise<IAlertRuleResponse> {
-  return request<IAlertRuleResponse>(`/api/alert-rules/${id}`, "PUT", input);
+  return request<IAlertRuleResponse>(`/api/v1/organization/${organizationId}/alert-rules/${id}`, "PUT", input);
 }
 
-export function deleteAlertRule(id: string): Promise<void> {
-  return request(`/api/alert-rules/${id}`, "DELETE");
+export function deleteAlertRule(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/alert-rules/${id}`, "DELETE");
 }
 
-export function listAlertDeliveries(): Promise<IAlertDeliveryListResponse> {
-  return request<IAlertDeliveryListResponse>("/api/alert-deliveries");
+export function listAlertDeliveries(organizationId: string): Promise<IAlertDeliveryListResponse> {
+  return request<IAlertDeliveryListResponse>(`/api/v1/organization/${organizationId}/alert-deliveries`);
 }
 
-export function listNotificationChannels(): Promise<INotificationChannelListResponse> {
-  return request<INotificationChannelListResponse>("/api/notification-channels");
+export function listNotificationChannels(organizationId: string): Promise<INotificationChannelListResponse> {
+  return request<INotificationChannelListResponse>(`/api/v1/organization/${organizationId}/notification-channels`);
 }
 
 export function createNotificationChannel(
+  organizationId: string,
   input: ISaveNotificationChannelRequest,
 ): Promise<INotificationChannelResponse> {
   return request<INotificationChannelResponse>(
-    "/api/notification-channels",
+    `/api/v1/organization/${organizationId}/notification-channels`,
     "POST",
     input,
   );
 }
 
 export function updateNotificationChannel(
+  organizationId: string,
   id: string,
   input: ISaveNotificationChannelRequest,
 ): Promise<INotificationChannelResponse> {
   return request<INotificationChannelResponse>(
-    `/api/notification-channels/${id}`,
+    `/api/v1/organization/${organizationId}/notification-channels/${id}`,
     "PATCH",
     input,
   );
 }
 
-export async function deleteNotificationChannel(id: string): Promise<void> {
-  await request(`/api/notification-channels/${id}`, "DELETE");
+export async function deleteNotificationChannel(organizationId: string, id: string): Promise<void> {
+  await request(`/api/v1/organization/${organizationId}/notification-channels/${id}`, "DELETE");
 }
 
-export function refreshWidgetData(id: string): Promise<IWidgetData> {
-  return request<IWidgetData>(`/api/widgets/${id}/refresh`, "POST");
+export function refreshWidgetData(organizationId: string, id: string): Promise<IWidgetData> {
+  return request<IWidgetData>(`/api/v1/organization/${organizationId}/widgets/${id}/refresh`, "POST");
 }
 
-export function listDashboards(): Promise<IDashboardListResponse> {
-  return request<IDashboardListResponse>("/api/dashboards");
+export function listDashboards(organizationId: string): Promise<IDashboardListResponse> {
+  return request<IDashboardListResponse>(`/api/v1/organization/${organizationId}/dashboards`);
 }
 
 export function createDashboard(
+  organizationId: string,
   name: string,
   dataSourceIds: string[],
 ): Promise<IDashboardResponse> {
   const body: ICreateDashboardRequest = { name, dataSourceIds };
-  return request<IDashboardResponse>("/api/dashboards", "POST", body);
+  return request<IDashboardResponse>(`/api/v1/organization/${organizationId}/dashboards`, "POST", body);
 }
 
 export function generateDashboard(
+  organizationId: string,
   input: { name: string; dataSourceIds: string[]; brief?: string },
   handlers: IStreamHandlers,
 ): Promise<IGenerateDashboardResponse> {
-  return streamRequest("/api/dashboards/generate", input, handlers);
+  return streamRequest(`/api/v1/organization/${organizationId}/dashboards/generate`, input, handlers);
 }
 
 export function askDashboard(
+  organizationId: string,
   dashboardId: string,
   question: string,
   handlers: IStreamHandlers,
 ): Promise<IAskDashboardResponse> {
   return streamRequest(
-    `/api/dashboards/${dashboardId}/ask`,
+    `/api/v1/organization/${organizationId}/dashboards/${dashboardId}/ask`,
     { question },
     handlers,
   );
 }
 
 export function applyDashboardActions(
+  organizationId: string,
   dashboardId: string,
   actions: IProposalAction[],
 ): Promise<IApplyProposalResponse> {
   return request<IApplyProposalResponse>(
-    `/api/dashboards/${dashboardId}/apply`,
+    `/api/v1/organization/${organizationId}/dashboards/${dashboardId}/apply`,
     "POST",
     { actions },
   );
 }
 
-export function fetchDashboard(id: string): Promise<IDashboardResponse> {
-  return request<IDashboardResponse>(`/api/dashboards/${id}`);
+export function fetchDashboard(organizationId: string, id: string): Promise<IDashboardResponse> {
+  return request<IDashboardResponse>(`/api/v1/organization/${organizationId}/dashboards/${id}`);
 }
 
 export function renameDashboard(
+  organizationId: string,
   id: string,
   name: string,
 ): Promise<IDashboardResponse> {
   const body: IUpdateDashboardRequest = { name };
-  return request<IDashboardResponse>(`/api/dashboards/${id}`, "PATCH", body);
+  return request<IDashboardResponse>(`/api/v1/organization/${organizationId}/dashboards/${id}`, "PATCH", body);
 }
 
-export function deleteDashboard(id: string): Promise<void> {
-  return request(`/api/dashboards/${id}`, "DELETE");
+export function deleteDashboard(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/dashboards/${id}`, "DELETE");
 }
 
 export function createWidget(
+  organizationId: string,
   dashboardId: string,
   input: ICreateWidgetRequest,
 ): Promise<IWidgetResponse> {
   return request<IWidgetResponse>(
-    `/api/dashboards/${dashboardId}/widgets`,
+    `/api/v1/organization/${organizationId}/dashboards/${dashboardId}/widgets`,
     "POST",
     input,
   );
 }
 
 export function updateWidget(
+  organizationId: string,
   id: string,
   input: IUpdateWidgetRequest,
 ): Promise<IWidgetResponse> {
-  return request<IWidgetResponse>(`/api/widgets/${id}`, "PATCH", input);
+  return request<IWidgetResponse>(`/api/v1/organization/${organizationId}/widgets/${id}`, "PATCH", input);
 }
 
-export function deleteWidget(id: string): Promise<void> {
-  return request(`/api/widgets/${id}`, "DELETE");
+export function deleteWidget(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/widgets/${id}`, "DELETE");
 }
 
-export function fetchWidgetData(id: string): Promise<IWidgetData> {
-  return request<IWidgetData>(`/api/widgets/${id}/data`);
+export function fetchWidgetData(organizationId: string, id: string): Promise<IWidgetData> {
+  return request<IWidgetData>(`/api/v1/organization/${organizationId}/widgets/${id}/data`);
 }
 
 export function createShareLink(
+  organizationId: string,
   dashboardId: string,
   input: ICreateShareLinkRequest,
 ): Promise<IShareLinkResponse> {
   return request<IShareLinkResponse>(
-    `/api/dashboards/${dashboardId}/share-links`,
+    `/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`,
     "POST",
     input,
   );
 }
 
 export function listShareLinks(
+  organizationId: string,
   dashboardId: string,
 ): Promise<IShareLinkListResponse> {
   return request<IShareLinkListResponse>(
-    `/api/dashboards/${dashboardId}/share-links`,
+    `/api/v1/organization/${organizationId}/dashboards/${dashboardId}/share-links`,
   );
 }
 
-export function refreshShareLink(id: string): Promise<IShareLink> {
-  return request<IShareLink>(`/api/share-links/${id}/refresh`, "POST");
+export function refreshShareLink(organizationId: string, id: string): Promise<IShareLink> {
+  return request<IShareLink>(`/api/v1/organization/${organizationId}/share-links/${id}/refresh`, "POST");
 }
 
-export function deleteShareLink(id: string): Promise<void> {
-  return request(`/api/share-links/${id}`, "DELETE");
+export function deleteShareLink(organizationId: string, id: string): Promise<void> {
+  return request(`/api/v1/organization/${organizationId}/share-links/${id}`, "DELETE");
 }
 
 export function fetchSharedDashboard(
@@ -821,6 +863,7 @@ export interface IAuditLogFilters {
 }
 
 export function listAuditLogs(
+  organizationId: string,
   filters: IAuditLogFilters = {},
 ): Promise<IAuditLogListResponse> {
   const query = new URLSearchParams();
@@ -842,6 +885,6 @@ export function listAuditLogs(
   }
   const search = query.toString();
   return request<IAuditLogListResponse>(
-    search === "" ? "/api/audit-logs" : `/api/audit-logs?${search}`,
+    search === "" ? `/api/v1/organization/${organizationId}/audit-logs` : `/api/v1/organization/${organizationId}/audit-logs?${search}`,
   );
 }

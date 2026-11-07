@@ -1,4 +1,5 @@
 import { IconCreditCard } from "@tabler/icons-react";
+import { useOrganizationId } from "../organization";
 import type { IBillingSummary } from "@heptadec/api/billing-contracts";
 import { useBilling } from "../checkout";
 import { Button } from "./ui/button";
@@ -6,7 +7,8 @@ import { Alert, EmptyState } from "./ui/feedback";
 import { PlanCard, VIEW_CLASSNAME, Workspace } from "./workspace";
 
 export function Billing({ isOwner }: { isOwner: boolean }) {
-  const billing = useBilling();
+  const organizationId = useOrganizationId();
+  const billing = useBilling(organizationId);
 
   if (!isOwner) {
     return (

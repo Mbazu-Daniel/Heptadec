@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import {
   createDashboard,
@@ -44,6 +45,7 @@ export function CreateDashboardDialog({
   onClose: () => void;
   onCreated: (dashboardId: string) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [sources, setSources] = useState<IDataSource[] | null>(null);
   const [providerCount, setProviderCount] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -56,7 +58,7 @@ export function CreateDashboardDialog({
 
   useEffect(() => {
     let live = true;
-    listDataSources().then(
+    listDataSources(organizationId).then(
       (found) => {
         if (live) {
           setSources(found.dataSources);
@@ -70,7 +72,7 @@ export function CreateDashboardDialog({
         }
       },
     );
-    listAiProviders().then(
+    listAiProviders(organizationId).then(
       (found) => {
         if (live) {
           setProviderCount(found.providers.length);
@@ -106,7 +108,7 @@ export function CreateDashboardDialog({
     setBusy(true);
     try {
       if (buildWithAi) {
-        const result = await generateDashboard(
+        const result = await generateDashboard(organizationId, 
           {
             name: name.trim(),
             dataSourceIds: chosen,
@@ -117,7 +119,7 @@ export function CreateDashboardDialog({
         onCreated(result.dashboard.id);
         return;
       }
-      const created = await createDashboard(name.trim(), chosen);
+      const created = await createDashboard(organizationId, name.trim(), chosen);
       onCreated(created.dashboard.id);
     } catch (caught) {
       setBusy(false);

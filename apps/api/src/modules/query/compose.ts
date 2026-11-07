@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import type { SqlDialect } from "../data-source/contracts";
 import { quoteIdentifier } from "../data-source/sql-quoting";
 import type { IStoredConnection } from "../data-source/connection";

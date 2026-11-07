@@ -1,4 +1,4 @@
-export { schemaRoutes } from "./routes";
+export { schemaRoutes } from "./schema.routes";
 
 export { introspectSchema } from "./introspect";
 

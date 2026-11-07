@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { listDashboards, messageFor } from "../../api";
 import type { IDashboard } from "@heptadec/api/dashboard-contracts";
 import { Alert, EmptyState } from "../ui/feedback";
@@ -22,13 +23,14 @@ export function Dashboards({
   onOpen: (dashboardId: string) => void;
   onTrail: (crumbs: ICrumb[]) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [dashboards, setDashboards] = useState<IDashboard[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
 
   useEffect(() => {
     let live = true;
-    listDashboards().then(
+    listDashboards(organizationId).then(
       (found) => {
         if (live) {
           setDashboards(found.dashboards);

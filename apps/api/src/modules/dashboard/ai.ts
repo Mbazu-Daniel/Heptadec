@@ -10,7 +10,7 @@ import { oneRow } from "../../common/session/current-organization";
 import {
   BadRequestException,
   NotFoundException,
-} from "../../common/exceptions";
+} from "../../common/exceptions/index";
 import { logDriverFailure } from "../../common/driver-error";
 import { canUseTooling } from "../data-source/engines";
 import { readStructure, runReadOnly } from "../data-source/tooling";
@@ -21,12 +21,11 @@ import { cacheResult, cachedResult } from "../query-result/cache";
 import { createSavedQuery, editSavedQuery } from "../saved-query/edit";
 import {
   completeAnswer,
-  failureMessage,
-  readJsonObject,
   readSources,
-  type IAnswerSource,
 } from "../ai/answer";
-import type { ITurn } from "../ai/turn";
+import { failureMessage, readJsonObject } from "../ai/failure";
+import type { IAnswerSource } from "../ai/types";
+import type { IStreamTurn } from "../../common/http/stream";
 import { schemaContext } from "../ai/context";
 import {
   dashboardAskInstructions,
@@ -84,7 +83,7 @@ export interface IChartPlan {
  * with the reason; one bad chart never abandons the rest.
  */
 export async function planCharts(
-  turn: ITurn,
+  turn: IStreamTurn,
   provider: AiProviderRow,
   dashboardId: string,
   sources: IToolingSource[],
@@ -143,7 +142,7 @@ export async function planCharts(
 
 /** The proposal the provider read from a question, or null if it gave none. */
 export async function proposeChanges(
-  turn: ITurn,
+  turn: IStreamTurn,
   provider: AiProviderRow,
   dashboardName: string,
   analysed: IToolingSource[],

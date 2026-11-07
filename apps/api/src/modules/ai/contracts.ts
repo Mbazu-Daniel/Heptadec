@@ -1,6 +1,6 @@
 import type { IMongoPipeline, ISearchStatement } from "../query/contracts";
 import type { QueryLanguage } from "../data-source/contracts";
-import type { IAiProviderSpec } from "./catalog";
+import type { IAiProviderSpec } from "./types";
 
 export interface IAiProvider {
   id: string;

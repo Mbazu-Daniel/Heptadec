@@ -58,11 +58,11 @@ it("hands back a draft for review and never runs it", async () => {
   const provider = await startProvider();
   try {
     const { cookie } = await signUp(uniqueEmail());
-    await authFor(db).api.createOrganization({
+    const org = await authFor(db).api.createOrganization({
       body: { name: "Ask Org", slug: uniqueSlug() },
       headers: { cookie },
     });
-    const source = await request("/api/data-sources", {
+    const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -79,7 +79,7 @@ it("hands back a draft for review and never runs it", async () => {
     const sourceId = ((await source.json()) as { dataSource: { id: string } })
       .dataSource.id;
 
-    await request("/api/ai/providers", {
+    await request(`/api/v1/organization/${org.id}/ai/providers`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -91,7 +91,7 @@ it("hands back a draft for review and never runs it", async () => {
       }),
     });
 
-    const asked = await request("/api/ai/ask", {
+    const asked = await request(`/api/v1/organization/${org.id}/ai/ask`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -127,11 +127,11 @@ it("refuses the draft when the user does run it against a read-only source", asy
   const provider = await startProvider();
   try {
     const { cookie } = await signUp(uniqueEmail());
-    await authFor(db).api.createOrganization({
+    const org = await authFor(db).api.createOrganization({
       body: { name: "Ask Org 2", slug: uniqueSlug() },
       headers: { cookie },
     });
-    const source = await request("/api/data-sources", {
+    const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({
@@ -148,7 +148,7 @@ it("refuses the draft when the user does run it against a read-only source", asy
     const sourceId = ((await source.json()) as { dataSource: { id: string } })
       .dataSource.id;
 
-    const ran = await request(`/api/data-sources/${sourceId}/query`, {
+    const ran = await request(`/api/v1/organization/${org.id}/data-sources/${sourceId}/query`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ sql: WRITE_SQL }),

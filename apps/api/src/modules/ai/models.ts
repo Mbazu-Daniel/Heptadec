@@ -1,33 +1,13 @@
 import { and, eq } from "drizzle-orm";
-import {
-  aiProvider,
-  type HeptadecDatabase,
-} from "@heptadec/db";
+import { aiProvider } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { logDriverFailure } from "../../common/driver-error";
 import { providerEndpointFor } from "./transport";
+import type { IModel, IModelConfig, ModelListing } from "./types";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
 const MAX_MODELS = 500;
-
-export interface IModel {
-  id: string;
-  label: string | null;
-}
-
-export interface IModelConfig {
-  provider: string;
-  baseUrl: string | null;
-  apiKey: string;
-}
-
-export type ModelListing =
-  | { kind: "models"; models: IModel[] }
-  | { kind: "unsupported" }
-  | { kind: "refused" }
-  | { kind: "unreachable" }
-  | { kind: "status"; status: number };
 
 export async function listModels(config: IModelConfig): Promise<ModelListing> {
   let baseUrl: string;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconSparkles, IconTrash } from "@tabler/icons-react";
 import type {
   IDashboardProposal,
@@ -29,6 +30,7 @@ export function AskAiPanel({
   onClose: () => void;
   onChanged: (updated: IDashboardWithWidgets) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -51,7 +53,7 @@ export function AskAiPanel({
     setProposal(null);
     setStatus("Reading the structure…");
     try {
-      const result = await askDashboard(dashboard.id, asked, {
+      const result = await askDashboard(organizationId, dashboard.id, asked, {
         onStatus: setStatus,
       });
       setProposal(result.proposal);
@@ -77,7 +79,7 @@ export function AskAiPanel({
     setApplying(true);
     setProblem(null);
     try {
-      const result = await applyDashboardActions(dashboard.id, actions);
+      const result = await applyDashboardActions(organizationId, dashboard.id, actions);
       onChanged(result.dashboard);
       const refused = result.applied.filter((entry) => entry.problem !== null);
       if (refused.length === 0) {

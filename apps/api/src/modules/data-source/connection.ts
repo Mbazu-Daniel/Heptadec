@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import type { DataSourceRow } from "@heptadec/db";
 import { readString } from "../../common/http/body";
 import { decryptSecret } from "./secret";

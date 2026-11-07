@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useOrganizationId } from "../organization";
 import { IconTrash } from "@tabler/icons-react";
 import type {
   IAiModel,
@@ -32,6 +33,7 @@ import {
 type Catalog = IAiProviderListResponse["catalog"];
 
 export function AiProviders({ isOwner }: { isOwner: boolean }) {
+  const organizationId = useOrganizationId();
   const [providers, setProviders] = useState<IAiProvider[] | null>(null);
   const [catalog, setCatalog] = useState<Catalog>([]);
   const [problem, setProblem] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     }
     setProblem(null);
     try {
-      const listed = await listAiProviders();
+      const listed = await listAiProviders(organizationId);
       setProviders(listed.providers);
       setCatalog(listed.catalog);
     } catch (caught) {
@@ -95,7 +97,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setLoadingModels(true);
     setModelsNote(null);
     try {
-      applyListing(await listAiProviderModels(target.id));
+      applyListing(await listAiProviderModels(organizationId, target.id));
     } catch (caught) {
       setModels(null);
       setModelSource("suggestions");
@@ -125,7 +127,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setModelsNote(null);
     try {
       applyListing(
-        await listProviderModels({
+        await listProviderModels(organizationId, {
           provider: targetProvider,
           apiKey,
           ...(targetBaseUrl === "" ? {} : { baseUrl: targetBaseUrl }),
@@ -166,7 +168,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setProblem(null);
     setNotice(null);
     try {
-      await createAiProvider({
+      await createAiProvider(organizationId, {
         name,
         provider,
         model,
@@ -191,7 +193,7 @@ export function AiProviders({ isOwner }: { isOwner: boolean }) {
     setProblem(null);
     setNotice(null);
     try {
-      await removeAiProvider(providerId);
+      await removeAiProvider(organizationId, providerId);
       await reload();
       setNotice("That provider was removed.");
     } catch (caught) {

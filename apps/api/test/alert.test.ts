@@ -82,7 +82,7 @@ async function waitForBodies(
 
 async function ownerWithChart(): Promise<{
   cookie: string;
-  orgId: string;
+  organizationId: string;
   savedQueryId: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
@@ -91,7 +91,7 @@ async function ownerWithChart(): Promise<{
     headers: { cookie },
   });
 
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -111,21 +111,22 @@ async function ownerWithChart(): Promise<{
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
 
-  const saved = await request(`/api/data-sources/${rows[0]!.id}/saved-queries`, {
+  const saved = await request(`/api/v1/organization/${org.id}/data-sources/${rows[0]!.id}/saved-queries`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ name: "Events per region", sql: REGION_COUNTS }),
   });
   const { savedQuery: created } = (await saved.json()) as { savedQuery: { id: string } };
 
-  return { cookie, orgId: org.id, savedQueryId: created.id };
+  return { cookie, organizationId: org.id, savedQueryId: created.id };
 }
 
 async function connectChannel(
   cookie: string,
+  organizationId: string,
   body: Record<string, unknown>,
 ): Promise<void> {
-  const res = await request("/api/notification-channels", {
+  const res = await request(`/api/v1/organization/${organizationId}/notification-channels`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -139,9 +140,10 @@ async function connectChannel(
 
 async function rule(
   cookie: string,
+  organizationId: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
-  return request("/api/alert-rules", {
+  return request(`/api/v1/organization/${organizationId}/alert-rules`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -156,11 +158,12 @@ async function rule(
  */
 async function checkNow(
   cookie: string,
+  organizationId: string,
   savedQueryId: string,
 ): Promise<
   Array<{ channel: string; status: string; message: string; error: string | null }>
 > {
-  const res = await request(`/api/saved-queries/${savedQueryId}/alert-checks`, {
+  const res = await request(`/api/v1/organization/${organizationId}/saved-queries/${savedQueryId}/alert-checks`, {
     method: "POST",
     headers: { cookie },
   });
@@ -189,8 +192,8 @@ async function ruleIdOf(savedQueryId: string): Promise<string> {
 }
 
 it("stores an edited alert rule in the row it came from", async () => {
-  const { cookie, savedQueryId } = await ownerWithChart();
-  const created = await rule(cookie, {
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
+  const created = await rule(cookie, organizationId, {
     savedQueryId,
     name: "Busy regions",
     column: "events",
@@ -202,7 +205,7 @@ it("stores an edited alert rule in the row it came from", async () => {
     alertRule: { id: string };
   };
 
-  const res = await request(`/api/alert-rules/${made.id}`, {
+  const res = await request(`/api/v1/organization/${organizationId}/alert-rules/${made.id}`, {
     method: "PUT",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -225,14 +228,14 @@ it("stores an edited alert rule in the row it came from", async () => {
 it("fires a breached threshold and reaches every channel that is connected", async () => {
   const receiver = await startReceiver();
   try {
-    const { cookie, savedQueryId } = await ownerWithChart();
-    await connectChannel(cookie, {
+    const { cookie, organizationId, savedQueryId } = await ownerWithChart();
+    await connectChannel(cookie, organizationId, {
       name: "Chat",
       kind: "slack",
       webhookUrl: receiver.url,
       channel: "#alerts",
     });
-    await connectChannel(cookie, {
+    await connectChannel(cookie, organizationId, {
       name: "Inbox",
       kind: "email",
       smtpHost: "smtp.invalid",
@@ -241,7 +244,7 @@ it("fires a breached threshold and reaches every channel that is connected", asy
       recipients: ["ops@example.com"],
     });
 
-    const created = await rule(cookie, {
+    const created = await rule(cookie, organizationId, {
       savedQueryId,
       name: "Busy regions",
       column: "events",
@@ -249,7 +252,7 @@ it("fires a breached threshold and reaches every channel that is connected", asy
       threshold: 1,
     });
     expect(created.status).toBe(201);
-    const reported = await checkNow(cookie, savedQueryId);
+    const reported = await checkNow(cookie, organizationId, savedQueryId);
 
     const posted = await waitForBodies(receiver.bodies);
     expect(posted).toHaveLength(1);
@@ -279,14 +282,14 @@ it("fires a breached threshold and reaches every channel that is connected", asy
 it("stays quiet when the threshold holds", async () => {
   const receiver = await startReceiver();
   try {
-    const { cookie, savedQueryId } = await ownerWithChart();
-    await connectChannel(cookie, {
+    const { cookie, organizationId, savedQueryId } = await ownerWithChart();
+    await connectChannel(cookie, organizationId, {
       name: "Chat",
       kind: "slack",
       webhookUrl: receiver.url,
     });
 
-    const created = await rule(cookie, {
+    const created = await rule(cookie, organizationId, {
       savedQueryId,
       name: "Impossible",
       column: "events",
@@ -295,7 +298,7 @@ it("stays quiet when the threshold holds", async () => {
     });
     expect(created.status).toBe(201);
 
-    await checkNow(cookie, savedQueryId);
+    await checkNow(cookie, organizationId, savedQueryId);
 
     expect(await deliveries(await ruleIdOf(savedQueryId))).toHaveLength(0);
     expect(receiver.bodies()).toHaveLength(0);
@@ -305,9 +308,9 @@ it("stays quiet when the threshold holds", async () => {
 });
 
 it("records a breach that has nowhere to go instead of dropping it", async () => {
-  const { cookie, savedQueryId } = await ownerWithChart();
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
 
-  const created = await rule(cookie, {
+  const created = await rule(cookie, organizationId, {
     savedQueryId,
     name: "Nowhere",
     column: "events",
@@ -316,7 +319,7 @@ it("records a breach that has nowhere to go instead of dropping it", async () =>
   });
   expect(created.status).toBe(201);
 
-  await checkNow(cookie, savedQueryId);
+  await checkNow(cookie, organizationId, savedQueryId);
 
   const rows = await deliveries(await ruleIdOf(savedQueryId));
   expect(rows).toHaveLength(1);
@@ -330,14 +333,14 @@ it("logs a channel that could not be reached without echoing its URL or token", 
   const { url } = receiver;
   await receiver.close();
 
-  const { cookie, savedQueryId } = await ownerWithChart();
-  await connectChannel(cookie, {
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
+  await connectChannel(cookie, organizationId, {
     name: "Unreachable",
     kind: "slack",
     webhookUrl: url,
   });
 
-  const created = await rule(cookie, {
+  const created = await rule(cookie, organizationId, {
     savedQueryId,
     name: "Unreachable",
     column: "events",
@@ -346,7 +349,7 @@ it("logs a channel that could not be reached without echoing its URL or token", 
   });
   expect(created.status).toBe(201);
 
-  await checkNow(cookie, savedQueryId);
+  await checkNow(cookie, organizationId, savedQueryId);
 
   const rows = await deliveries(await ruleIdOf(savedQueryId));
   expect(rows).toHaveLength(1);
@@ -356,7 +359,7 @@ it("logs a channel that could not be reached without echoing its URL or token", 
 });
 
 it("refuses a rule that does not say what to watch", async () => {
-  const { cookie, savedQueryId } = await ownerWithChart();
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
 
   for (const body of [
     { savedQueryId, column: "events", operator: ">=", threshold: 1 },
@@ -364,7 +367,7 @@ it("refuses a rule that does not say what to watch", async () => {
     { savedQueryId, name: "Bad op", column: "events", operator: "==", threshold: 1 },
     { savedQueryId, name: "Bad t", column: "events", operator: ">=", threshold: "1" },
   ]) {
-    const res = await rule(cookie, body);
+    const res = await rule(cookie, organizationId, body);
     expect(res.status, JSON.stringify(body)).toBe(400);
   }
 
@@ -373,9 +376,9 @@ it("refuses a rule that does not say what to watch", async () => {
 });
 
 it("404s another organization's rule and clears the log when the query goes", async () => {
-  const { cookie, savedQueryId } = await ownerWithChart();
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
 
-  const created = await rule(cookie, {
+  const created = await rule(cookie, organizationId, {
     savedQueryId,
     name: "Mine",
     column: "events",
@@ -390,13 +393,13 @@ it("404s another organization's rule and clears the log when the query goes", as
     headers: { cookie: stranger.cookie },
   });
 
-  const removed = await request(`/api/alert-rules/${placed.id}`, {
+  const removed = await request(`/api/v1/organization/${organizationId}/alert-rules/${placed.id}`, {
     method: "DELETE",
     headers: { cookie: stranger.cookie },
   });
   expect(removed.status).toBe(404);
   expect(await deliveries(placed.id)).toHaveLength(0);
-  const deleted = await request(`/api/saved-queries/${savedQueryId}`, {
+  const deleted = await request(`/api/v1/organization/${organizationId}/saved-queries/${savedQueryId}`, {
     method: "DELETE",
     headers: { cookie },
   });
@@ -414,19 +417,19 @@ it("404s another organization's rule and clears the log when the query goes", as
 });
 
 it("refuses a viewer who cannot add a rule", async () => {
-  const { cookie, orgId, savedQueryId } = await ownerWithChart();
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
   await authFor(db).api.addMember({
-    body: { userId: viewer.id, role: "viewer", organizationId: orgId },
+    body: { userId: viewer.id, role: "viewer", organizationId: organizationId },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
-    body: JSON.stringify({ organizationId: orgId }),
+    body: JSON.stringify({ organizationId: organizationId }),
   });
 
-  const res = await rule(viewerCookie, {
+  const res = await rule(viewerCookie, organizationId, {
     savedQueryId,
     name: "No",
     column: "events",
@@ -441,15 +444,15 @@ it("refuses a viewer who cannot add a rule", async () => {
     .where(
       and(
         eq(alertRule.savedQueryId, savedQueryId),
-        eq(alertRule.organizationId, orgId),
+        eq(alertRule.organizationId, organizationId),
       ),
     );
   expect(rows).toHaveLength(0);
 });
 it("marks a rule whose query no schedule runs, so it does not fire on its own", async () => {
-  const { cookie, orgId, savedQueryId } = await ownerWithChart();
+  const { cookie, organizationId, savedQueryId } = await ownerWithChart();
 
-  const created = await rule(cookie, {
+  const created = await rule(cookie, organizationId, {
     savedQueryId,
     name: "Not scheduled",
     column: "events",
@@ -466,12 +469,12 @@ it("marks a rule whose query no schedule runs, so it does not fire on its own", 
     .where(
       and(
         eq(alertRule.id, body.alertRule.id),
-        eq(alertRule.organizationId, orgId),
+        eq(alertRule.organizationId, organizationId),
       ),
     );
   expect(stored).toHaveLength(1);
 
-  const listed = await request("/api/alert-rules", { headers: { cookie } });
+  const listed = await request(`/api/v1/organization/${organizationId}/alert-rules`, { headers: { cookie } });
   expect(listed.status).toBe(200);
   const { alertRules } = (await listed.json()) as {
     alertRules: Array<{ id: string; scheduled: boolean }>;
@@ -481,7 +484,7 @@ it("marks a rule whose query no schedule runs, so it does not fire on its own", 
 
   // Scheduling the query is what makes the rule fire on its own, and nothing
   // else changes.
-  const job = await request("/api/scheduled-jobs", {
+  const job = await request(`/api/v1/organization/${organizationId}/scheduled-jobs`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ savedQueryId, name: "Check", cron: "* * * * *" }),
@@ -492,7 +495,7 @@ it("marks a rule whose query no schedule runs, so it does not fire on its own", 
   };
   createdJobs.push(createdJob.id);
 
-  const after = await request("/api/alert-rules", { headers: { cookie } });
+  const after = await request(`/api/v1/organization/${organizationId}/alert-rules`, { headers: { cookie } });
   const { alertRules: afterRules } = (await after.json()) as {
     alertRules: Array<{ id: string; scheduled: boolean }>;
   };

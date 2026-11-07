@@ -25,6 +25,7 @@ import { NotFound } from "./components/NotFound";
 import { Onboarding } from "./components/Onboarding";
 import { SubscriptionGate } from "./components/Paywall";
 import { PublicDashboard } from "./components/PublicDashboard";
+import { OrganizationProvider } from "./organization";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -122,6 +123,7 @@ function OrgRoute({
       isOwner={membership.role === "owner"}
       others={others}
       onSignOut={onSignOut}
+      organizationId={membership.organization.id}
     >
       <Outlet />
     </SubscriptionGate>
@@ -320,6 +322,7 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
                 onCreated={(slug) => {
                   void reload().then(() => navigate(`/${slug}`));
                 }}
+                organizationId={orgs?.activeOrganizationId ?? null}
               />
             )
           ) : (
@@ -331,11 +334,13 @@ function App() {  const [me, setMe] = useState<IMe | null>(null);
         path="/profile"
         element={
           me && isOnboarded(me) && hasOrganization(orgs) ? (
-            <MemberProfile
-              me={me}
-              onReload={() => void reload()}
-              onBack={() => navigate(destinationFor(me, orgs))}
-            />
+            <OrganizationProvider organizationId={orgs?.activeOrganizationId ?? null}>
+              <MemberProfile
+                me={me}
+                onReload={() => void reload()}
+                onBack={() => navigate(destinationFor(me, orgs))}
+              />
+            </OrganizationProvider>
           ) : (
             authed
           )

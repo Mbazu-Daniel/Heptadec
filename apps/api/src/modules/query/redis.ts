@@ -1,5 +1,5 @@
 import { createClient } from "redis";
-import { BadGatewayException, BadRequestException } from "../../common/exceptions";
+import { BadGatewayException, BadRequestException } from "../../common/exceptions/index";
 import { driverFailure } from "../../common/driver-error";
 import { jsonValue } from "../../common/http/json-value";
 import { redisAddress, type IStoredConnection } from "../data-source/connection";

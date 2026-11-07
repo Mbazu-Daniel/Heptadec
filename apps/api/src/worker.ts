@@ -1,7 +1,9 @@
 import { d1Database } from "@heptadec/db";
+import { D1Store } from "@mastra/cloudflare-d1";
 import { buildApp } from "./app";
 import type { IWorkerEnv } from "./common/config/deployment";
-import { runSchedulerTick } from "./modules/scheduler";
+import { configureAiRuntime } from "./modules/ai/mastra";
+import { runSchedulerTick } from "./modules/scheduler/index";
 
 const app = buildApp({ compressResponses: false });
 
@@ -20,6 +22,7 @@ export default {
   fetch: async (request: Request, env: IWorkerEnv): Promise<Response> => {
     const { pathname } = new URL(request.url);
     const { ASSETS, DB, IMAGES, ...vars } = env;
+    configureAiRuntime(new D1Store({ id: "heptadec-ai", binding: DB }));
     if (!isWorkerPath(pathname)) {
       return ASSETS.fetch(request);
     }

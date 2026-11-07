@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useOrganizationId } from "../../organization";
 import { IconLayoutGrid, IconTerminal } from "@tabler/icons-react";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import type { ISchemaResponse } from "@heptadec/api/schema-contracts";
@@ -43,6 +44,7 @@ export function SchemaBrowser({
   onRemove: (source: IDataSource) => void;
   onBrowseRows: (source: IDataSource, back: () => void) => ReactNode;
 }) {
+  const organizationId = useOrganizationId();
   const [tab, setTab] = useState<TabId>("overview");
   const [schema, setSchema] = useState<ISchemaResponse | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function SchemaBrowser({
     setEditorSql("");
     setRunRequest(null);
     setTab("overview");
-    fetchSchema(source.id).then(
+    fetchSchema(organizationId, source.id).then(
       (found) => {
         if (live) {
           setSchema(found);

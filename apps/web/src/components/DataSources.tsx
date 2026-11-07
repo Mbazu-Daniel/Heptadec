@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useOrganizationId } from "../organization";
 import { IconPlus } from "@tabler/icons-react";
 import type {
   DataSourceKind,
@@ -63,6 +64,7 @@ export function DataSources({
   resetToken?: number;
   onTrail?: (crumbs: ICrumb[]) => void;
 }) {
+  const organizationId = useOrganizationId();
   const [sources, setSources] = useState<IDataSource[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export function DataSources({
 
   async function reload(): Promise<void> {
     try {
-      const result = await listDataSources();
+      const result = await listDataSources(organizationId);
       setSources(result.dataSources);
       setListError(null);
     } catch (caught) {
@@ -202,7 +204,7 @@ export function DataSources({
     setBusy(true);
     setFormError(null);
     try {
-      await createDataSource(payload);
+      await createDataSource(organizationId, payload);
       setFormOpen(false);
       await reload();
     } catch (caught) {
@@ -225,7 +227,7 @@ export function DataSources({
     setTestState({ status: "testing" });
     setFormError(null);
     try {
-      const result = await testDataSourceConnection(payload);
+      const result = await testDataSourceConnection(organizationId, payload);
       setTestState({ status: "ok", total: result.total });
     } catch (caught) {
       setTestState({
@@ -239,7 +241,7 @@ export function DataSources({
     setRemoving(true);
     setRemoveError(null);
     try {
-      await deleteDataSource(target.id);
+      await deleteDataSource(organizationId, target.id);
       if (openedId === target.id) {
         setOpenedId(null);
       }
@@ -275,7 +277,7 @@ export function DataSources({
           onRemove={async (target) => {
             setListError(null);
             try {
-              await deleteDataSource(target.id);
+              await deleteDataSource(organizationId, target.id);
               setOpenedId(null);
               await reload();
             } catch (caught) {

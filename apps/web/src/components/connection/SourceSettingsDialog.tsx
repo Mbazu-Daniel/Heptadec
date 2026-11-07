@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useOrganizationId } from "../../organization";
 import type { IDataSource } from "@heptadec/api/data-source-contracts";
 import { ENGINE_SPECS, isPreviewEngine } from "@heptadec/api/data-source-contracts";
 import { messageFor, testDataSourceConnection, updateDataSource } from "../../api";
@@ -64,6 +65,7 @@ export function SourceSettingsDialog({
   onOpenChange: (open: boolean) => void;
   onSaved: (updated: IDataSource) => void;
 }) {
+  const organizationId = useOrganizationId();
   const spec = ENGINE_SPECS[source.kind];
   const [name, setName] = useState(source.name);
   // The mode is how the source already connects; settings can only change
@@ -109,7 +111,7 @@ export function SourceSettingsDialog({
     setBusy(true);
     setFormError(null);
     try {
-      const result = await updateDataSource(source.id, body);
+      const result = await updateDataSource(organizationId, source.id, body);
       onSaved(result.dataSource);
     } catch (caught) {
       setFormError(messageFor(caught, "The source was not saved."));
@@ -127,7 +129,7 @@ export function SourceSettingsDialog({
     setTestState({ status: "testing" });
     setFormError(null);
     try {
-      const result = await testDataSourceConnection(body);
+      const result = await testDataSourceConnection(organizationId, body);
       setTestState({ status: "ok", total: result.total });
     } catch (caught) {
       setTestState({

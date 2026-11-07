@@ -27,11 +27,6 @@ export interface ICreateScheduledJobRequest {
   ttlSeconds?: number;
 }
 
-/**
- * A full replacement of a schedule's configuration. The saved query it runs
- * is the schedule's identity and cannot change — moving it to another query
- * means creating a schedule there.
- */
 export interface IUpdateScheduledJobRequest {
   name: string;
   cron: string;

@@ -1,5 +1,5 @@
 import mysql from "mysql2";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { driverFailure } from "../../common/driver-error";
 import {
   clickhouseClient,

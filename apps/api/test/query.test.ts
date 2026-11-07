@@ -11,6 +11,7 @@ const TEST_REDIS = { ...STACK.redis, database: "0" };
 
 async function ownerWithSource(readOnly: boolean): Promise<{
   cookie: string;
+  organizationId: string;
   id: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
@@ -19,7 +20,7 @@ async function ownerWithSource(readOnly: boolean): Promise<{
     headers: { cookie },
   });
 
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -40,15 +41,16 @@ async function ownerWithSource(readOnly: boolean): Promise<{
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
   expect(rows).toHaveLength(1);
-  return { cookie, id: rows[0]!.id };
+  return { cookie, organizationId: org.id, id: rows[0]!.id };
 }
 
 async function query(
   cookie: string,
+  organizationId: string,
   id: string,
   sql: string,
 ): Promise<Response> {
-  return request(`/api/data-sources/${id}/query`, {
+  return request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -65,10 +67,11 @@ async function eventCount(): Promise<number> {
 }
 
 it("returns real rows from the seeded postgres", async () => {
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
   const res = await query(
     cookie,
+    organizationId,
     id,
     "SELECT id, event_name, region FROM events ORDER BY id",
   );
@@ -89,9 +92,9 @@ it("returns real rows from the seeded postgres", async () => {
 });
 
 it("caps a result at the row budget and marks it truncated", async () => {
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
-  const res = await query(cookie, id, "SELECT generate_series(1, 10050) AS n");
+  const res = await query(cookie, organizationId, id, "SELECT generate_series(1, 10050) AS n");
   expect(res.status).toBe(200);
 
   const body = (await res.json()) as {
@@ -105,9 +108,9 @@ it("caps a result at the row budget and marks it truncated", async () => {
 });
 
 it("composes a refinement in the API and returns the executed statement", async () => {
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -132,9 +135,9 @@ it("composes a refinement in the API and returns the executed statement", async 
 });
 
 it("refuses a refinement with an operator it does not know", async () => {
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -147,10 +150,11 @@ it("refuses a refinement with an operator it does not know", async () => {
 
 it("refuses a write on a read-only source and leaves the row count unchanged", async () => {
   const before = await eventCount();
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
   const res = await query(
     cookie,
+    organizationId,
     id,
     "INSERT INTO events(id,event_name,region) VALUES (901,'Injected','Nowhere')",
   );
@@ -161,10 +165,11 @@ it("refuses a write on a read-only source and leaves the row count unchanged", a
 
 it("refuses a second command smuggled into one request", async () => {
   const before = await eventCount();
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
   const res = await query(
     cookie,
+    organizationId,
     id,
     "SELECT 1 AS a; INSERT INTO events(id,event_name,region) VALUES (902,'Sneaky','Nowhere')",
   );
@@ -174,9 +179,9 @@ it("refuses a second command smuggled into one request", async () => {
 });
 
 it("reports a missing table without echoing the password", async () => {
-  const { cookie, id } = await ownerWithSource(true);
+  const { cookie, organizationId, id } = await ownerWithSource(true);
 
-  const res = await query(cookie, id, "SELECT * FROM no_such_table");
+  const res = await query(cookie, organizationId, id, "SELECT * FROM no_such_table");
   expect(res.status).toBeGreaterThanOrEqual(400);
 
   const text = await res.text();
@@ -194,6 +199,7 @@ it("404s for a data source in another organization", async () => {
 
   const res = await query(
     stranger.cookie,
+    org.id,
     id,
     "SELECT 1 AS a",
   );
@@ -228,14 +234,14 @@ async function withRedis<T>(
   }
 }
 
-async function ownerWithRedisSource(): Promise<{ cookie: string; id: string }> {
+async function ownerWithRedisSource(): Promise<{ cookie: string; organizationId: string; id: string }> {
   const { cookie } = await signUp(uniqueEmail());
   const org = await authFor(db).api.createOrganization({
     body: { name: "Redis Org", slug: uniqueSlug() },
     headers: { cookie },
   });
 
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -253,15 +259,16 @@ async function ownerWithRedisSource(): Promise<{ cookie: string; id: string }> {
     .from(dataSource)
     .where(eq(dataSource.organizationId, org.id));
   expect(rows).toHaveLength(1);
-  return { cookie, id: rows[0]!.id };
+  return { cookie, organizationId: org.id, id: rows[0]!.id };
 }
 
 async function runCommand(
   cookie: string,
+  organizationId: string,
   id: string,
   command: string,
 ): Promise<Response> {
-  return request(`/api/data-sources/${id}/query`, {
+  return request(`/api/v1/organization/${organizationId}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ command }),
@@ -269,11 +276,11 @@ async function runCommand(
 }
 
 it("runs a read command against the seeded redis and returns the hash as rows", async () => {
-  const { cookie, id } = await ownerWithRedisSource();
+  const { cookie, organizationId, id } = await ownerWithRedisSource();
   const key = probeKey();
   await withRedis((client) => client.hSet(key, { event_name: "probe", region: "eu-west-1" }));
 
-  const res = await runCommand(cookie, id, `HGETALL ${key}`);
+  const res = await runCommand(cookie, organizationId, id, `HGETALL ${key}`);
   expect(res.status).toBe(200);
 
   const body = (await res.json()) as {
@@ -287,16 +294,16 @@ it("runs a read command against the seeded redis and returns the hash as rows", 
 });
 
 it("reads a scalar with GET and the key's type with TYPE", async () => {
-  const { cookie, id } = await ownerWithRedisSource();
+  const { cookie, organizationId, id } = await ownerWithRedisSource();
   const key = probeKey();
   await withRedis((client) => client.set(key, "cache-me"));
 
-  const read = await runCommand(cookie, id, `GET ${key}`);
+  const read = await runCommand(cookie, organizationId, id, `GET ${key}`);
   expect(read.status).toBe(200);
   const readBody = (await read.json()) as { rows: Array<Record<string, unknown>> };
   expect(readBody.rows).toEqual([{ value: "cache-me" }]);
 
-  const typed = await runCommand(cookie, id, `TYPE ${key}`);
+  const typed = await runCommand(cookie, organizationId, id, `TYPE ${key}`);
   expect(typed.status).toBe(200);
   const typeBody = (await typed.json()) as { rows: Array<Record<string, unknown>> };
   expect(typeBody.rows).toEqual([{ value: "string" }]);
@@ -337,7 +344,7 @@ it("runs a search over a quickwit index and answers with the documents it matche
   );
   expect(ingested.status).toBe(200);
 
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -354,7 +361,7 @@ it("runs a search over a quickwit index and answers with the documents it matche
     .where(eq(dataSource.organizationId, org.id));
   const id = stored[0]!.id;
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ search: { index, query: probe } }),
@@ -373,11 +380,11 @@ it("runs a search over a quickwit index and answers with the documents it matche
 
 it("refuses a search with no index and nothing is run", async () => {
   const { cookie } = await signUp(uniqueEmail());
-  await authFor(db).api.createOrganization({
+  const org = await authFor(db).api.createOrganization({
     body: { name: "Empty Search Org", slug: uniqueSlug() },
     headers: { cookie },
   });
-  const source = await request("/api/data-sources", {
+  const source = await request(`/api/v1/organization/${org.id}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({
@@ -390,7 +397,7 @@ it("refuses a search with no index and nothing is run", async () => {
   const stored = await db.select().from(dataSource);
   const id = stored[stored.length - 1]!.id;
 
-  const res = await request(`/api/data-sources/${id}/query`, {
+  const res = await request(`/api/v1/organization/${org.id}/data-sources/${id}/query`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ search: { query: "probe" } }),
@@ -399,28 +406,28 @@ it("refuses a search with no index and nothing is run", async () => {
 });
 
 it("refuses SET and nothing is written to redis", async () => {
-  const { cookie, id } = await ownerWithRedisSource();
+  const { cookie, organizationId, id } = await ownerWithRedisSource();
   const key = probeKey();
 
-  const res = await runCommand(cookie, id, `SET ${key} injected`);
+  const res = await runCommand(cookie, organizationId, id, `SET ${key} injected`);
   expect(res.status).toBe(400);
 
   expect(await withRedis((client) => client.exists(key))).toBe(0);
 });
 
 it("refuses DEL and the key it names survives with its fields", async () => {
-  const { cookie, id } = await ownerWithRedisSource();
+  const { cookie, organizationId, id } = await ownerWithRedisSource();
   const key = probeKey();
   await withRedis((client) => client.hSet(key, { event_name: "keep-me" }));
 
-  const res = await runCommand(cookie, id, `DEL ${key}`);
+  const res = await runCommand(cookie, organizationId, id, `DEL ${key}`);
   expect(res.status).toBe(400);
 
   expect(await withRedis((client) => client.hGet(key, "event_name"))).toBe("keep-me");
 });
 
 it("refuses the writes that sit next to reads, and the seeded keys survive", async () => {
-  const { cookie, id } = await ownerWithRedisSource();
+  const { cookie, organizationId, id } = await ownerWithRedisSource();
   const key = probeKey();
   await withRedis((client) => client.hSet(key, { event_name: "keep-me" }));
 
@@ -431,7 +438,7 @@ it("refuses the writes that sit next to reads, and the seeded keys survive", asy
     "CONFIG SET maxmemory 1mb",
     "set injected",
   ]) {
-    const res = await runCommand(cookie, id, command);
+    const res = await runCommand(cookie, organizationId, id, command);
     expect(res.status, command).toBe(400);
   }
   expect(await withRedis((client) => client.hGet(key, "event_name"))).toBe("keep-me");

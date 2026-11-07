@@ -1,3 +1,3 @@
-export { schedulerRoutes } from "./routes";
+export { schedulerRoutes } from "./scheduler.routes";
 
 export { runSchedulerTick, startScheduler } from "./runner";

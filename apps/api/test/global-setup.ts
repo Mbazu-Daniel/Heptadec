@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { repoRoot } from "@heptadec/db/node";
-import "./setup";
+import "./setup.ts";
 
 // The db module reads DATABASE_URL when it is first imported, so it has to be
 // imported after ./setup has pointed the suite at its own file rather than dev.db.

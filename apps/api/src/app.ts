@@ -4,38 +4,38 @@ import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
-import { MAX_BODY_BYTES } from "./common/constants";
+import { MAX_BODY_BYTES } from "./common/constants/error-code.const";
 import {
   BadRequestException,
   InternalServerException,
   NotFoundException,
   PayloadTooLargeException,
   toErrorResponse,
-} from "./common/exceptions";
+} from "./common/exceptions/index";
 import {
   fromBetterAuth,
   isBetterAuthError,
 } from "./common/exceptions/from-better-auth";
 import type { IAuthVars } from "./common/middleware/require-session";
 import { database } from "./common/middleware/database";
-import { auditRoutes } from "./modules/audit";
-import { authRoutes } from "./modules/auth";
-import { dataSourceRoutes } from "./modules/data-source";
-import { queryRoutes } from "./modules/query";
-import { schemaRoutes } from "./modules/schema";
-import { savedQueryRoutes } from "./modules/saved-query";
-import { dashboardRoutes, dashboardAiRoutes } from "./modules/dashboard";
-import { shareLinkRoutes, publicShareRoutes } from "./modules/share-link";
-import { schedulerRoutes } from "./modules/scheduler";
-import { alertRoutes } from "./modules/alert";
-import { notificationRoutes } from "./modules/notification";
-import { invitationRoutes } from "./modules/invitation";
-import { mcpRoutes } from "./modules/mcp";
-import { aiRoutes } from "./modules/ai";
-import { memberRoutes } from "./modules/member";
-import { organizationRoutes } from "./modules/organization";
-import { imageRoutes } from "./modules/images";
-import { billingRoutes, subscribed } from "./modules/billing";
+import { auditRoutes } from "./modules/audit/index";
+import { authRoutes } from "./modules/auth/index";
+import { dataSourceRoutes } from "./modules/data-source/index";
+import { queryRoutes } from "./modules/query/index";
+import { schemaRoutes } from "./modules/schema/index";
+import { savedQueryRoutes } from "./modules/saved-query/index";
+import { dashboardRoutes, dashboardAiRoutes } from "./modules/dashboard/index";
+import { shareLinkRoutes, publicShareRoutes } from "./modules/share-link/index";
+import { schedulerRoutes } from "./modules/scheduler/index";
+import { alertRoutes } from "./modules/alert/index";
+import { notificationRoutes } from "./modules/notification/index";
+import { invitationRoutes } from "./modules/invitation/index";
+import { mcpRoutes } from "./modules/mcp/index";
+import { aiRoutes } from "./modules/ai/index";
+import { memberRoutes } from "./modules/member/index";
+import { organizationRoutes } from "./modules/organization/index";
+import { imageRoutes } from "./modules/images/index";
+import { billingRoutes, subscribed } from "./modules/billing/index";
 
 export interface IAppOptions {
   compressResponses: boolean;

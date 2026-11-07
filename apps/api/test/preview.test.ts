@@ -30,9 +30,10 @@ async function ownerWithOrganization(): Promise<{
 
 async function createSource(
   cookie: string,
+  organizationId: string,
   input: Record<string, unknown>,
 ): Promise<string> {
-  const res = await request("/api/data-sources", {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify(input),
@@ -61,7 +62,7 @@ async function pgCount(): Promise<number> {
 }
 
 it("lists postgres tables and previews the rows inside", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   const direct = new PgClient({
     host: STACK.postgres.host,
@@ -75,7 +76,7 @@ it("lists postgres tables and previews the rows inside", async () => {
   await direct.query("INSERT INTO public.events (id, event_name, region) VALUES ($1, 'probe', 'eu-west-1')", [probe]);
   await direct.end().catch(() => undefined);
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "postgres",
     name: "Preview pg",
     host: STACK.postgres.host,
@@ -85,7 +86,7 @@ it("lists postgres tables and previews the rows inside", async () => {
     password: STACK.postgres.password,
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -94,7 +95,7 @@ it("lists postgres tables and previews the rows inside", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: "public.events", type: "table" });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "public.events", limit: 100 }),
@@ -112,8 +113,8 @@ it("lists postgres tables and previews the rows inside", async () => {
 });
 
 it("refuses a preview for an object that is not listed, and the table survives", async () => {
-  const { cookie } = await ownerWithOrganization();
-  const id = await createSource(cookie, {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createSource(cookie, organizationId, {
     kind: "postgres",
     name: "Guarded pg",
     host: STACK.postgres.host,
@@ -124,7 +125,7 @@ it("refuses a preview for an object that is not listed, and the table survives",
   });
 
   const before = await pgCount();
-  const res = await request(`/api/data-sources/${id}/preview`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events; DROP TABLE events--" }),
@@ -134,8 +135,8 @@ it("refuses a preview for an object that is not listed, and the table survives",
 });
 
 it("refuses a preview limit outside 1 to 100", async () => {
-  const { cookie } = await ownerWithOrganization();
-  const id = await createSource(cookie, {
+  const { cookie, organizationId } = await ownerWithOrganization();
+  const id = await createSource(cookie, organizationId, {
     kind: "postgres",
     name: "Capped pg",
     host: STACK.postgres.host,
@@ -145,7 +146,7 @@ it("refuses a preview limit outside 1 to 100", async () => {
     password: STACK.postgres.password,
   });
 
-  const res = await request(`/api/data-sources/${id}/preview`, {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "public.events", limit: 500 }),
@@ -159,13 +160,13 @@ it("refuses browsing to a viewer", async () => {
   await authFor(db).api.addMember({
     body: { userId: viewer.id, role: "viewer", organizationId },
   });
-  await request("/api/organization/switch", {
+  await request(`/api/v1/organization/switch`, {
     method: "POST",
     headers: { cookie: viewerCookie, "content-type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
 
-  const res = await request("/api/data-sources/00000000-0000-4000-8000-000000000000/objects", {
+  const res = await request(`/api/v1/organization/${organizationId}/data-sources/00000000-0000-4000-8000-000000000000/objects`, {
     headers: { cookie: viewerCookie },
   });
   expect(res.status).toBe(403);
@@ -174,7 +175,7 @@ it("refuses browsing to a viewer", async () => {
 it("returns 404 when browsing another organization's source", async () => {
   const mine = await ownerWithOrganization();
   const theirs = await ownerWithOrganization();
-  const id = await createSource(theirs.cookie, {
+  const id = await createSource(theirs.cookie, theirs.organizationId, {
     kind: "postgres",
     name: "Their pg",
     host: STACK.postgres.host,
@@ -184,14 +185,14 @@ it("returns 404 when browsing another organization's source", async () => {
     password: STACK.postgres.password,
   });
 
-  const res = await request(`/api/data-sources/${id}/objects`, {
+  const res = await request(`/api/v1/organization/${mine.organizationId}/data-sources/${id}/objects`, {
     headers: { cookie: mine.cookie },
   });
   expect(res.status).toBe(404);
 });
 
 it("lists redis keys and previews a hash", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   const direct = createRedisClient({
     url: `redis://${STACK.redis.host}:${STACK.redis.port}`,
@@ -200,14 +201,14 @@ it("lists redis keys and previews a hash", async () => {
   await direct.hSet(`event:${probe}`, { event_name: "probe", region: "eu-west-1" });
   await direct.quit().catch(() => undefined);
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "redis",
     name: "Preview cache",
     host: STACK.redis.host,
     port: STACK.redis.port,
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -216,7 +217,7 @@ it("lists redis keys and previews a hash", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: `event:${probe}`, type: "key" });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: `event:${probe}` }),
@@ -231,7 +232,7 @@ it("lists redis keys and previews a hash", async () => {
 });
 
 it("searches a quickwit index for the ingested probe", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   await fetch(`${STACK.quickwit.endpoint}/api/v1/indexes/events`, {
     method: "DELETE",
@@ -265,14 +266,14 @@ it("searches a quickwit index for the ingested probe", async () => {
   );
   expect(ingested.status).toBe(200);
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "quickwit",
     name: "Preview logs",
     endpoint: STACK.quickwit.endpoint,
     database: "events",
   });
 
-  const listed = await request(`/api/data-sources/${id}/objects`, {
+  const listed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/objects`, {
     headers: { cookie },
   });
   expect(listed.status).toBe(200);
@@ -281,7 +282,7 @@ it("searches a quickwit index for the ingested probe", async () => {
   };
   expect(listedBody.objects).toContainEqual({ name: "events", type: "index" });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events", query: `id:${probe}` }),
@@ -294,7 +295,7 @@ it("searches a quickwit index for the ingested probe", async () => {
 });
 
 it("previews mysql and mariadb tables through the same path", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   for (const engine of [STACK.mysql, STACK.mariadb] as const) {
     const probe = probeId();
     const direct = await createMysqlConnection({
@@ -308,7 +309,7 @@ it("previews mysql and mariadb tables through the same path", async () => {
     await direct.query("INSERT INTO events (id, event_name, region) VALUES (?, 'probe', 'eu-west-1')", [probe]);
     await direct.end().catch(() => undefined);
 
-    const id = await createSource(cookie, {
+    const id = await createSource(cookie, organizationId, {
       kind: engine === STACK.mysql ? "mysql" : "mariadb",
       name: "Preview mysql-family",
       host: engine.host,
@@ -318,7 +319,7 @@ it("previews mysql and mariadb tables through the same path", async () => {
       password: engine.password,
     });
 
-    const previewed = await request(`/api/data-sources/${id}/preview`, {
+    const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ object: "events" }),
@@ -332,7 +333,7 @@ it("previews mysql and mariadb tables through the same path", async () => {
 });
 
 it("previews a clickhouse table", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   const direct = createClickhouseClient({
     url: `http://${STACK.clickhouse.host}:${STACK.clickhouse.port}`,
@@ -347,7 +348,7 @@ it("previews a clickhouse table", async () => {
   });
   await direct.close().catch(() => undefined);
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "clickhouse",
     name: "Preview olap",
     host: STACK.clickhouse.host,
@@ -357,7 +358,7 @@ it("previews a clickhouse table", async () => {
     password: STACK.clickhouse.password,
   });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),
@@ -370,7 +371,7 @@ it("previews a clickhouse table", async () => {
 });
 
 it("previews a local sqlite file", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   const filePath = join(tmpdir(), `heptadec-preview-${Date.now()}.db`);
   const direct = new DatabaseSync(filePath);
@@ -379,13 +380,13 @@ it("previews a local sqlite file", async () => {
   );
   direct.close();
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "sqlite",
     name: "Preview file",
     filePath,
   });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),
@@ -398,7 +399,7 @@ it("previews a local sqlite file", async () => {
 });
 
 it("previews a libsql table over http", async () => {
-  const { cookie } = await ownerWithOrganization();
+  const { cookie, organizationId } = await ownerWithOrganization();
   const probe = probeId();
   const seeded = await fetch(`${STACK.libsql.endpoint}/`, {
     method: "POST",
@@ -412,13 +413,13 @@ it("previews a libsql table over http", async () => {
   });
   expect(seeded.status).toBe(200);
 
-  const id = await createSource(cookie, {
+  const id = await createSource(cookie, organizationId, {
     kind: "libsql",
     name: "Preview edge",
     endpoint: STACK.libsql.endpoint,
   });
 
-  const previewed = await request(`/api/data-sources/${id}/preview`, {
+  const previewed = await request(`/api/v1/organization/${organizationId}/data-sources/${id}/preview`, {
     method: "POST",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ object: "events" }),

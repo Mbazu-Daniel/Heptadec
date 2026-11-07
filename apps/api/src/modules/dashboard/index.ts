@@ -1,6 +1,6 @@
-export { dashboardRoutes } from "./routes";
+export { dashboardRoutes } from "./dashboard.routes";
 
-export { dashboardAiRoutes } from "./ai-routes";
+export { dashboardAiRoutes } from "./dashboard.ai-routes";
 
 export type {
   ChartType,

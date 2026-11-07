@@ -104,7 +104,7 @@ describe("starting a checkout", () => {
     });
     const { cookie, organizationId } = await signedInOwner();
 
-    const response = await request("/api/billing/checkout", {
+    const response = await request(`/api/v1/organization/${organizationId}/billing/checkout`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ cadence: "monthly" }),
@@ -137,7 +137,7 @@ describe("starting a checkout", () => {
     });
     const { cookie, organizationId } = await signedInOwner();
     const checkoutWith = (cadence: string) =>
-      request("/api/billing/checkout", {
+      request(`/api/v1/organization/${organizationId}/billing/checkout`, {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
         body: JSON.stringify({ cadence }),
@@ -173,13 +173,13 @@ describe("starting a checkout", () => {
     await authFor(db).api.addMember({
       body: { userId: viewer.id, role: "viewer", organizationId },
     });
-    await request("/api/organization/switch", {
+    await request(`/api/v1/organization/switch`, {
       method: "POST",
       headers: { cookie: viewerCookie, "content-type": "application/json" },
       body: JSON.stringify({ organizationId }),
     });
 
-    const response = await request("/api/billing/checkout", {
+    const response = await request(`/api/v1/organization/${organizationId}/billing/checkout`, {
       method: "POST",
       headers: { cookie: viewerCookie, "content-type": "application/json" },
       body: JSON.stringify({ cadence: "monthly" }),

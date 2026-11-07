@@ -13,7 +13,7 @@ import {
 import {
   BadRequestException,
   NotFoundException,
-} from "../../common/exceptions";
+} from "../../common/exceptions/index";
 import {
   oneRow,
   type IOrganizationScope,

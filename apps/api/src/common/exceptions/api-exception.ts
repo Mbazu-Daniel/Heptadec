@@ -1,5 +1,5 @@
 import { HTTPException } from "hono/http-exception";
-import { ERROR_CODES, type ErrorCode } from "../constants";
+import { ERROR_CODES, type ErrorCode } from "../constants/error-code.const";
 
 export class ApiException extends HTTPException {
   readonly code: ErrorCode;

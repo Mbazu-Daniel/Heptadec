@@ -1,5 +1,5 @@
 import { MCP_TOOLS, type McpTool } from "./contracts";
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 
 export const MCP_CONFIG_ID = "mcp";
 

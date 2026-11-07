@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useOrganizationId } from "../organization";
 import {
   IconBrandSlack,
   IconCheck,
@@ -52,6 +53,7 @@ function ChannelIcon({ kind }: { kind: NotificationKind }) {
 }
 
 export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
+  const organizationId = useOrganizationId();
   const [channels, setChannels] = useState<INotificationChannel[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
     setProblem(null);
     try {
       const listed: INotificationChannelListResponse =
-        await listNotificationChannels();
+        await listNotificationChannels(organizationId);
       setChannels(listed.notificationChannels);
     } catch (caught) {
       setProblem(messageFor(caught, "The channels could not be loaded."));
@@ -122,9 +124,9 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
 
     try {
       if (editing === null) {
-        await createNotificationChannel(body);
+        await createNotificationChannel(organizationId, body);
       } else {
-        await updateNotificationChannel(editing.id, body);
+        await updateNotificationChannel(organizationId, editing.id, body);
       }
       reset();
       await reload();
@@ -141,7 +143,7 @@ export function NotificationChannels({ isOwner }: { isOwner: boolean }) {
     setProblem(null);
     setNotice(null);
     try {
-      await deleteNotificationChannel(channel.id);
+      await deleteNotificationChannel(organizationId, channel.id);
       if (editing?.id === channel.id) {
         reset();
       }

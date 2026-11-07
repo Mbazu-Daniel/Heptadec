@@ -1,4 +1,4 @@
-import { BadRequestException } from "../../common/exceptions";
+import { BadRequestException } from "../../common/exceptions/index";
 import { bsonTypeName, openMongo, toRows } from "../data-source/clients";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IMongoPipeline, IQueryResponse } from "./contracts";

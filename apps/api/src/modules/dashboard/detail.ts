@@ -6,7 +6,7 @@ import {
   widget,
   type HeptadecDatabase,
 } from "@heptadec/db";
-import { BadRequestException, NotFoundException } from "../../common/exceptions";
+import { BadRequestException, NotFoundException } from "../../common/exceptions/index";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 import { canUseTooling, kindOf } from "../data-source/engines";
 import type {

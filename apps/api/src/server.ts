@@ -1,12 +1,16 @@
-import { localDatabase } from "@heptadec/db";
+import { localDatabase, resolveDbUrl } from "@heptadec/db";
+import { LibSQLStore } from "@mastra/libsql";
 import { loadDotEnv } from "./dotenv";
+import { configureAiRuntime } from "./modules/ai/mastra";
 
 loadDotEnv();
+
+configureAiRuntime(new LibSQLStore({ id: "heptadec-ai", url: resolveDbUrl() }));
 
 const { serve } = await import("@hono/node-server");
 const { buildApp } = await import("./app");
 const { config } = await import("./common/config/env");
-const { startScheduler } = await import("./modules/scheduler");
+const { startScheduler } = await import("./modules/scheduler/index");
 
 const app = buildApp({ compressResponses: true });
 

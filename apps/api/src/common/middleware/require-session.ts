@@ -2,7 +2,11 @@ import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
 import { member, type HeptadecDatabase } from "@heptadec/db";
 import { authFor, type AuthSession } from "../config/better-auth";
-import { UnauthorizedException } from "../exceptions";
+import {
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from "../exceptions/index";
 import type { IDeploymentBindings } from "../config/deployment";
 import {
   currentOrganizationId,
@@ -34,6 +38,39 @@ export const requireSession = createMiddleware<IAuthVars>(async (c, next) => {
     throw new UnauthorizedException();
   }
   c.set("organization", await liveOrganization(db, session));
+  await next();
+});
+
+export const requireOrganization = createMiddleware<IAuthVars>(async (c, next) => {
+  const session = c.get("session");
+  if (session === null || session === undefined) {
+    throw new UnauthorizedException();
+  }
+  const organizationId = c.req.param("organizationId");
+  if (organizationId === undefined || organizationId === "") {
+    throw new NotFoundException("Organization not found");
+  }
+  const db = c.get("db");
+  const rows = await db
+    .select({
+      id: member.id,
+      role: member.role,
+      displayName: member.displayName,
+      image: member.image,
+    })
+    .from(member)
+    .where(
+      and(
+        eq(member.userId, session.user.id),
+        eq(member.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  const caller = rows[0];
+  if (caller === undefined) {
+    throw new NotFoundException("Organization not found");
+  }
+  c.set("organization", { ...organizationScope(db, organizationId), caller });
   await next();
 });
 

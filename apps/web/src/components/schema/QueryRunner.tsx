@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useOrganizationId } from "../../organization";
 import {
   IconCaretDownFilled,
   IconCaretUpFilled,
@@ -67,6 +68,7 @@ export function QueryRunner({
   onRan: () => void;
   onSqlChange: (sql: string) => void;
 }) {
+  const organizationId = useOrganizationId();
   const sourceId = source.id;
   const [sql, setSql] = useState(initialSql);
   const [result, setResult] = useState<IQueryResponse | null>(null);
@@ -93,7 +95,7 @@ export function QueryRunner({
     setDrafted(false);
     let draft = "";
     try {
-      const answer = await askQuestion([sourceId], question.trim(), undefined, {
+      const answer = await askQuestion(organizationId, [sourceId], question.trim(), undefined, {
         onDelta: (text) => {
           draft += text;
           setSql(draft);
@@ -152,13 +154,13 @@ export function QueryRunner({
     setRunning(true);
     setProblem(null);
     try {
-      const answer = await runQuery(sourceId, statement, refine);
+      const answer = await runQuery(organizationId, sourceId, statement, refine);
       if (ticket !== latestRun.current) {
         return;
       }
       setResult(answer);
       setPlan(null);
-      void recordRun(sourceId, answer.statement ?? statement).then(
+      void recordRun(organizationId, sourceId, answer.statement ?? statement).then(
         onRan,
         () => undefined,
       );
@@ -185,7 +187,7 @@ export function QueryRunner({
     setExplaining(true);
     setProblem(null);
     try {
-      const answer = await explainQuery(sourceId, sql);
+      const answer = await explainQuery(organizationId, sourceId, sql);
       setPlan(answer.plan);
     } catch (caught) {
       setPlan(null);

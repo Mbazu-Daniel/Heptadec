@@ -1,4 +1,4 @@
-import { InternalServerException } from "../../common/exceptions";
+import { InternalServerException } from "../../common/exceptions/index";
 
 const ENVELOPE = "v1";
 const KEY_BYTES = 32;

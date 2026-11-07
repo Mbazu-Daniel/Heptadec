@@ -4,7 +4,6 @@ import {
   dashboard,
   shareLink,
   widget,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,

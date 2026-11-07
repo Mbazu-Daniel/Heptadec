@@ -4,7 +4,6 @@ import {
   dataSource,
   queryVersion,
   savedQuery,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import { createSavedQuery, editSavedQuery } from "./edit";
 import {

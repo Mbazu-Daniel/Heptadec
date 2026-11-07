@@ -10,10 +10,7 @@ import { PROVIDERS, type ProviderId } from "../../modules/auth/contracts";
 import { sendPasswordResetEmail } from "../../modules/auth/password-reset";
 import { ac, roles } from "../../modules/rbac/permissions";
 import { sendInvitationEmail } from "../../modules/invitation/mailer";
-import {
-  recordAuditFor,
-  recordAudit,
-} from "../../modules/audit/record";
+import { recordAuditFor } from "../../modules/audit/record";
 import { nameFromEmail } from "../helpers/name";
 import { hashPassword, verifyPassword } from "../helpers/password";
 import {

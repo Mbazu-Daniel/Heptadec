@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
   dashboard,
   widget,
   savedQuery,
   dashboardDataSource,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,

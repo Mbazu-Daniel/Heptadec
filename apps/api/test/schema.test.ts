@@ -8,7 +8,7 @@ async function ownerWithSource(kind = "postgres"): Promise<{
   id: string;
 }> {
   const { cookie } = await signUp(uniqueEmail());
-  const org = await authFor(db).api.createOrganization({
+  await authFor(db).api.createOrganization({
     body: { name: "Schema Org", slug: uniqueSlug() },
     headers: { cookie },
   });

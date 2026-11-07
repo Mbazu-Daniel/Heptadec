@@ -29,8 +29,15 @@
   },
   "cloudflare": {
     "label": "Heptadec",
-    "products": ["Workers", "D1", "R2"],
-    "categories": ["analytics", "developer-tools"],
+    "products": [
+      "Workers",
+      "D1",
+      "R2"
+    ],
+    "categories": [
+      "analytics",
+      "developer-tools"
+    ],
     "docs_url": "https://github.com/Mbazu-Daniel/Heptadec#cloudflare-workers",
     "bindings": {
       "PUBLIC_URL": {
@@ -45,6 +52,8 @@
     }
   },
   "devDependencies": {
+    "@shadcn/lint": "^0.2.5",
+    "oxlint": "^1.91.0",
     "wrangler": "^4.149.0"
   }
 }

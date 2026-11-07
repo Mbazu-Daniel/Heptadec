@@ -1,11 +1,9 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import { requireSession } from "../../common/middleware/require-session";
 import { activeOrganization } from "../../common/session/current-organization";
-import type { IOrganizationScope } from "../../common/session/current-organization";
 import { authFor } from "../../common/config/better-auth";
 import {
   BadRequestException,

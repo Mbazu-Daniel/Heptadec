@@ -4,7 +4,6 @@ import {
   dashboardDataSource,
   dataSource,
   widget,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import { BadRequestException, NotFoundException } from "../../common/exceptions";
 import type { IOrganizationScope } from "../../common/session/current-organization";

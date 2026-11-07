@@ -1,7 +1,6 @@
 import { BadRequestException } from "../../common/exceptions";
 import type { SqlDialect } from "../data-source/contracts";
 import { quoteIdentifier } from "../data-source/sql-quoting";
-import type { IStoredConnection } from "../data-source/connection";
 import type { FilterOp, IQueryFilter, IQueryRefine, IQuerySort } from "./contracts";
 
 const MAX_COLUMN = 128;

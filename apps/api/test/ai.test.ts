@@ -1,12 +1,12 @@
 import { createServer, type Server } from "node:http";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { schema } from "@heptadec/db";
 import { ANSWER_EVENTS } from "../src/modules/ai/contracts";
 import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, STACK, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 
-const { aiProvider, aiChat, dataSource } = schema;
+const { aiProvider, aiChat } = schema;
 
 interface ICaptured {
   url: string;

@@ -74,7 +74,6 @@ import type {
 import type {
   ICreateSavedQueryRequest,
   IQueryVersionListResponse,
-  ISavedQuery,
   ISavedQueryListResponse,
   ISavedQueryResponse,
   IUpdateSavedQueryRequest,
@@ -101,7 +100,6 @@ import type {
   IUpdateAlertRuleRequest,
 } from "@heptadec/api/alert-contracts";
 import type {
-  INotificationChannel,
   INotificationChannelListResponse,
   INotificationChannelResponse,
   ISaveNotificationChannelRequest,

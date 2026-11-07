@@ -4,7 +4,6 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   dataSource,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   oneRow,

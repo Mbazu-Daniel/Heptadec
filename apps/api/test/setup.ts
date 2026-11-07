@@ -3,7 +3,7 @@ import { loadDotEnv } from "../src/dotenv";
 const TEST_DATABASE_URL = "file:./test.db";
 
 process.env.DATABASE_URL ??= TEST_DATABASE_URL;
-if (/dev\.db$/.test(process.env.DATABASE_URL)) {
+if (process.env.DATABASE_URL.endsWith('dev.db')) {
   throw new Error(
     `Tests refuse to run against ${process.env.DATABASE_URL}. Unset DATABASE_URL to use ${TEST_DATABASE_URL}.`,
   );

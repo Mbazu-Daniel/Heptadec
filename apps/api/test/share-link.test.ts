@@ -10,12 +10,6 @@ const { dataSource, shareLink, widget } = schema;
 const REGION_COUNTS =
   "SELECT region, count(*)::int AS events FROM events GROUP BY region ORDER BY region";
 
-const REGION_POINTS = [
-  { label: "ap-south-1", value: 1 },
-  { label: "eu-west-1", value: 2 },
-  { label: "us-east-1", value: 1 },
-];
-
 async function regionCounts(): Promise<Array<{ label: string; value: number }>> {
   const { default: pg } = await import("pg");
   const client = new pg.Client(TEST_POSTGRES);
@@ -234,7 +228,7 @@ it("404s share-link management from another organization", async () => {
 });
 
 it("refuses a viewer who cannot share a dashboard", async () => {
-  const { cookie, orgId, dashboardId } = await ownerWithChart();
+  const { orgId, dashboardId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
   await authFor(db).api.addMember({

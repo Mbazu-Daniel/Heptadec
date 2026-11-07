@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { user } from "./user";
 

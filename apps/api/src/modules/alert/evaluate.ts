@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import {
   alertRule,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import type { AlertRuleRow } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";

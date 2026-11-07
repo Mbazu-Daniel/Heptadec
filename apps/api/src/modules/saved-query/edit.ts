@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import {
   queryVersion,
   savedQuery,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import { oneRow } from "../../common/session/current-organization";
 import type { IOrganizationScope } from "../../common/session/current-organization";

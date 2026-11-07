@@ -7,7 +7,6 @@ import {
 } from "drizzle-orm";
 import {
   dataSource,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,

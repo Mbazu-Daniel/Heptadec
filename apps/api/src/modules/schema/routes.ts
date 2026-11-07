@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { dataSource, type HeptadecDatabase } from "@heptadec/db";
+import { dataSource } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,

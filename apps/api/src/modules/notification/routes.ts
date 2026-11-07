@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
 import {
   notificationChannel,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import type { NotificationChannelRow } from "@heptadec/db";
 import {

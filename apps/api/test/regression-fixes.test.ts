@@ -5,8 +5,7 @@ import { authFor } from "../src/common/config/better-auth";
 import { db, request, signUp, TEST_POSTGRES, uniqueEmail, uniqueSlug } from "./helpers";
 import { nextRunAfter, parseCron } from "../src/modules/scheduler/cron";
 
-const { dashboard, shareLink, widget, savedQuery, queryResult, member, dataSource } =
-  schema;
+const { shareLink, queryResult, dataSource } = schema;
 
 async function owner(): Promise<{ cookie: string; organizationId: string }> {
   const { cookie } = await signUp(uniqueEmail());

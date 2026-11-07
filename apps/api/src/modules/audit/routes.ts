@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import {
   auditLog,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import type { IAuthVars } from "../../common/middleware/require-session";
 import { requireSession } from "../../common/middleware/require-session";

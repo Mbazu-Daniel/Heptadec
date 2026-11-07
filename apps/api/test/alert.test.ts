@@ -10,7 +10,6 @@ const {
   alertRule,
   dataSource,
   notificationChannel,
-  savedQuery,
   scheduledJob,
   widget,
 } = schema;
@@ -407,7 +406,7 @@ it("404s another organization's rule and clears the log when the query goes", as
 });
 
 it("refuses a viewer who cannot add a rule", async () => {
-  const { cookie, orgId, savedQueryId } = await ownerWithChart();
+  const { orgId, savedQueryId } = await ownerWithChart();
 
   const { user: viewer, cookie: viewerCookie } = await signUp(uniqueEmail());
   await authFor(db).api.addMember({

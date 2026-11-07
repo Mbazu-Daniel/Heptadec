@@ -63,9 +63,7 @@ export function ShareDialog({
     setProblem(null);
     setStatus(null);
     try {
-      const { shareLink, url } = await createShareLink(dashboardId, {
-        ...(expiresInDays === "" ? {} : { expiresInDays: Number(expiresInDays) }),
-      });
+      const { shareLink, url } = await createShareLink(dashboardId, (expiresInDays === "" ? {} : { expiresInDays: Number(expiresInDays) }));
       setLinks((current) => [shareLink, ...(current ?? [])]);
       setCreatedUrl(url);
     } catch (caught) {

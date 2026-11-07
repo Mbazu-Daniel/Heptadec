@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { requestOrigins } from "../src/common/config/origins";
-import { db, request as callApp, signUp, uniqueEmail, uniqueSlug } from "./helpers";
+import { request as callApp, signUp, uniqueEmail, uniqueSlug } from "./helpers";
 
 function request(headers: Record<string, string>): Request {
   return new Request("http://localhost:8787/api/auth/sign-in/email", { headers });

@@ -3,10 +3,8 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   alertDelivery,
   alertRule,
-  dataSource,
   savedQuery,
   scheduledJob,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,
@@ -40,13 +38,7 @@ const MAX_NAME = 120;
 
 const MAX_COLUMN = 128;
 
-const MAX_EMAIL = 254;
-
-const MAX_URL = 2_048;
-
 const LOG_LIMIT = 50;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function toAlertRule(
   row: typeof alertRule.$inferSelect,

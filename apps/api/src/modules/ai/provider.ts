@@ -1,7 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import {
   aiProvider,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import type { IOrganizationScope } from "../../common/session/current-organization";
 

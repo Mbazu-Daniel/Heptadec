@@ -3,7 +3,6 @@ import { eq, sql } from "drizzle-orm";
 import {
   member,
   user,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,

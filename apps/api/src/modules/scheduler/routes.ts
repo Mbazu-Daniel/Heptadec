@@ -9,7 +9,6 @@ import {
   dataSource,
   savedQuery,
   scheduledJob,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import {
   requireSession,

@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import {
   account,
   user,
-  type HeptadecDatabase,
 } from "@heptadec/db";
 import { authFor } from "../../common/config/better-auth";
 import {

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { dataSource, type HeptadecDatabase } from "@heptadec/db";
+import { dataSource } from "@heptadec/db";
 import {
   requireSession,
   type IAuthVars,

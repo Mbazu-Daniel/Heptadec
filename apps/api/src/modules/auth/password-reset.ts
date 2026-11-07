@@ -1,5 +1,6 @@
 import { sendEmail } from "../../common/email";
 import { config } from "../../common/config/env";
+import { BadGatewayException } from "../../common/exceptions";
 
 export function resetUrl(token: string): string {
   return `${config.webUrl}/reset-password?token=${encodeURIComponent(token)}`;
@@ -31,5 +32,5 @@ export async function sendPasswordResetEmail(data: {
     console.log(`[api] no email transport, password reset not sent. link: ${link}`);
     return;
   }
-  throw new Error(outcome.reason);
+  throw new BadGatewayException(outcome.reason);
 }

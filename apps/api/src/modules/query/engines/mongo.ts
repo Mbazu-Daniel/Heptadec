@@ -1,9 +1,9 @@
-import { BadRequestException } from "../../common/exceptions/index";
-import { bsonTypeName, openMongo, toRows } from "../data-source/clients";
-import type { IStoredConnection } from "../data-source/connection";
-import type { IMongoPipeline, IQueryResponse } from "./contracts";
-import { applyBudget } from "./budget";
-import { assertMongoReads } from "./read-policy";
+import { BadRequestException } from "../../../common/exceptions/index";
+import { bsonTypeName, openMongo, toRows } from "../../data-source/clients";
+import type { IStoredConnection } from "../../data-source/connection";
+import type { IMongoPipeline, IQueryResponse } from "../contracts";
+import { applyBudget } from "../budget";
+import { assertMongoReads } from "../read-policy";
 
 const MAX_STAGES = 32;
 
@@ -32,18 +32,46 @@ export function readMongoPipeline(value: unknown): IMongoPipeline {
   }
 
   for (const stage of stages) {
-    if (typeof stage !== "object" || stage === null || Array.isArray(stage)) {
-      throw new BadRequestException("Each pipeline stage must be an object");
-    }
-    if (Object.keys(stage).length === 0) {
-      throw new BadRequestException("A pipeline stage cannot be empty");
-    }
+    checkStage(stage);
   }
 
   return {
     collection: collection.trim(),
     pipeline: stages as Record<string, unknown>[],
   };
+}
+
+function checkStage(stage: unknown): void {
+  if (typeof stage !== "object" || stage === null || Array.isArray(stage)) {
+    throw new BadRequestException("Each pipeline stage must be an object");
+  }
+  if (Object.keys(stage).length === 0) {
+    throw new BadRequestException("A pipeline stage cannot be empty");
+  }
+}
+
+function collectColumns(documents: readonly Record<string, unknown>[]): string[] {
+  const columns: string[] = [];
+  for (const document of documents) {
+    addUnknownColumns(columns, document);
+  }
+  return columns;
+}
+
+function addUnknownColumns(columns: string[], document: Record<string, unknown>): void {
+  for (const key of Object.keys(document)) {
+    if (!columns.includes(key)) {
+      columns.push(key);
+    }
+  }
+}
+
+function columnTypeOf(
+  documents: readonly Record<string, unknown>[],
+  column: string,
+): string {
+  const first = documents.find((document) => column in document)?.[column];
+  return first === undefined ? "null" : bsonTypeName(first);
 }
 
 export async function runMongoQuery(
@@ -63,22 +91,13 @@ export async function runMongoQuery(
       .aggregate(pipeline.pipeline, { maxTimeMS: 15_000 })
       .toArray();
 
-    const columns: string[] = [];
-    for (const document of documents) {
-      for (const key of Object.keys(document)) {
-        if (!columns.includes(key)) {
-          columns.push(key);
-        }
-      }
-    }
-
+    const columns = collectColumns(documents);
     const rows = toRows(
       documents.map((document) => ({ ...document })),
     );
-    const columnTypes = columns.map((column) => {
-      const first = documents.find((document) => column in document)?.[column];
-      return first === undefined ? "null" : bsonTypeName(first);
-    });
+    const columnTypes = columns.map((column) =>
+      columnTypeOf(documents, column),
+    );
 
     const budgeted = applyBudget(rows);
     return {

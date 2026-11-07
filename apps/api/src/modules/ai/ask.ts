@@ -1,8 +1,8 @@
 import type { IEngineSpec, QueryLanguage } from "../data-source/contracts";
 import type { IStoredConnection } from "../data-source/connection";
 import { introspectSchema } from "../schema/introspect";
-import { readMongoPipeline } from "../query/mongo";
-import { readSearchStatement } from "../query/quickwit";
+import { readMongoPipeline } from "../query/engines/mongo";
+import { readSearchStatement } from "../query/engines/quickwit";
 import {
   mongoInstructions,
   queryInstructions,

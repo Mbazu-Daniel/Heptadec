@@ -8,7 +8,7 @@ import {
 } from "../../common/exceptions/index";
 import { engineOf } from "../data-source/engines";
 import { savedConnection, storedFromRow } from "../data-source/connection";
-import { explainPostgresQuery } from "./postgres";
+import { explainPostgresQuery } from "./engines/postgres";
 import { runnerOf, type RunResult } from "./runners";
 import type { IExplainResponse } from "./contracts";
 import type {

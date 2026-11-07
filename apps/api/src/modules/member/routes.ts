@@ -43,55 +43,56 @@ export function memberRoutes(): Hono<IAuthVars> {
     const organization = activeOrganization(c);
     const base = publicBaseFrom(c.env);
 
-    const payload = readBody(await c.req.json(), "A display name is required");
-    const raw = payload.displayName;
-    if (raw !== null && typeof raw !== "string") {
-      throw new BadRequestException("The display name must be text");
+    const payload = readBody(await c.req.json(), "Send a display name or an image");
+    const patch: { displayName?: string | null; image?: string | null } = {};
+
+    if ("displayName" in payload) {
+      const raw = payload.displayName;
+      if (raw !== null && typeof raw !== "string") {
+        throw new BadRequestException("The display name must be text");
+      }
+      const trimmed = typeof raw === "string" ? raw.trim() : "";
+      if (trimmed.length > MAX_DISPLAY_NAME) {
+        throw new BadRequestException("The display name is too long");
+      }
+      patch.displayName = trimmed.length === 0 ? null : trimmed;
     }
-    const trimmed = typeof raw === "string" ? raw.trim() : "";
-    if (trimmed.length > MAX_DISPLAY_NAME) {
-      throw new BadRequestException("The display name is too long");
+
+    if ("image" in payload) {
+      const raw = payload.image;
+      if (raw !== null && typeof raw !== "string") {
+        throw new BadRequestException("The image must be text or nothing");
+      }
+      const image = raw === null || raw === "" ? null : raw;
+      if (
+        image !== null &&
+        !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
+      ) {
+        throw new BadRequestException(
+          "That image did not come from this organization",
+        );
+      }
+      patch.image = image;
     }
-    const displayName = trimmed.length === 0 ? null : trimmed;
+
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException("Send a display name or an image");
+    }
 
     await organization.db
       .update(member)
-      .set({ displayName })
+      .set(patch)
       .where(eq(member.id, organization.caller.id));
+
+    const displayName =
+      patch.displayName !== undefined
+        ? patch.displayName
+        : organization.caller.displayName;
+    const image =
+      patch.image !== undefined ? patch.image : organization.caller.image;
 
     const body: IMemberProfileResponse = {
       displayName,
-      image: mediaUrl(organization.caller.image, base),
-      role: roleOf(organization.caller.role),
-      organizationId: organization.organizationId,
-    };
-    return c.json(body);
-  });
-
-  routes.patch("/api/organization/member/image", requireSession, async (c) => {
-    const organization = activeOrganization(c);
-    const base = publicBaseFrom(c.env);
-
-    const payload = readBody(await c.req.json(), "That image could not be saved");
-    const raw = payload.image;
-    if (raw !== null && typeof raw !== "string") {
-      throw new BadRequestException("The image must be text or nothing");
-    }
-    const image = raw === null || raw === "" ? null : raw;
-    if (
-      image !== null &&
-      !image.startsWith(avatarKeyPrefixFor(organization.organizationId))
-    ) {
-      throw new BadRequestException("That image did not come from this organization");
-    }
-
-    await organization.db
-      .update(member)
-      .set({ image })
-      .where(eq(member.id, organization.caller.id));
-
-    const body: IMemberProfileResponse = {
-      displayName: organization.caller.displayName,
       image: mediaUrl(image, base),
       role: roleOf(organization.caller.role),
       organizationId: organization.organizationId,

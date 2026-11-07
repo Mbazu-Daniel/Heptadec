@@ -14,7 +14,7 @@ import {
 import { can } from "../rbac/authorize";
 import { engineOf } from "../data-source/engines";
 import { savedConnection, storedFromRow } from "../data-source/connection";
-import { explainPostgresQuery } from "./postgres";
+import { explainPostgresQuery } from "./engines/postgres";
 import { runnerOf } from "./runners";
 import type { IExplainResponse } from "./contracts";
 

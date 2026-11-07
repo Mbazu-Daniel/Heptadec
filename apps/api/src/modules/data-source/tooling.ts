@@ -1,7 +1,7 @@
 import type { DataSourceRow } from "@heptadec/db";
 import type { IQueryResponse } from "../query/contracts";
 import { assertSqlReads, type ReadPurpose } from "../query/read-policy";
-import { runSqlQuery } from "../query/sql";
+import { runSqlQuery } from "../query/engines/sql";
 import type { Introspected } from "../schema/introspect";
 import { introspectSchema } from "../schema/introspect";
 import { storedFromRow } from "./connection";

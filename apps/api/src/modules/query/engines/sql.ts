@@ -1,21 +1,21 @@
 import mysql from "mysql2";
-import { BadRequestException } from "../../common/exceptions";
-import { driverFailure } from "../../common/driver-error";
+import { BadRequestException } from "../../../common/exceptions";
+import { driverFailure } from "../../../common/driver-error";
 import {
   clickhouseClient,
   libsqlClientFor,
   openMysql,
   toRows,
-} from "../data-source/clients";
-import type { IStoredConnection } from "../data-source/connection";
-import { asRelational } from "../data-source/connection";
-import { engineFrom } from "../data-source/engines";
-import type { SqlDialect } from "../data-source/contracts";
+} from "../../data-source/clients";
+import type { IStoredConnection } from "../../data-source/connection";
+import { asRelational } from "../../data-source/connection";
+import { engineFrom } from "../../data-source/engines";
+import type { SqlDialect } from "../../data-source/contracts";
 import { runPostgresQuery } from "./postgres";
-import { applyBudget, DEFAULT_RESULT_BUDGET } from "./budget";
-import { composeStatement } from "./compose";
-import { assertSqlReads } from "./read-policy";
-import type { IQueryRefine, IQueryResponse } from "./contracts";
+import { applyBudget, DEFAULT_RESULT_BUDGET } from "../budget";
+import { composeStatement } from "../compose";
+import { assertSqlReads } from "../read-policy";
+import type { IQueryRefine, IQueryResponse } from "../contracts";
 
 const MYSQL_TYPE_NAMES = new Map<number, string>(
   Object.entries(mysql.Types)

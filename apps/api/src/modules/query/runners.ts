@@ -3,11 +3,11 @@ import { readBody, readString } from "../../common/http/body";
 import type { IEngineSpec, QueryLanguage } from "../data-source/contracts";
 import type { IStoredConnection } from "../data-source/connection";
 import type { IQueryResponse, IRedisQueryResponse } from "./contracts";
-import { runSqlQuery } from "./sql";
 import { readQueryRefine } from "./compose";
-import { readMongoPipeline, runMongoQuery } from "./mongo";
-import { runRedisQuery } from "./redis";
-import { readSearchStatement, runSearchQuery } from "./quickwit";
+import { runSqlQuery } from "./engines/sql";
+import { readMongoPipeline, runMongoQuery } from "./engines/mongo";
+import { runRedisQuery } from "./engines/redis";
+import { readSearchStatement, runSearchQuery } from "./engines/quickwit";
 
 export type RunResult = IQueryResponse | IRedisQueryResponse;
 

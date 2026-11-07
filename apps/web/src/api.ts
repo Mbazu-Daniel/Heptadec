@@ -240,22 +240,22 @@ export async function uploadImage(target: ImageTarget, picture: Blob): Promise<s
   return signed.key;
 }
 
-export async function saveMemberDisplayName(
-  displayName: string | null,
+export async function saveMemberProfile(
+  payload: { displayName?: string | null; image?: string | null },
 ): Promise<IMemberProfileResponse> {
-  return request<IMemberProfileResponse>("/api/organization/member", "PATCH", {
-    displayName,
-  });
+  return request<IMemberProfileResponse>("/api/organization/member", "PATCH", payload);
 }
 
-export async function saveMemberImage(
+export function saveMemberDisplayName(
+  displayName: string | null,
+): Promise<IMemberProfileResponse> {
+  return saveMemberProfile({ displayName });
+}
+
+export function saveMemberImage(
   image: string | null,
 ): Promise<IMemberProfileResponse> {
-  return request<IMemberProfileResponse>(
-    "/api/organization/member/image",
-    "PATCH",
-    { image },
-  );
+  return saveMemberProfile({ image });
 }
 
 export function fetchInvitation(
